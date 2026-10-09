@@ -5,6 +5,9 @@
         --replace '<shell command that installs build B>' \\
         --after <cmd> --after-version 0.1.0
 
+`--before` and `--after` are split the way the platform's own shell splits a
+command line, so a Windows path keeps its backslashes and its spaces.
+
 The sequence is a real transition, not two runs of one binary:
 
 1. The standalone `uguisu` CLI creates the data directory and mints a write
@@ -25,6 +28,14 @@ The sequence is a real transition, not two runs of one binary:
 6. `uguisu serve` opens the same directory and lists the same library, so the
    desktop's data can be reopened by the server.
 
+With `--login-item kept|removed` (Windows), start at login is switched on in
+`desktop.json` before build A first starts, and A must write the Run value
+pointing at itself. The argument says what the upgrade does to that value: an
+MSI major upgrade keeps it, an uninstall removes it. Either way B must point
+it at itself afterwards, and after a removal B must log putting it back. It
+refuses to run where a Run value, a Task Manager override or a `desktop.json`
+already exists, and removes what the run created.
+
 The token travels only in an `Authorization` header and is never printed.
 Nothing leaves the machine: a local HTTP server stands in for the publisher.
 """
@@ -39,16 +50,23 @@ import json
 import os
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from desktop_smoke import CLOSED, Streams, database_intact, request_close  # noqa: E402
+from desktop_smoke import (  # noqa: E402
+    CLOSED, LAYOUTS, Streams, database_intact, request_close, sandboxed_app,
+)
 from e2e import OWN_GROUP, STOP, Client, Failure, Publisher, free_port, wait_for  # noqa: E402
 
+ROOT = Path(__file__).resolve().parent.parent
+RUN = r"Software\Microsoft\Windows\CurrentVersion\Run"
+APPROVED = r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"
 SETTING = ("UGUISU_APPLE_COUNTRY", "de")
 USER_FILE = "a note the user left here.txt"
 
@@ -73,11 +91,79 @@ class Api:
         return data
 
 
+def split(command: str) -> list[str]:
+    """A command line, split as the platform's own shell splits it."""
+    if os.name != "nt":
+        return shlex.split(command)
+    import ctypes
+    from ctypes import wintypes
+
+    shell32, kernel32 = ctypes.windll.shell32, ctypes.windll.kernel32
+    shell32.CommandLineToArgvW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int)]
+    shell32.CommandLineToArgvW.restype = ctypes.POINTER(wintypes.LPWSTR)
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    count = ctypes.c_int()
+    argv = shell32.CommandLineToArgvW(command, ctypes.byref(count))
+    if not argv:
+        raise argparse.ArgumentTypeError(f"cannot split {command!r}")
+    try:
+        return [argv[i] for i in range(count.value)]
+    finally:
+        kernel32.LocalFree(ctypes.cast(argv, ctypes.c_void_p))
+
+
+class LoginItem:
+    """Start at login, wanted before build A first starts (Windows)."""
+
+    def __init__(self) -> None:
+        conf = json.loads((ROOT / "desktop/src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
+        self.name = conf["productName"]
+        self.settings = Path(os.environ["APPDATA"]) / conf["identifier"] / "desktop.json"
+        self.made_dir = not self.settings.parent.exists()
+        present = [f"HKCU\\{key}\\{self.name}" for key in (RUN, APPROVED) if self.value(key) is not None]
+        if self.settings.exists():
+            present.append(str(self.settings))
+        if present:
+            raise Failure(f"--login-item would overwrite what this user already has: {', '.join(present)}")
+        self.settings.parent.mkdir(parents=True, exist_ok=True)
+        self.settings.write_text(json.dumps({"autostart": True}), encoding="utf-8")
+
+    def value(self, key: str) -> object:
+        import winreg
+
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key) as handle:
+                return winreg.QueryValueEx(handle, self.name)[0]
+        except FileNotFoundError:
+            return None
+
+    def expect(self, executable: str, build: str) -> None:
+        # Quoted with a trailing space: what `auto-launch` writes for a path
+        # with no arguments, and what Windows starts from a path with spaces.
+        want = f'"{executable}" '
+        wait_for(lambda: self.value(RUN) == want, what=f"build {build} to point the Run value at {want}")
+
+    def remove(self) -> None:
+        import winreg
+
+        for key in (RUN, APPROVED):
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key, 0, winreg.KEY_SET_VALUE) as handle:
+                    winreg.DeleteValue(handle, self.name)
+            except FileNotFoundError:
+                pass
+        if self.made_dir:
+            shutil.rmtree(self.settings.parent, ignore_errors=True)
+        else:
+            self.settings.unlink(missing_ok=True)
+
+
 class App:
     """One build of the application, started and closed like a user would."""
 
-    def __init__(self, command: list[str], env: dict[str, str], name: str) -> None:
+    def __init__(self, command: list[str], env: dict[str, str], name: str, layout: str) -> None:
         self.name = name
+        self.layout = layout
         self.workdir = tempfile.mkdtemp(prefix="uguisu-upgrade-cwd-")
         self.process = subprocess.Popen(
             [*command, "--print-port"],
@@ -99,12 +185,20 @@ class App:
         self.port = int(found)
 
     def close(self) -> None:
-        request_close(self.process)
+        if self.layout == "flatpak":
+            # bwrap forwards no signal; a logout signals the app itself.
+            os.kill(sandboxed_app(self.process.pid), signal.SIGTERM)
+        else:
+            request_close(self.process)
         try:
             code = self.process.wait(timeout=90)
         except subprocess.TimeoutExpired:
             self.process.kill()
             raise Failure(f"build {self.name} did not exit after a close request") from None
+        # The pipes may still hold the last lines after the exit.
+        deadline = time.monotonic() + 5
+        while CLOSED not in self.streams.text() and time.monotonic() < deadline:
+            time.sleep(0.1)
         if code != 0 or CLOSED not in self.streams.text():
             raise Failure(f"build {self.name} did not close cleanly ({code})\n{self.streams.text()}")
         shutil.rmtree(self.workdir, ignore_errors=True)
@@ -184,12 +278,18 @@ def compare(label: str, before: object, after: object) -> None:
 
 def upgrade(args: argparse.Namespace) -> int:
     checks = 0
-    data_dir = Path(tempfile.mkdtemp(prefix="uguisu-upgrade-data-"))
+    if args.data_dir is None:
+        data_dir = Path(tempfile.mkdtemp(prefix="uguisu-upgrade-data-"))
+    else:
+        data_dir = args.data_dir
+        data_dir.mkdir(parents=True)
     publisher_port = free_port()
     Publisher.base = f"http://127.0.0.1:{publisher_port}"
     publisher = http.server.ThreadingHTTPServer(("127.0.0.1", publisher_port), functools.partial(Publisher))
     threading.Thread(target=publisher.serve_forever, daemon=True).start()
-    env = {k: v for k, v in os.environ.items() if k != "UGUISU_WEB_DIR"}
+    # Nothing inherited: a UGUISU_WEB_DIR would serve another UI and a
+    # UGUISU_MEDIA_DIR would move the files this compares.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("UGUISU_")}
     env.update(
         UGUISU_DATA_DIR=str(data_dir),
         UGUISU_HTTP_ALLOW_PRIVATE_HOSTS="127.0.0.1",
@@ -198,6 +298,7 @@ def upgrade(args: argparse.Namespace) -> int:
         UGUISU_ARCHIVE_ARTWORK_FETCH="false",
     )
     running: list[App] = []
+    login: LoginItem | None = None
     try:
         minted = subprocess.run(
             [args.cli, "--json", "auth", "token", "create", "upgrade"],
@@ -208,11 +309,16 @@ def upgrade(args: argparse.Namespace) -> int:
         token = json.loads(minted.stdout)["secret"]
         checks += 1
 
-        a = App(args.before, env, "A")
+        if args.login_item:
+            login = LoginItem()
+        a = App(args.before, env, "A", args.layout)
         running.append(a)
         api = Api(a.port, token)
         if version(api) != args.before_version:
             raise Failure(f"build A reports {version(api)}, expected {args.before_version}")
+        if login is not None:
+            login.expect(args.before[0], "A")
+            checks += 1
         kept = populate(api, f"{Publisher.base}/feed.xml")
         if not all(row["sidecar"] for row in kept["archive"].values()):
             raise Failure(f"build A archived without sidecars: {kept['archive']}")
@@ -227,9 +333,13 @@ def upgrade(args: argparse.Namespace) -> int:
         replaced = subprocess.run(args.replace, shell=True, env=env, check=False)
         if replaced.returncode != 0:
             raise Failure(f"--replace exited {replaced.returncode}: {args.replace}")
+        if login is not None:
+            left = login.value(RUN)
+            if (left is None) != (args.login_item == "removed"):
+                raise Failure(f"--login-item {args.login_item}, but after the upgrade the Run value is {left!r}")
         checks += 1
 
-        b = App(args.after, env, "B")
+        b = App(args.after, env, "B", args.layout)
         running.append(b)
         api = Api(b.port, token)
         after_version = version(api)
@@ -239,6 +349,11 @@ def upgrade(args: argparse.Namespace) -> int:
                 f"different from A's {args.before_version}"
             )
         compare("the library, archive, setting and search index", kept, observe(api, kept["podcast"], kept["episodes"]))
+        if login is not None:
+            login.expect(args.after[0], "B")
+            if args.login_item == "removed" and "login item restored" not in b.streams.text():
+                raise Failure("the upgrade removed the Run value and build B did not log restoring it")
+            checks += 1
         b.close()
         running.remove(b)
         checks += 1
@@ -283,6 +398,8 @@ def upgrade(args: argparse.Namespace) -> int:
     finally:
         for app in running:
             app.kill()
+        if login is not None:
+            login.remove()
         publisher.shutdown()
         shutil.rmtree(data_dir, ignore_errors=True)
 
@@ -290,15 +407,25 @@ def upgrade(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--cli", required=True, help="the standalone uguisu binary")
-    parser.add_argument("--before", required=True, type=shlex.split, help="how to start build A")
+    parser.add_argument("--before", required=True, type=split, help="how to start build A")
     parser.add_argument("--before-version", required=True)
     parser.add_argument("--replace", required=True, help="shell command that puts build B in place")
-    parser.add_argument("--after", required=True, type=shlex.split, help="how to start build B")
+    parser.add_argument("--after", required=True, type=split, help="how to start build B")
     parser.add_argument("--after-version", required=True)
+    parser.add_argument("--layout", choices=LAYOUTS, default="unpackaged", help="what is installed")
+    parser.add_argument(
+        "--data-dir", type=Path,
+        help="a directory to create for the data, where the builds can reach it; it must not exist",
+    )
+    parser.add_argument(
+        "--login-item", choices=("kept", "removed"),
+        help="switch start at login on before build A; what the upgrade does to the Run value (Windows, release builds)",
+    )
     args = parser.parse_args()
-    if "UGUISU_WEB_DIR" in os.environ:
-        print("FAIL desktop upgrade\n\nUGUISU_WEB_DIR is set; each build must serve its own UI.")
-        return 1
+    if args.data_dir is not None and args.data_dir.exists():
+        parser.error(f"--data-dir {args.data_dir} exists; it is created and removed by this run")
+    if args.login_item and os.name != "nt":
+        parser.error("--login-item checks the Windows Run value")
     try:
         checks = upgrade(args)
     except Failure as failure:
