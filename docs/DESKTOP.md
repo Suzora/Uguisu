@@ -60,9 +60,9 @@ Other Linux distributions are unsupported until verified. The AppImage is not "u
 | Check | What it proves | Where |
 |---|---|---|
 | `python3 scripts/check.py desktop-meta` | harness self-tests, layout and workflow consistency | local; `ci.yml` `quick` |
-| `python3 scripts/check.py desktop` | fmt, clippy and tests of the desktop crate | local; `ci.yml` `linux` and `windows` |
+| `python3 scripts/check.py desktop` | fmt, clippy and tests of the desktop crate | local; `ci.yml` `desktop-lint`, `desktop`, `win-desktop-lint` and `win-desktop` |
 | `python3 scripts/check.py deny` | cargo-deny for both workspaces | local; `ci.yml` `quick` |
-| `desktop_smoke.py … --layout unpackaged` | the shell, bootstrap and shutdown; **not** packaging | `ci.yml` `linux` and `windows` |
+| `desktop_smoke.py … --layout unpackaged` | the shell, bootstrap and shutdown; **not** packaging | `ci.yml` `desktop` and `win-desktop`, on every pull request |
 | `desktop_smoke.py … --layout <format>` against an installed artifact | the installed UI is byte-identical to the bundled build; loopback only; clean close; intact database | `package-*` |
 | `desktop_upgrade.py` | installing build B over build A keeps every byte of user data, and `uguisu serve` reopens it | `upgrade-deb` |
 | `desktop-packaging` | all six `package-*` jobs and `upgrade-deb` passed in the same run | `desktop.yml`, on a `v*` tag or by hand ([ADR 0046](DECISIONS/0046-ci-within-a-minutes-budget.md)) |

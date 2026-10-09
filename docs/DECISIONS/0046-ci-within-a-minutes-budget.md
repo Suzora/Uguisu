@@ -1,6 +1,6 @@
 # ADR 0046 — CI within a minutes budget
 
-**Status:** accepted, amends 0043, amended by [ADR 0061](0061-the-docker-image.md) · **Date:** 2026-10-01
+**Status:** accepted, amends 0043, amended by [ADR 0061](0061-the-docker-image.md), superseded in part by [ADR 0063](0063-ci-within-five-minutes.md) · **Date:** 2026-10-01
 
 ## Context
 
@@ -16,6 +16,8 @@ The repository is private and its organisation is on GitHub Free: 2000 Actions m
 The packaging tier (ADR 0043) ran on every pull request touching `crates/`, `web/` or `Cargo.*`, which is nearly all of them. `ci.yml` had no job timeouts, and three hung jobs once billed 441 minutes before someone cancelled them.
 
 ## Decision
+
+*The repository is public now, and [ADR 0063](0063-ci-within-five-minutes.md) replaces the job layout, the draft rule, the Markdown-only shortcut and "no run on a push to main". The pinned toolchain, `--locked`, the timeouts and packaging only on a tag or by hand still hold.*
 
 **Three jobs in `ci.yml`, each started only after the cheaper one passed.**
 

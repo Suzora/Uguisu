@@ -1,6 +1,6 @@
 # Roadmap — Phase 1 to v1
 
-Each phase lists objective, implementation tasks, dependencies, tests and acceptance criteria. A phase is done only when its tests exist and pass in CI and its documentation is updated. CI evidence is a green `ci.yml` run on a pull request head whose tree is the tree that was merged: `main` has no runs of its own ([ADR 0046](DECISIONS/0046-ci-within-a-minutes-budget.md)). Phases are sequential by default; Phase 2 and Phase 3 can proceed in parallel because discovery has no storage dependency. Commit hashes and CI run numbers that predate publication refer to the pre-publication history, which this repository does not contain.
+Each phase lists objective, implementation tasks, dependencies, tests and acceptance criteria. A phase is done only when its tests exist and pass in CI and its documentation is updated. CI evidence is a green `ci` check on a pull request head whose tree is the tree that was merged, and a green `ci.yml` run on `main` after the merge, which adds the whole Windows suite ([ADR 0063](DECISIONS/0063-ci-within-five-minutes.md)). Phases are sequential by default; Phase 2 and Phase 3 can proceed in parallel because discovery has no storage dependency. Commit hashes and CI run numbers that predate publication refer to the pre-publication history, which this repository does not contain.
 
 | Phase | Name | Status |
 |---|---|---|
