@@ -31,15 +31,19 @@ class Failure(Exception):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--bin", help="an already-built uguisu binary (default: cargo run)")
+    parser.add_argument("--bin", help="an already-built uguisu binary (default: build it)")
     parser.add_argument("--keep-dir", action="store_true", help="keep the data directory")
     args = parser.parse_args()
 
-    base = (
-        [args.bin]
-        if args.bin
-        else ["cargo", "run", "-q", "-p", "uguisu-cli", "--"]
-    )
+    binary = args.bin
+    if not binary:
+        subprocess.run(
+            ["cargo", "build", "-q", "-p", "uguisu-cli", "--bin", "uguisu"],
+            cwd=ROOT,
+            check=True,
+        )
+        binary = str(ROOT / "target" / "debug" / "uguisu")
+    base = [binary]
     data_dir = Path(tempfile.mkdtemp(prefix="uguisu-smoke-"))
     env = dict(os.environ, UGUISU_DATA_DIR=str(data_dir))
     empty = Path(tempfile.mkdtemp(prefix="uguisu-smoke-empty-"))
