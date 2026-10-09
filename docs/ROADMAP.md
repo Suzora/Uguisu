@@ -42,12 +42,10 @@ From an audit of every phase against its code, tests and CI on 2026-10-01. **Pen
 | 8 | `TROUBLESHOOTING.md` | 11 |
 | 1, 2 | Refreshing `research/COMPETITIVE_ANALYSIS.md`; re-reading the providers' terms | 11 |
 | 3, 6 | Fuzzing the feed parser and the tag reader with cargo-fuzz, run locally or by hand, never nightly | 11 |
-| 9a | Automated upgrades other than the `.deb`: NSIS, MSI, dnf, Flatpak | 11 |
 | 9a | A desktop journey with a native Linux package | 11 |
 | 9a | Whether a folder granted through the Flatpak portal persists | 11 |
 | 8 | A screen-reader pass | 11 |
 | — | A first tagged pre-release, which the upgrade gates need | 11 |
-| 9a | The `ubuntu-22.04` runners retire, which forces a new floor decision (ADR 0043) | 11 |
 | 3, 4 | The Phase 3 and 4 benchmarks re-run against their baselines | 11 |
 
 ### Not planned for v1

@@ -1,6 +1,6 @@
 # ADR 0043 — Packaging: six formats, one version, and a gate that installs them
 
-**Status:** accepted, amended by [0046](0046-ci-within-a-minutes-budget.md) (packaging runs on tags and by hand; the gate includes the upgrade) · **Date:** 2026-09-24
+**Status:** accepted, amended by [0046](0046-ci-within-a-minutes-budget.md) (packaging runs on tags and by hand; the gate includes the upgrade) and [0064](0064-linux-floor-in-a-container-and-every-update-tested.md) (the floor is an `ubuntu:22.04` container; every format but the AppImage has an upgrade job) · **Date:** 2026-09-24
 
 ## Context
 

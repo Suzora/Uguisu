@@ -49,7 +49,7 @@ No shell, filesystem, process or opener-URL permission is granted, and no origin
 
 | Platform | Floor | Built on | Verified by |
 |---|---|---|---|
-| Linux (deb, rpm, AppImage) | amd64, glibc 2.35, WebKitGTK 4.1: Ubuntu 22.04+, Debian 12+, Fedora releases the `.rpm` installs on | `ubuntu-22.04` | `package-deb` (ubuntu:22.04, ubuntu:24.04, debian:12), `package-rpm` (fedora:43), `package-appimage` (ubuntu:22.04, debian:12, FUSE on the runner) |
+| Linux (deb, rpm, AppImage) | amd64, glibc 2.35, WebKitGTK 4.1: Ubuntu 22.04+, Debian 12+, Fedora releases the `.rpm` installs on | an `ubuntu:22.04` container ([ADR 0064](DECISIONS/0064-linux-floor-in-a-container-and-every-update-tested.md)) | `package-deb` (ubuntu:22.04, ubuntu:24.04, debian:12), `package-rpm` (fedora:43), `package-appimage` (ubuntu:22.04, debian:12, FUSE on the runner) |
 | Flatpak | GNOME 50 runtime | GNOME 50 SDK | `package-flatpak` |
 | Windows (NSIS, MSI) | Windows 10/11 x64 with WebView2 | `windows-2022` | `package-nsis`, `package-msi` |
 
@@ -64,8 +64,9 @@ Other Linux distributions are unsupported until verified. The AppImage is not "u
 | `python3 scripts/check.py deny` | cargo-deny for both workspaces | local; `ci.yml` `quick` |
 | `desktop_smoke.py … --layout unpackaged` | the shell, bootstrap and shutdown; **not** packaging | `ci.yml` `desktop` and `win-desktop`, on every pull request |
 | `desktop_smoke.py … --layout <format>` against an installed artifact | the installed UI is byte-identical to the bundled build; loopback only; clean close; intact database | `package-*` |
-| `desktop_upgrade.py` | installing build B over build A keeps every byte of user data, and `uguisu serve` reopens it | `upgrade-deb` |
-| `desktop-packaging` | all six `package-*` jobs and `upgrade-deb` passed in the same run | `desktop.yml`, on a `v*` tag or by hand ([ADR 0046](DECISIONS/0046-ci-within-a-minutes-budget.md)) |
+| `desktop_upgrade.py` | updating build A to build B the way the format updates keeps every byte of user data and, on Windows, the login item; `uguisu serve` reopens the data | `upgrade-deb`, `upgrade-rpm`, `upgrade-flatpak`, `upgrade-nsis`, `upgrade-msi` ([ADR 0064](DECISIONS/0064-linux-floor-in-a-container-and-every-update-tested.md)) |
+| `desktop_smoke.py … --close logoff` | a simulated Windows logoff closes the engine before Windows ends the process | `package-msi` |
+| `desktop-packaging` | all six `package-*` jobs and the five `upgrade-*` jobs passed in the same run | `desktop.yml`, on a `v*` tag or by hand ([ADR 0046](DECISIONS/0046-ci-within-a-minutes-budget.md)) |
 
 Run the smoke by hand against an installed package, from a directory with no `web/dist`:
 
@@ -84,10 +85,10 @@ Commit hashes and CI run numbers that predate publication refer to the pre-publi
 
 - Whether a folder chosen through the Flatpak portal stays writable across restarts and upgrades is not verified ([ADR 0044](DECISIONS/0044-archive-folder-and-flatpak.md)).
 - A remembered archive folder that is missing, not a folder or not writable stops the start before the engine opens, with a dialog that offers another folder or quits; in the Flatpak the portal's picker opens directly. An empty, writable mount point left behind by a disconnected drive passes that check. The dialog has not been observed on a desktop yet.
-- Packaging runs verify upgrades for the `.deb` only. NSIS over NSIS, an MSI major upgrade and `dnf upgrade` were verified by hand on 2026-09-26, on Windows 11 and in a Fedora 43 container; Flatpak updates are not yet exercised.
+- The AppImage has no upgrade check: a user replaces the file. A silent NSIS upgrade (`/S` over an installation) skips the installer's reinstall page, so the old uninstaller does not run and keeps the Run value; `upgrade-nsis` checks the upgrade a person clicks through, which runs it.
 - The fresh-install journey on a Windows 11 desktop was observed by a person on 2026-09-26, against `392e1f9`, before the fixes it led to; it has not been repeated since. The journey on a graphical Flatpak desktop is not claimed.
 - A silent NSIS install of an older version over a newer one is not refused, although `allowDowngrades` is off: the template's check compares versions only on the reinstall page, which `/S` skips. The MSI refuses a downgrade. This is tauri-bundler 2.9.4's template, which Uguisu does not override.
 - After an NSIS installation is removed, the MSI suggests the NSIS per-user folder (`%LOCALAPPDATA%\Uguisu`) instead of `C:\Program Files\Uguisu`. Both templates use the key `HKCU\Software\Suzora\Uguisu`, and the NSIS uninstaller keeps it unless *Delete the application data* is ticked.
-- A Windows logoff runs step 7 because tao reports `WM_ENDSESSION` as the loop's `Exit`, and Windows ends the process once that returns. This is read from tao's source, not yet observed at a logoff; shutdown and restart are not checked.
+- A Windows logoff runs step 7 because tao reports `WM_ENDSESSION`, which it handles in its event-target window, as the loop's `Exit`, and Windows ends the process once that returns. `package-msi` simulates the messages a logoff sends; a real logoff, a shutdown and a restart are not checked.
 - An uninstall removes the login item of the user who uninstalls; the MSI does it through Uguisu's own WiX fragment (`desktop/src-tauri/windows/login-item.wxs`), since the template does not know the Run value. The MSI installs for every user of the machine, so another user's login item stays and names the removed executable until Uguisu is installed again at the same path or the entry is turned off in Task Manager.
 - The AppImage closes cleanly on SIGTERM: its runtime execs the application in the process that was launched and serves the mount from a separate one. This was checked locally through FUSE, and the `package-appimage` FUSE step passed in Desktop run 36845457461.

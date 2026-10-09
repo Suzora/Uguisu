@@ -46,10 +46,10 @@ Decisions that shape Uguisu, in the MADR-light format: context, decision, conseq
 | [0040](0040-one-cursor-contract.md) | One cursor contract for every page | accepted, amended by 0057 |
 | [0041](0041-desktop-shell-and-embedded-server.md) | The desktop shell embeds the server and grants one origin | accepted, amends 0004 |
 | [0042](0042-launch-credential-exchange.md) | A per-launch token, exchanged once for an ordinary session | accepted, amends 0035 |
-| [0043](0043-desktop-packaging.md) | Packaging: six formats, one version, and a gate that installs them | accepted, amended by 0046 |
+| [0043](0043-desktop-packaging.md) | Packaging: six formats, one version, and a gate that installs them | accepted, amended by 0046, 0064 |
 | [0044](0044-archive-folder-and-flatpak.md) | The archive folder is the desktop's setting, and the Flatpak stays narrow | accepted |
 | [0045](0045-uguisu-part-of-suzora.md) | Uguisu, part of Suzora | accepted |
-| [0046](0046-ci-within-a-minutes-budget.md) | CI within a minutes budget | accepted, amends 0043, amended by 0061, superseded in part by 0063 |
+| [0046](0046-ci-within-a-minutes-budget.md) | CI within a minutes budget | accepted, amends 0043, amended by 0061, 0064, superseded in part by 0063 |
 | [0047](0047-artwork-on-refresh-when-asked.md) | Artwork on refresh, when asked | accepted, amends 0026 |
 | [0048](0048-agpl-licence.md) | Licence: AGPL-3.0-or-later | accepted |
 | [0049](0049-opml-import-and-export.md) | OPML import and export | accepted |
@@ -67,5 +67,6 @@ Decisions that shape Uguisu, in the MADR-light format: context, decision, conseq
 | [0061](0061-the-docker-image.md) | The Docker image | accepted, amends 0013, 0031, 0037, 0046 |
 | [0062](0062-trusted-proxies.md) | Trusted proxies name the client, and nothing else | accepted, amends 0013, 0035 |
 | [0063](0063-ci-within-five-minutes.md) | Every pull request's CI within five minutes | accepted, supersedes in part 0046 |
+| [0064](0064-linux-floor-in-a-container-and-every-update-tested.md) | Packaging: the Linux floor is a container, and every update is tested | accepted, amends 0043, 0046 |
 
 Template: copy `0001` and keep the four sections. Number sequentially; never reuse a number.

@@ -1,6 +1,6 @@
 # ADR 0046 — CI within a minutes budget
 
-**Status:** accepted, amends 0043, amended by [ADR 0061](0061-the-docker-image.md), superseded in part by [ADR 0063](0063-ci-within-five-minutes.md) · **Date:** 2026-10-01
+**Status:** accepted, amends 0043, amended by [ADR 0061](0061-the-docker-image.md), [ADR 0064](0064-linux-floor-in-a-container-and-every-update-tested.md), superseded in part by [ADR 0063](0063-ci-within-five-minutes.md) · **Date:** 2026-10-01
 
 ## Context
 
@@ -34,7 +34,7 @@ The packaging tier (ADR 0043) ran on every pull request touching `crates/`, `web
 
 **No run on a push to main.** The pull request already ran on the tree that is merged. CI evidence (ROADMAP) is therefore a green `ci.yml` run on a pull request head whose tree is the merged tree. A pull request is merged only when its head contains the current main and `ci.yml` passed on exactly that head. Branch protection could enforce this, but GitHub Free offers none for a private repository, so it is a rule for whoever merges.
 
-**Packaging only on a `v*` tag or by hand.** `desktop.yml` builds, installs and smokes the six formats and runs the `.deb` upgrade only on a tag or `workflow_dispatch`, so bundling is always required there. `desktop-packaging` needs the six `package-*` jobs and `upgrade-deb`, and passes only if all seven succeeded. tauri-cli comes prebuilt through cargo-binstall.
+**Packaging only on a `v*` tag or by hand.** `desktop.yml` builds, installs and smokes the six formats and runs the `.deb` upgrade only on a tag or `workflow_dispatch`, so bundling is always required there. `desktop-packaging` needs the six `package-*` jobs and `upgrade-deb`, and passes only if all seven succeeded *(and the four other upgrade jobs: ADR 0064)*. tauri-cli comes prebuilt through cargo-binstall.
 
 **Every job has `timeout-minutes`.** `check_needs.py --workflow` fails on a job without one in either workflow, and on a pull-request or branch trigger in `desktop.yml`.
 

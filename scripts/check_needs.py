@@ -6,11 +6,11 @@ keeps them gates.
     check_needs.py --ci '<toJSON(needs)>'   run by ci.yml's `ci` job
     check_needs.py --workflow               run by `check.py desktop-meta`
 
-In the workflow, `desktop-packaging` needs the six `package-*` jobs and
-`upgrade-deb`, and runs even when they did not (`if: always()`), so its
-verdict is an explicit pass or fail and never a skip. The workflow runs only
-on a tag or by hand, where bundling is always required, so the gate passes
-only when all seven succeeded. Anything else — a failure, a cancellation, a
+In the workflow, `desktop-packaging` needs the six `package-*` jobs and the
+five `upgrade-*` jobs, and runs even when they did not (`if: always()`), so
+its verdict is an explicit pass or fail and never a skip. The workflow runs
+only on a tag or by hand, where bundling is always required, so the gate
+passes only when all eleven succeeded. Anything else — a failure, a cancellation, a
 skip, a job missing from `needs` — fails. Packaging is reported done only
 from a run where this job passed.
 
@@ -19,8 +19,8 @@ needs every job in ci.yml except `win-test-full`, which never runs on a pull
 request, and likewise passes only when every one of them succeeded.
 
 `--workflow` fails when `.github/workflows/desktop.yml` stops matching this:
-a format or the upgrade dropped from `needs`, a `package-*` job added or
-renamed without being listed here, the `upgrade-deb` job removed, a trigger
+a format or an upgrade dropped from `needs`, a `package-*` or `upgrade-*` job
+added, renamed or removed without being listed here, a trigger
 on pull requests or branches, `continue-on-error` anywhere, the gate losing
 `if: always()`, or a `docker run` without `--init`. In ci.yml it fails when
 `ci` stops needing every other job but `win-test-full`, loses `if: always()`
@@ -43,8 +43,10 @@ CI = ROOT / ".github/workflows/ci.yml"
 FORMATS = ("deb", "rpm", "appimage", "flatpak", "nsis", "msi")
 PACKAGE_JOBS = tuple(f"package-{f}" for f in FORMATS)
 GATE = "desktop-packaging"
-UPGRADE = "upgrade-deb"
-GATED = (*PACKAGE_JOBS, UPGRADE)
+# The only proof that an update keeps the data; the AppImage has none, since
+# a user replaces its file.
+UPGRADE_JOBS = ("upgrade-deb", "upgrade-rpm", "upgrade-flatpak", "upgrade-nsis", "upgrade-msi")
+GATED = (*PACKAGE_JOBS, *UPGRADE_JOBS)
 CI_GATE = "ci"
 # The whole suite on Windows: too slow for a pull request, so it runs after
 # the merge and turns main red rather than holding up the gate.
@@ -118,6 +120,9 @@ def workflow() -> int:
     packages = {job for job in jobs if job.startswith("package-")}
     if packages != set(PACKAGE_JOBS):
         problems.append(f"package jobs are {sorted(packages)}, expected {sorted(PACKAGE_JOBS)}")
+    upgrades = {job for job in jobs if job.startswith("upgrade-")}
+    if upgrades != set(UPGRADE_JOBS):
+        problems.append(f"upgrade jobs are {sorted(upgrades)}, expected {sorted(UPGRADE_JOBS)}")
     block = re.search(rf"^  {GATE}:\s*\n((?:    .*\n|\s*\n)*)", text, re.MULTILINE)
     if block is None:
         problems.append(f"there is no {GATE} job")
@@ -126,15 +131,11 @@ def workflow() -> int:
         needs = re.search(r"^    needs:\s*\[([^\]]*)\]", body, re.MULTILINE)
         listed = {n.strip() for n in needs.group(1).split(",")} if needs else set()
         if listed != set(GATED):
-            problems.append(f"{GATE} needs {sorted(listed)}, expected the six package jobs and {UPGRADE}")
+            problems.append(f"{GATE} needs {sorted(listed)}, expected every package and upgrade job")
         if not re.search(r"^    if:\s*always\(\)\s*$", body, re.MULTILINE):
             problems.append(f"{GATE} must run with `if: always()`, or a skip could pass for success")
         if "scripts/check_needs.py" not in body:
             problems.append(f"{GATE} does not run scripts/check_needs.py")
-    # Not one of the six formats, but the only proof that an upgrade keeps the
-    # data, so it must not disappear either.
-    if UPGRADE not in jobs:
-        problems.append(f"the {UPGRADE} job is missing")
     # Packaging takes far longer than a pull request's five minutes; it runs
     # before a release, not on every change (ADR 0046, ADR 0063).
     on = re.search(r"^on:\s*\n((?:[ #].*\n|\s*\n)*)", text, re.MULTILINE)
@@ -156,7 +157,7 @@ def workflow() -> int:
         for problem in problems:
             print(f"  {problem}")
         return 1
-    print(f"{GATE} gates {len(PACKAGE_JOBS)} package jobs and {UPGRADE}")
+    print(f"{GATE} gates {len(PACKAGE_JOBS)} package jobs and {len(UPGRADE_JOBS)} upgrade jobs")
     print(f"{CI_GATE} gates {len(ci_gated(CI.read_text(encoding='utf-8')))} jobs")
     return 0
 
@@ -176,8 +177,8 @@ def main() -> int:
         return 2
     return gate(
         GATE, json.loads(sys.argv[1]), GATED,
-        failure=f"every package job and {UPGRADE} must succeed",
-        passed="all six formats installed and passed, and the upgrade kept the data",
+        failure="every package and upgrade job must succeed",
+        passed="all six formats installed and passed, and every upgrade kept the data",
     )
 
 
