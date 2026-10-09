@@ -1,0 +1,34 @@
+[package]
+name = "uguisu-feed"
+description = "Feed fetching and parsing (RSS, Atom, iTunes, Podcasting 2.0)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+uguisu-core = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+unicode-normalization = { workspace = true }
+quick-xml = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+feed-rs = { workspace = true }
+proptest = { workspace = true }
+
+[[bench]]
+name = "parser"
+harness = false

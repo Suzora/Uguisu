@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "origin": "recorded",
+  "recorded_at": "2026-09-17T13:36:52.877883311Z",
+  "source": "https://anchor.fm/s/00000000/podcast/rss",
+  "provider": "web/anchor_fm",
+  "case": "anchor_feed",
+  "request": {
+    "method": "GET",
+    "path": "/s/00000000/podcast/rss",
+    "query": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "public, s-maxage=605243, max-age=300",
+      "content-type": "application/rss+xml; charset=utf-8"
+    },
+    "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><rss xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:content=\"http://purl.org/rss/1.0/modules/content/\" xmlns:atom=\"http://www.w3.org/2005/Atom\" version=\"2.0\" xmlns:anchor=\"https://anchor.fm/xmlns\" xmlns:podcast=\"https://podcastindex.org/namespace/1.0\" xmlns:itunes=\"http://www.itunes.com/dtds/podcast-1.0.dtd\" xmlns:psc=\"http://podlove.org/simple-chapters\">\n\t<channel>\n\t\t<title><![CDATA[Placeholder Radio]]></title>\n\t\t<description><![CDATA[A placeholder show standing in for a recorded hobby podcast.]]></description>\n\t\t<link>https://www.example.com/placeholder-radio</link>\n\t\t<generator>Anchor Podcasts</generator>\n\t\t<lastBuildDate>Mon, 14 Sep 2026 23:48:06 GMT</lastBuildDate>\n\t\t<atom:link href=\"https://anchor.fm/s/00000000/podcast/rss\" rel=\"self\" type=\"application/rss+xml\"/>\n\t\t<author><![CDATA[Placeholder Host]]></author>\n\t\t<copyright><![CDATA[Placeholder Host]]></copyright>\n\t\t<language><![CDATA[en]]></language>\n\t\t<atom:link rel=\"hub\" href=\"https://pubsubhubbub.appspot.com/\"/>\n\t\t<itunes:author>Placeholder Host</itunes:author>\n\t\t<itunes:summary>A placeholder show standing in for a recorded hobby podcast.</itunes:summary>\n\t\t<itunes:type>episodic</itunes:type>\n\t\t<itunes:owner>\n\t\t\t<itunes:name>Placeholder Host</itunes:name>\n\t\t\t<itunes:email>owner@example.com</itunes:email>\n\t\t</itunes:owner>\n\t\t<itunes:explicit>false</itunes:explicit>\n\t\t<itunes:category text=\"News\">\n\t\t\t<itunes:category text=\"Entertainment News\"/>\n\t\t</itunes:category>\n\t\t<itunes:image href=\"https://media.example.com/artwork.jpg\"/>\n\t\t<item>\n\t\t\t<title><![CDATA[Episode 2: A guest visits the show!! ]]></title>\n\t\t\t<description><![CDATA[A guest talks about their week, and more!!! Stay tuned.\n]]></description>\n\t\t\t<link>https://www.example.com/placeholder-radio/episodes/episode-2</link>\n\t\t\t<guid isPermaLink=\"false\">00000000-0000-4000-8000-000000000002</guid>\n\t\t\t<dc:creator><![CDATA[Placeholder Host]]></dc:creator>\n\t\t\t<pubDate>Sat, 23 Oct 2021 17:35:26 GMT</pubDate>\n\t\t\t<enclosure url=\"https://anchor.fm/s/00000000/podcast/play/00000002/https%3A%2F%2Fmedia.example.com%2Fstaging%2F2021-10-23%2Fepisode-2.m4a\" length=\"40511361\" type=\"audio/x-m4a\"/>\n\t\t\t<itunes:summary>A guest talks about their week, and more!!! Stay tuned.\n</itunes:summary>\n\t\t\t<itunes:explicit>false</itunes:explicit>\n\t\t\t<itunes:duration>00:40:54</itunes:duration>\n\t\t\t<itunes:image href=\"https://media.example.com/artwork.jpg\"/>\n\t\t\t<itunes:season>1</itunes:season>\n\t\t\t<itunes:episode>2</itunes:episode>\n\t\t\t<itunes:episodeType>full</itunes:episodeType>\n\t\t</item>\n\t\t<item>\n\t\t\t<title><![CDATA[Episode 1: Placeholder Radio Debut]]></title>\n\t\t\t<description><![CDATA[Hey, this is the debut of Placeholder Radio, and I am happy you stopped by!\n]]></description>\n\t\t\t<link>https://www.example.com/placeholder-radio/episodes/episode-1</link>\n\t\t\t<guid isPermaLink=\"false\">00000000-0000-4000-8000-000000000001</guid>\n\t\t\t<dc:creator><![CDATA[Placeholder Host]]></dc:creator>\n\t\t\t<pubDate>Tue, 19 Oct 2021 05:02:45 GMT</pubDate>\n\t\t\t<enclosure url=\"https://anchor.fm/s/00000000/podcast/play/00000001/https%3A%2F%2Fmedia.example.com%2Fstaging%2F2021-10-19%2Fepisode-1.m4a\" length=\"13019073\" type=\"audio/x-m4a\"/>\n\t\t\t<itunes:summary>Hey, this is the debut of Placeholder Radio, and I am happy you stopped by!\n</itunes:summary>\n\t\t\t<itunes:explicit>false</itunes:explicit>\n\t\t\t<itunes:duration>00:13:24</itunes:duration>\n\t\t\t<itunes:image href=\"https://media.example.com/artwork.jpg\"/>\n\t\t\t<itunes:episodeType>full</itunes:episodeType>\n\t\t</item>\n\t</channel>\n</rss>"
+  },
+  "notes": [
+    "Body replaced by a placeholder feed of the same shape: the recording was a private person's hobby podcast and carried personal data (tests/fixtures/README.md). Source and request path use a placeholder show id. The recorded body's etag is dropped."
+  ]
+}

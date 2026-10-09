@@ -1,0 +1,18 @@
+[package]
+name = "openapi-doc"
+description = "Writes docs/api/openapi.json from the server's derived contract"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+uguisu-server = { workspace = true }
+utoipa = { workspace = true }
+serde_json = { workspace = true }

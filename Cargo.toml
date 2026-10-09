@@ -1,0 +1,128 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "tools/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/suzora/uguisu"
+homepage = "https://github.com/suzora/uguisu"
+authors = ["Suzora contributors"]
+categories = ["multimedia::audio", "command-line-utilities"]
+keywords = ["podcast", "rss", "archive", "downloader"]
+
+[workspace.dependencies]
+# Internal crates
+uguisu-core = { path = "crates/uguisu-core" }
+uguisu-http = { path = "crates/uguisu-http" }
+uguisu-discovery = { path = "crates/uguisu-discovery" }
+uguisu-feed = { path = "crates/uguisu-feed" }
+uguisu-download = { path = "crates/uguisu-download" }
+uguisu-archive = { path = "crates/uguisu-archive" }
+uguisu-metadata = { path = "crates/uguisu-metadata" }
+uguisu-storage = { path = "crates/uguisu-storage" }
+uguisu-engine = { path = "crates/uguisu-engine" }
+uguisu-server = { path = "crates/uguisu-server" }
+
+# Runtime and web
+ipnet = "2.12"
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "signal", "sync", "time", "net", "fs", "io-util"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio"] }
+tokio-stream = "0.1"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+
+# CLI
+clap = { version = "4.6", features = ["derive", "env", "wrap_help"] }
+
+# Serialization and errors
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+anyhow = "1"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+
+# HTTP client stack (only uguisu-http may depend on reqwest — ADR 0011)
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "gzip", "brotli", "deflate", "json", "stream", "charset"] }
+governor = "0.10"
+httpdate = "1"
+http = "1"
+bytes = "1"
+url = { version = "2", features = ["serde"] }
+tokio-util = { version = "0.7", features = ["io", "rt"] }
+fs4 = "1"                                  # free-space query for the media directory (download engine)
+walkdir = "2"                              # bounded, symlink-aware tree walking (archive scan and import)
+
+# Discovery
+strsim = "0.11"
+unicode-normalization = "0.1"
+deunicode = "1"
+moka = { version = "0.12", features = ["future"] }
+scraper = { version = "0.27", default-features = false }
+sha1 = "0.10"
+hex = "0.4"
+async-trait = "0.1"
+percent-encoding = "2"
+time = { version = "0.3", features = ["formatting", "parsing", "macros", "serde"] }
+
+# Metadata tags (only uguisu-metadata may depend on lofty - ADR 0012)
+lofty = "0.25"
+
+# Feed parsing
+quick-xml = "0.42"
+sha2 = "0.10"
+ulid = "3"
+
+# Authentication (ADR 0035)
+subtle = "2"                               # constant-time comparison of a presented credential
+# argon2id with PHC strings, so the parameters travel with the hash. `rand` is
+# off: `getrandom` is the one source of randomness, and it makes the salt too.
+argon2 = { version = "0.5", default-features = false, features = ["alloc", "password-hash"] }
+getrandom = "0.3"                          # OS randomness for session, CSRF and token secrets
+rpassword = "7"                            # reading a password without echoing it (no unsafe termios)
+
+# The API contract: schemas derived from the wire types (ADR 0039)
+utoipa = { version = "5.5", features = ["time", "url"] }
+
+# Persistence (only uguisu-storage may depend on sqlx — ADR 0002)
+sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros", "time", "json", "tls-none"] }
+directories = "6"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+
+# Testing and benchmarking
+wiremock = "0.6"
+criterion = { version = "0.8", features = ["async_tokio"] }
+proptest = "1"
+insta = { version = "1", features = ["json"] }
+tempfile = "3"
+feed-rs = "2"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+doc_markdown = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+unwrap_used = "warn"
+expect_used = "warn"
+dbg_macro = "warn"
+todo = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+disallowed_methods = "deny"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

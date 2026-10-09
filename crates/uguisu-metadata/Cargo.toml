@@ -1,0 +1,30 @@
+[package]
+name = "uguisu-metadata"
+description = "Media metadata reading and writing with format capabilities and policies"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+uguisu-core = { workspace = true }
+lofty = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+uguisu-core = { workspace = true }
+criterion = { workspace = true }
+lofty = { workspace = true }
+tempfile = { workspace = true }
+
+[[bench]]
+name = "tags"
+harness = false
+

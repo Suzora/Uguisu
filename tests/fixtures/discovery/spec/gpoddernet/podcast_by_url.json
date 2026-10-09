@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "origin": "spec-example",
+  "recorded_at": "2026-09-17T00:00:00Z",
+  "source": "https://github.com/gpodder/mygpo/blob/master/doc/api/reference/directory.rst",
+  "provider": "gpoddernet",
+  "case": "podcast_by_url",
+  "request": {
+    "method": "GET",
+    "path": "/api/2/data/podcast.json",
+    "query": {
+      "url": "http://feeds.feedburner.com/coverville"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "website": "http://coverville.com",
+      "mygpo_link": "http://www.gpodder.net/podcast/16124",
+      "description": "The best cover songs, delivered to your ears two to three times a week!",
+      "subscribers": 19,
+      "title": "Coverville",
+      "author": "Brian Ibbott",
+      "url": "http://feeds.feedburner.com/coverville",
+      "logo_url": "http://www.coverville.com/art/coverville_iTunes300.jpg"
+    }
+  }
+}

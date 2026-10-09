@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "origin": "spec-example",
+  "recorded_at": "2026-09-17T00:00:00Z",
+  "source": "https://github.com/gpodder/mygpo/blob/master/doc/api/reference/directory.rst",
+  "provider": "gpoddernet",
+  "case": "search_floss",
+  "request": {
+    "method": "GET",
+    "path": "/search.json",
+    "query": {
+      "q": "floss weekly"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": [
+      {
+        "url": "http://leo.am/podcasts/floss",
+        "title": "FLOSS Weekly",
+        "author": "Leo Laporte",
+        "description": "Each Thursday we talk about Free Libre and Open Source Software with the people who are writing it. Part of the TWiT Netcast Network.",
+        "subscribers": 1138,
+        "logo_url": "http://leoville.tv/podcasts/coverart/floss144audio.jpg",
+        "scaled_logo_url": "http://leoville.tv/podcasts/coverart/floss144audio.jpg",
+        "website": "http://twit.tv/",
+        "mygpo_link": "http://gpodder.net/podcast/12925"
+      },
+      {
+        "url": "http://feeds.twit.tv/floss_video_large",
+        "title": "FLOSS Weekly Video (large)",
+        "author": "Leo Laporte",
+        "description": "We're not talking dentistry here; FLOSS all about Free Libre Open Source Software.",
+        "subscribers": 50,
+        "logo_url": "http://static.mediafly.com/publisher/images/06cecab60c784f9d9866f5dcb73227c3/icon-150x150.png",
+        "website": "http://twit.tv/",
+        "mygpo_link": "http://www.gpodder.net/podcast/31991"
+      }
+    ]
+  }
+}

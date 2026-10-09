@@ -1,0 +1,108 @@
+{
+  "schema": 1,
+  "origin": "recorded",
+  "recorded_at": "2026-09-17T13:29:56Z",
+  "source": "https://api.fyyd.de/0.2/search/podcast?title=Darknet%20Diaries&count=3",
+  "provider": "fyyd",
+  "case": "search_darknet",
+  "request": {
+    "method": "GET",
+    "path": "/0.2/search/podcast",
+    "query": {
+      "count": "3",
+      "title": "Darknet Diaries"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "no-cache, no-store, must-revalidate",
+      "content-type": "application/json; charset=UTF-8"
+    },
+    "body": {
+      "status": 1,
+      "msg": "ok",
+      "meta": {
+        "paging": {
+          "count": 3,
+          "page": 0,
+          "first_page": 0,
+          "last_page": 0,
+          "next_page": null,
+          "prev_page": null
+        },
+        "API_INFO": {
+          "API_VERSION": "0.2"
+        },
+        "SERVER": "redacted",
+        "duration": 0
+      },
+      "data": [
+        {
+          "title": "Darknet Diaries",
+          "id": 50503,
+          "xmlURL": "https://podcast.darknetdiaries.com",
+          "htmlURL": "https://darknetdiaries.com/",
+          "imgURL": "https://f.prxu.org/7057/images/68ff605a-20f3-437f-9ba9-2d17316724b1/uploads_2F1562951997273-pdd2keiryql-99f75240ab90a579e25720d85d3057b2_2Fdarknet-diaries-rss.jpg",
+          "status": 200,
+          "status_since": "2026-02-09 22:08:03",
+          "slug": "darknet-diaries",
+          "layoutImageURL": "https://img-1.fyyd.de/pd/layout/5050377edfe2391826166bf1b8e16cfae4868.jpg",
+          "thumbImageURL": "https://img-1.fyyd.de/pd/thumbs/5050377edfe2391826166bf1b8e16cfae4868.png",
+          "smallImageURL": "https://img-1.fyyd.de/pd/small/5050377edfe2391826166bf1b8e16cfae4868.jpg",
+          "microImageURL": "https://img-1.fyyd.de/pd/micro/5050377edfe2391826166bf1b8e16cfae4868.png",
+          "language": "en",
+          "generator": "PRX Feeder v1.0.0",
+          "categories": [
+            203
+          ],
+          "lastpub": "2026-03-03T09:00:00+01:00",
+          "rank": 120,
+          "url_fyyd": "https://fyyd.de/podcast/darknet-diaries/0",
+          "description": "Explore true stories of the dark side of the Internet with host Jack Rhysider as he takes you on a journey through the chilling world of hacking, data breaches, and cyber crime.\n\n¿Hablas español? Escucha en español aquí ➔ https://darknetdiaries.com/es/\n    ",
+          "subtitle": "True stories from the dark side of the Internet",
+          "tcolor": "#fff",
+          "color": "#2f2e2e",
+          "episode_count": 194,
+          "iflags": null,
+          "paymentURL": null,
+          "author": "Jack Rhysider"
+        },
+        {
+          "title": "Darknet Diaries Deutsch",
+          "id": 89345,
+          "xmlURL": "https://darknet-diaries-deutsch.podigee.io/feed/mp3",
+          "htmlURL": "https://darknet-diaries-deutsch.podigee.io/",
+          "imgURL": "https://images.podigee-cdn.net/0x,smgIjvf0cmsqHNTvMhskLF8gWGl6Aiprg91RahrSdPZI=/https://main.podigee-cdn.net/uploads/u13959/a9c31b14-c6fb-47c8-861b-ba1219a0507e.jpg",
+          "status": 200,
+          "status_since": "2025-09-05 09:16:01",
+          "slug": "darknet-diaries-deutsch",
+          "layoutImageURL": "https://img-1.fyyd.de/pd/layout/893456ee37054f6dbe566b3fe52e01f1bffcb.jpg",
+          "thumbImageURL": "https://img-1.fyyd.de/pd/thumbs/893456ee37054f6dbe566b3fe52e01f1bffcb.png",
+          "smallImageURL": "https://img-1.fyyd.de/pd/small/893456ee37054f6dbe566b3fe52e01f1bffcb.jpg",
+          "microImageURL": "https://img-1.fyyd.de/pd/micro/893456ee37054f6dbe566b3fe52e01f1bffcb.png",
+          "language": "de",
+          "generator": "Podigee (https://podigee.com)",
+          "categories": [
+            203
+          ],
+          "lastpub": "2026-09-15T16:02:00+02:00",
+          "rank": 42,
+          "url_fyyd": "https://fyyd.de/podcast/darknet-diaries-deutsch/0",
+          "description": "heise online erzählt wahre Geschichten von der dunklen Seite des Internets.\nDie englische Originalfassung der Darknet Diaries ist ein investigativer Podcast von Jack Rhysider.\n \nEs geht um Hacker, Botnets, Kryptographie, Hacktivismus, Cyberkriminalität und all die Dinge, die in den verborgenen Ecken des Internets lauern. \nheise online übersetzt den Erfolgspodcast jetzt ins Deutsche.\n\n",
+          "subtitle": "heise online erzählt wahre Geschichten von der dunklen Seite des Internets.\nDie englische Originalfassung der Darknet Diaries ist ein investigativer Podcast von Jack Rhysider.\n \nEs geht um Hacker, Botnets, Kryptographie, Hacktivismus, Cyberkriminalität und all die Dinge, die in den verborgenen Ecken des Internets lauern. \nheise online übersetzt den Erfolgspodcast jetzt ins Deutsche.\n\n",
+          "tcolor": "#fff",
+          "color": "#2b2e3a",
+          "episode_count": 24,
+          "iflags": null,
+          "paymentURL": null,
+          "author": "heise online"
+        }
+      ]
+    }
+  },
+  "notes": [
+    "captured with curl (record-fixtures has no fyyd provider); reference only, no fyyd provider is implemented",
+    "meta.SERVER redacted"
+  ]
+}

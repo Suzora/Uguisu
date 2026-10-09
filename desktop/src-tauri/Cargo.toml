@@ -1,0 +1,58 @@
+[package]
+name = "uguisu-desktop"
+publish = false
+description = "Uguisu as a desktop application: the same server, the same web UI, in a native window."
+# Mirrors the root workspace version. `scripts/check.py version` fails if the
+# two ever disagree; the root `Cargo.toml` is the authority.
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[build-dependencies]
+tauri-build = { version = "=2.6.3", features = [] }
+
+[features]
+default = ["gtk-file-chooser"]
+# The file chooser backend. rfd refuses to build with both, so the Flatpak is
+# built with `--no-default-features --features flatpak`: inside the sandbox
+# the GTK chooser can only ever show the sandbox, and the portal one shows the
+# user's real folders.
+gtk-file-chooser = ["tauri-plugin-dialog/gtk3"]
+flatpak = ["tauri-plugin-dialog/xdg-portal"]
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1.53", features = ["macros", "rt-multi-thread"] }
+
+[dependencies]
+uguisu-archive = { path = "../../crates/uguisu-archive" }
+uguisu-core = { path = "../../crates/uguisu-core" }
+uguisu-engine = { path = "../../crates/uguisu-engine" }
+uguisu-server = { path = "../../crates/uguisu-server" }
+auto-launch = "=0.5.0"
+directories = "6"
+dunce = "1"
+tauri = { version = "=2.11.6", features = ["tray-icon"] }
+# The chooser backend is picked by a feature of this crate; see [features].
+tauri-plugin-dialog = { version = "=2.7.3", default-features = false }
+tauri-plugin-notification = "=2.4.0"
+tauri-plugin-opener = "=2.5.5"
+time = "0.3"
+tokio = { version = "1.53", features = ["rt-multi-thread", "sync", "signal"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Read-only, to tell a Run value an installer deleted from one switched off in
+# Task Manager. The version `auto-launch` already builds with.
+[target.'cfg(windows)'.dependencies]
+winreg = "0.10"

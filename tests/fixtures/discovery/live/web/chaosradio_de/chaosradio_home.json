@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "origin": "recorded",
+  "recorded_at": "2026-09-17T13:36:49.847987173Z",
+  "source": "https://chaosradio.de/",
+  "provider": "web/chaosradio_de",
+  "case": "chaosradio_home",
+  "request": {
+    "method": "GET",
+    "path": "/",
+    "query": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/html; charset=UTF-8"
+    },
+    "body": "<!DOCTYPE html>\n<html lang=\"de\">\n<head>\n<meta charset=\"utf-8\">\n<title>\nChaosradio | Das monatliche Radio des Chaos Computer Club Berlin\t</title>\n<link rel=\"alternate\" type=\"application/rss+xml\" title=\"Podcast Feed: Chaosradio (MP3 Audio)\" href=\"https://chaosradio.de/feed/mp3\" />\n<link rel=\"alternate\" type=\"application/rss+xml\" title=\"Podcast Feed: Chaosradio (MP4 Audio)\" href=\"https://chaosradio.de/feed/m4a\" />\n<link rel=\"alternate\" type=\"application/rss+xml\" title=\"Podcast Feed: Chaosradio (Opus Audio)\" href=\"https://chaosradio.de/feed/opus\" />\n</head>\n<body></body>\n</html>\n"
+  },
+  "notes": [
+    "Body reduced to the head's <title> and its autodiscovery <link> elements, copied verbatim; the page content is third-party copyright and no test reads it."
+  ]
+}

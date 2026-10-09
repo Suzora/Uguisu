@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Minimal Show</title>
+    <link>https://minimal.example/</link>
+    <description>Just enough.</description>
+    <item>
+      <title>Only Episode</title>
+      <enclosure url="https://minimal.example/ep1.mp3" type="audio/mpeg" length="1234"/>
+      <guid>ep-1</guid>
+      <pubDate>Mon, 01 Sep 2025 10:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

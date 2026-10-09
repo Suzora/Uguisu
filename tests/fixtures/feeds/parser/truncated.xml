@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<rss version="2.0">
+  <channel>
+    <title>Cut off</title>
+    <item><title>Complete</title><guid>t1</guid><enclosure url="https://cdn.example/t1.mp3" type="audio/mpeg"/></item>
+    <item><title>Half</title><guid>t2</guid><enclosure url="https://cdn.example/t2.mp3" type="audio/mp

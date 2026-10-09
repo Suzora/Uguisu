@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Moving Show</title>
+    <atom:link rel="self" href="https://old.example/feed.xml"/>
+    <itunes:new-feed-url>https://new.example/feed.xml</itunes:new-feed-url>
+    <item><title>Ep</title><guid>m1</guid><enclosure url="https://cdn.example/m1.mp3" type="audio/mpeg"/></item>
+  </channel>
+</rss>

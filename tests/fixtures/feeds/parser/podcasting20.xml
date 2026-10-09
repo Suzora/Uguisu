@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:podcast="https://podcastindex.org/namespace/1.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Podcasting 2.0 Show</title>
+    <link>https://p20.example/</link>
+    <description>All the tags.</description>
+    <language>en-us</language>
+    <copyright>© 2025 P20</copyright>
+    <managingEditor>editor@p20.example (Ed Itor)</managingEditor>
+    <lastBuildDate>Mon, 01 Sep 2025 10:00:00 +0000</lastBuildDate>
+    <generator>Uguisu fixtures</generator>
+    <atom:link rel="self" href="https://p20.example/feed.xml"/>
+    <itunes:author>P20 Host</itunes:author>
+    <itunes:subtitle>Sub</itunes:subtitle>
+    <itunes:summary>Summary text</itunes:summary>
+    <itunes:owner><itunes:name>Owner Name</itunes:name><itunes:email>owner@p20.example</itunes:email></itunes:owner>
+    <itunes:image href="https://p20.example/art.jpg"/>
+    <itunes:category text="Technology"><itunes:category text="Tech News"/></itunes:category>
+    <itunes:category text="Society &amp; Culture"/>
+    <itunes:explicit>false</itunes:explicit>
+    <itunes:type>episodic</itunes:type>
+    <podcast:guid>917393e3-1b1e-5cef-ace4-edaa54e1f810</podcast:guid>
+    <podcast:locked owner="owner@p20.example">yes</podcast:locked>
+    <podcast:medium>podcast</podcast:medium>
+    <podcast:funding url="https://p20.example/support">Support the show</podcast:funding>
+    <item>
+      <title>Full P2.0 Episode</title>
+      <itunes:title>Full P2.0 Episode</itunes:title>
+      <guid isPermaLink="false">p20-ep-1</guid>
+      <link>https://p20.example/ep/1</link>
+      <pubDate>Mon, 01 Sep 2025 10:00:00 +0000</pubDate>
+      <description>Short</description>
+      <content:encoded><![CDATA[<p>Long <b>notes</b></p>]]></content:encoded>
+      <itunes:duration>00:30:00</itunes:duration>
+      <itunes:season>2</itunes:season>
+      <itunes:episode>7</itunes:episode>
+      <itunes:episodeType>full</itunes:episodeType>
+      <itunes:explicit>no</itunes:explicit>
+      <itunes:image href="https://p20.example/ep1.jpg"/>
+      <itunes:author>Guest Author</itunes:author>
+      <enclosure url="https://cdn.p20.example/ep1.mp3" type="audio/mpeg" length="24000000"/>
+      <podcast:transcript url="https://p20.example/ep1.srt" type="application/x-subrip" language="en" rel="captions"/>
+      <podcast:transcript url="https://p20.example/ep1.vtt" type="text/vtt"/>
+      <podcast:chapters url="https://p20.example/ep1.chapters.json" type="application/json+chapters"/>
+      <podcast:person role="host" group="cast" img="https://p20.example/host.jpg" href="https://p20.example/host">P20 Host</podcast:person>
+      <podcast:person role="guest">Guest Author</podcast:person>
+      <podcast:location geo="geo:52.52,13.405" osm="R62422">Berlin</podcast:location>
+      <podcast:soundbite startTime="73.0" duration="60.0">Best bit</podcast:soundbite>
+      <podcast:license url="https://creativecommons.org/licenses/by/4.0/">cc-by-4.0</podcast:license>
+      <podcast:txt purpose="verify">abc123</podcast:txt>
+      <podcast:value type="lightning" method="keysend" suggested="0.00000015000">
+        <podcast:valueRecipient name="Host" type="node" address="02abc" split="90"/>
+        <podcast:valueRecipient name="App" type="node" address="03def" split="10" fee="true"/>
+      </podcast:value>
+      <podcast:season name="Second">2</podcast:season>
+      <podcast:episode display="Seven">7</podcast:episode>
+      <custom:thing xmlns:custom="https://example.com/custom" attr="x">kept raw</custom:thing>
+    </item>
+  </channel>
+</rss>

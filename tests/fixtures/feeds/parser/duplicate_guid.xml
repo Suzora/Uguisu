@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<rss version="2.0">
+  <channel>
+    <title>Duplicate GUIDs</title>
+    <item>
+      <title>Alpha</title>
+      <guid isPermaLink="false">same</guid>
+      <pubDate>Mon, 01 Sep 2025 10:00:00 +0000</pubDate>
+      <enclosure url="https://cdn.example/alpha.mp3" type="audio/mpeg" length="100"/>
+    </item>
+    <item>
+      <title>Beta</title>
+      <guid isPermaLink="false">same</guid>
+      <pubDate>Tue, 02 Sep 2025 10:00:00 +0000</pubDate>
+      <enclosure url="https://cdn.example/beta.mp3" type="audio/mpeg" length="200"/>
+    </item>
+    <item>
+      <title>Gamma</title>
+      <guid>unique</guid>
+      <pubDate>Wed, 03 Sep 2025 10:00:00 +0000</pubDate>
+      <enclosure url="https://cdn.example/gamma.mp3" type="audio/mpeg" length="300"/>
+    </item>
+  </channel>
+</rss>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The one canonical Uguisu mark. Every packaged icon is rasterised from this
+     file; see desktop/README.md for the command. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="112" fill="#1d3f5c"/>
+  <g transform="translate(0 -12)">
+    <!-- Tail, swept back and down. -->
+    <path fill="#4fa8c7" d="M150 268 L54 310 L92 330 L74 372 L176 322 Z"/>
+    <!-- Body: an egg leaning forward into the flight direction. -->
+    <ellipse cx="240" cy="276" rx="108" ry="88" transform="rotate(-18 240 276)" fill="#7fd1e8"/>
+    <!-- Head. -->
+    <circle cx="336" cy="196" r="58" fill="#7fd1e8"/>
+    <!-- Beak. -->
+    <path fill="#f2b441" d="M388 182 L448 200 L386 222 Z"/>
+    <!-- Wing, a single leaf lifted off the body. -->
+    <path fill="#ffffff" opacity="0.93"
+          d="M196 236c54-34 116-30 152 6-30 54-86 82-148 68-16-26-16-52-4-74z"/>
+    <!-- Eye. -->
+    <circle cx="352" cy="186" r="12" fill="#1d3f5c"/>
+  </g>
+</svg>

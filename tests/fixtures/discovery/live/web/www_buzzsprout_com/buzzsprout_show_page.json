@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "origin": "recorded",
+  "recorded_at": "2026-09-17T13:36:52.603164468Z",
+  "source": "https://www.buzzsprout.com/1",
+  "provider": "web/www_buzzsprout_com",
+  "case": "buzzsprout_show_page",
+  "request": {
+    "method": "GET",
+    "path": "/1",
+    "query": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "max-age=0, private, must-revalidate",
+      "content-type": "text/html; charset=utf-8"
+    },
+    "body": "<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>How to Start a Podcast</title>\n<link rel=\"alternate\" type=\"application/json+oembed\" href=\"https://www.buzzsprout.com/1/episodes/oembed\" title=\"How to Start a Podcast\" />\n<link type=\"application/rss+xml\" rel=\"alternate\" title=\"How to Start a Podcast\" href=\"https://feeds.buzzsprout.com/1.rss\">\n</head>\n<body></body>\n</html>\n"
+  },
+  "notes": [
+    "Body reduced to the head's <title> and its autodiscovery <link> elements, copied verbatim; the page content is third-party copyright and no test reads it. The recorded body's etag is dropped."
+  ]
+}

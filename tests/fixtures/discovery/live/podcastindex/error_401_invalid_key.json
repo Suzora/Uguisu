@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "origin": "recorded",
+  "recorded_at": "2026-09-17T13:36:47.417269062Z",
+  "source": "https://api.podcastindex.org/api/1.0/search/byterm?q=Darknet+Diaries&max=25&similar=true",
+  "provider": "podcastindex",
+  "case": "error_401_invalid_key",
+  "request": {
+    "method": "GET",
+    "path": "/api/1.0/search/byterm",
+    "query": {
+      "max": "25",
+      "q": "Darknet Diaries",
+      "similar": "true"
+    }
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "cache-control": "no-cache, must-revalidate",
+      "content-type": "application/json"
+    },
+    "body": "The X-Auth-Key header contains an invalid API key.  Please see: https://podcastindex-org.github.io/docs-api/#overview--authentication-details"
+  }
+}

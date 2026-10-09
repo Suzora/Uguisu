@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "origin": "recorded",
+  "recorded_at": "2026-09-17T13:36:36.775582992Z",
+  "source": "https://itunes.apple.com/search?term=zzqxjvwplk+nonexistent&country=US&media=podcast&entity=podcast&limit=25",
+  "provider": "apple",
+  "case": "search_empty",
+  "request": {
+    "method": "GET",
+    "path": "/search",
+    "query": {
+      "country": "US",
+      "entity": "podcast",
+      "limit": "25",
+      "media": "podcast",
+      "term": "zzqxjvwplk nonexistent"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "max-age=86400",
+      "content-type": "text/javascript; charset=utf-8"
+    },
+    "body": {
+      "resultCount": 0,
+      "results": []
+    }
+  }
+}

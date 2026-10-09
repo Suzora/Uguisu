@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<rss version="2.0" xmlns:podcast="https://podcastindex.org/namespace/1.0" xmlns:media="http://search.yahoo.com/mrss/">
+  <channel>
+    <title>Enclosures</title>
+    <item>
+      <title>No enclosure</title><guid>e1</guid>
+    </item>
+    <item>
+      <title>Multiple</title><guid>e2</guid>
+      <enclosure url="https://cdn.example/e2.mp3" type="audio/mpeg" length="1000"/>
+      <podcast:alternateEnclosure type="audio/opus" length="500" bitrate="64000" title="Opus" default="false">
+        <podcast:source uri="https://cdn.example/e2.opus"/>
+        <podcast:source uri="ipfs://Qm123" contentType="audio/opus"/>
+        <podcast:integrity type="sri" value="sha384-abc"/>
+      </podcast:alternateEnclosure>
+      <podcast:alternateEnclosure type="video/mp4" length="9000000" height="720" codecs="avc1">
+        <podcast:source uri="https://cdn.example/e2.mp4"/>
+      </podcast:alternateEnclosure>
+    </item>
+    <item>
+      <title>Unknown mime</title><guid>e3</guid>
+      <enclosure url="https://cdn.example/e3.bin" type="application/octet-stream" length="not-a-number"/>
+    </item>
+    <item>
+      <title>Media content only</title><guid>e4</guid>
+      <media:content url="https://cdn.example/e4.m4a" type="audio/mp4" fileSize="777"/>
+    </item>
+    <item>
+      <title>Enclosure without url</title><guid>e5</guid>
+      <enclosure type="audio/mpeg" length="1"/>
+    </item>
+    <item>
+      <title>Uppercase mime and ogg</title><guid>e6</guid>
+      <enclosure url="https://cdn.example/e6.ogg" type="Audio/OGG" length="12"/>
+    </item>
+  </channel>
+</rss>

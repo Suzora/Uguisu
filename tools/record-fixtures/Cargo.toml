@@ -1,0 +1,23 @@
+[package]
+name = "record-fixtures"
+description = "Records provider, website and feed responses as sanitized test fixtures"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+uguisu-core = { workspace = true }
+uguisu-discovery = { workspace = true, features = ["testing"] }
+uguisu-http = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }

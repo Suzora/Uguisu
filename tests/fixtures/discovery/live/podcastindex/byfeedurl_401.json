@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "origin": "recorded",
+  "recorded_at": "2026-09-17T13:36:47.977252721Z",
+  "source": "https://api.podcastindex.org/api/1.0/podcasts/byfeedurl?url=https%3A%2F%2Ffeeds.megaphone.fm%2Fdarknetdiaries",
+  "provider": "podcastindex",
+  "case": "byfeedurl_401",
+  "request": {
+    "method": "GET",
+    "path": "/api/1.0/podcasts/byfeedurl",
+    "query": {
+      "url": "https://feeds.megaphone.fm/darknetdiaries"
+    }
+  },
+  "response": {
+    "status": 401,
+    "headers": {
+      "cache-control": "no-cache, must-revalidate",
+      "content-type": "application/json"
+    },
+    "body": "The X-Auth-Key header contains an invalid API key.  Please see: https://podcastindex-org.github.io/docs-api/#overview--authentication-details"
+  }
+}

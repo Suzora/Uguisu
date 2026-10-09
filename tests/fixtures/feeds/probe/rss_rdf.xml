@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns="http://purl.org/rss/1.0/" xmlns:enc="http://purl.oclc.org/net/rss_2.0/enc#">
+  <channel rdf:about="https://rdf.test/">
+    <title>RDF Cast</title>
+    <link>https://rdf.test/</link>
+    <description>RSS 1.0</description>
+  </channel>
+  <item rdf:about="https://rdf.test/1">
+    <title>One</title>
+    <link>https://rdf.test/1</link>
+    <enc:enclosure rdf:resource="https://rdf.test/1.mp3" enc:type="audio/mpeg" enc:length="10"/>
+  </item>
+</rdf:RDF>

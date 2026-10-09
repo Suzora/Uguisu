@@ -1,0 +1,139 @@
+{
+  "schema": 1,
+  "origin": "spec-example",
+  "recorded_at": "2026-09-17T00:00:00Z",
+  "source": "https://github.com/Podcastindex-org/docs-api/blob/master/docs/pi_api.yaml (feed_search field shape); values illustrative",
+  "provider": "podcastindex",
+  "case": "search_darknet",
+  "request": {
+    "method": "GET",
+    "path": "/search/byterm",
+    "query": {
+      "q": "darknet diaries"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "public, max-age=300"
+    },
+    "body": {
+      "status": "true",
+      "feeds": [
+        {
+          "id": 1001,
+          "podcastGuid": "11111111-1111-5111-8111-111111111111",
+          "title": "Darknet Diaries",
+          "url": "https://feeds.megaphone.fm/darknetdiaries",
+          "originalUrl": "https://feeds.megaphone.fm/darknetdiaries",
+          "link": "https://darknetdiaries.com/",
+          "description": "Darknet Diaries description.",
+          "author": "Jack Rhysider",
+          "ownerName": "Jack Rhysider",
+          "image": "https://img.test/1001.jpg",
+          "artwork": "https://img.test/1001.jpg",
+          "lastUpdateTime": 1757000000,
+          "lastCrawlTime": 1757000000,
+          "lastParseTime": 1757000000,
+          "lastGoodHttpStatusTime": 1757000000,
+          "lastHttpStatus": 200,
+          "contentType": "application/rss+xml",
+          "itunesId": 1296350485,
+          "generator": "host",
+          "language": "en",
+          "explicit": false,
+          "type": 0,
+          "medium": "podcast",
+          "dead": 0,
+          "episodeCount": 180,
+          "crawlErrors": 0,
+          "parseErrors": 0,
+          "categories": {
+            "102": "Technology",
+            "104": "True Crime"
+          },
+          "locked": 0,
+          "imageUrlHash": 1,
+          "newestItemPubdate": 1756800000
+        },
+        {
+          "id": 1002,
+          "podcastGuid": "22222222-2222-5222-8222-222222222222",
+          "title": "Darknet Diaries Fan Recap",
+          "url": "https://example-recap.test/feed.xml",
+          "originalUrl": "https://example-recap.test/feed.xml",
+          "link": "https://example-recap.test/",
+          "description": "Darknet Diaries Fan Recap description.",
+          "author": "Recap Crew",
+          "ownerName": "Recap Crew",
+          "image": "https://img.test/1002.jpg",
+          "artwork": "https://img.test/1002.jpg",
+          "lastUpdateTime": 1757000000,
+          "lastCrawlTime": 1757000000,
+          "lastParseTime": 1757000000,
+          "lastGoodHttpStatusTime": 1757000000,
+          "lastHttpStatus": 200,
+          "contentType": "application/rss+xml",
+          "itunesId": null,
+          "generator": "host",
+          "language": "en",
+          "explicit": false,
+          "type": 0,
+          "medium": "podcast",
+          "dead": 0,
+          "episodeCount": 12,
+          "crawlErrors": 0,
+          "parseErrors": 0,
+          "categories": {
+            "102": "Technology"
+          },
+          "locked": 0,
+          "imageUrlHash": 1,
+          "newestItemPubdate": 1756800000
+        },
+        {
+          "id": 1003,
+          "podcastGuid": "33333333-3333-5333-8333-333333333333",
+          "title": "Darknet Deep Dive",
+          "url": "https://deepdive.test/rss",
+          "originalUrl": "https://deepdive.test/rss",
+          "link": "https://deepdive.test/",
+          "description": "Darknet Deep Dive description.",
+          "author": "Deep Diver",
+          "ownerName": "Deep Diver",
+          "image": "https://img.test/1003.jpg",
+          "artwork": "https://img.test/1003.jpg",
+          "lastUpdateTime": 1757000000,
+          "lastCrawlTime": 1757000000,
+          "lastParseTime": 1757000000,
+          "lastGoodHttpStatusTime": 1757000000,
+          "lastHttpStatus": 200,
+          "contentType": "application/rss+xml",
+          "itunesId": null,
+          "generator": "host",
+          "language": "en",
+          "explicit": false,
+          "type": 0,
+          "medium": "podcast",
+          "dead": 1,
+          "episodeCount": 3,
+          "crawlErrors": 0,
+          "parseErrors": 0,
+          "categories": {
+            "102": "Technology"
+          },
+          "locked": 0,
+          "imageUrlHash": 1,
+          "newestItemPubdate": 1756800000
+        }
+      ],
+      "count": 3,
+      "query": "darknet diaries",
+      "description": "Found matching feeds."
+    }
+  },
+  "notes": [
+    "Illustrative values in the spec's field shape; the Darknet Diaries entry shares feed URL and iTunes id with the Apple fixture so cross-provider dedup can be exercised. Replace with a recording in Part B."
+  ]
+}

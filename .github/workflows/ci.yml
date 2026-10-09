@@ -1,0 +1,143 @@
+name: CI
+
+# Three jobs, cheapest first, so a failure stops before the expensive ones
+# (ADR 0046). Every check's command lives in scripts/check.py, so CI and a
+# developer run the same thing. --stream keeps the full output in the Actions
+# log; --require-tools turns a missing tool into a failure rather than a skip.
+#
+# - quick: everything that needs no compiler, on every pull request event.
+# - linux: the workspace, the web UI, e2e and the desktop crate, unless only
+#   Markdown changed.
+# - windows: the same Rust checks on Windows, once the pull request is ready
+#   for review, never on a draft.
+#
+# Nothing runs on a push to main: the pull request already ran on the tree
+# that is merged. Packaging lives in desktop.yml and runs on tags and by hand.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+  # Full debug info makes `build` alone 14 GB, more than a hosted runner has free; line tables keep backtraces.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quick:
+    name: Quick checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      code: ${{ steps.decide.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The migration guard compares against main's history.
+          fetch-depth: 0
+      # The version and components named in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - run: python3 scripts/check.py --stream --require-tools fmt docs migrations version docker desktop-meta deny
+      # No test or source file reads Markdown, so a change of only `.md` files
+      # needs nothing compiled. docs/api/openapi.json is not Markdown.
+      - id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" != pull_request ]]; then
+            code=true
+          elif git diff --name-only "$BASE...$HEAD" | grep -qv '\.md$'; then
+            code=true
+          else
+            code=false
+          fi
+          echo "code=$code" | tee -a "$GITHUB_OUTPUT"
+
+  linux:
+    name: Linux
+    needs: quick
+    if: needs.quick.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries for the desktop crate
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev xvfb xauth
+      # The version and components named in rust-toolchain.toml.
+      - run: rustup toolchain install
+      # One cache for both workspaces: desktop/ builds into the root target/.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: web
+      # `e2e` builds web/dist, which the desktop smoke below compares against.
+      - run: python3 scripts/check.py --stream --require-tools clippy test smoke api-types web e2e desktop
+      - run: cargo build --locked
+        working-directory: desktop
+      - name: Smoke the unpackaged desktop binary (not packaging evidence)
+        timeout-minutes: 10
+        # Xvfb workarounds belong to this step only, never to the app.
+        env:
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          NO_AT_BRIDGE: "1"
+        run: >-
+          xvfb-run -a python3 scripts/desktop_smoke.py --expect-spa web/dist --layout unpackaged
+          -- "$PWD/target/debug/uguisu-desktop"
+
+  windows:
+    name: Windows
+    needs: [quick, linux]
+    # Windows minutes bill double: never on a draft, and only after Linux passed.
+    if: needs.quick.outputs.code == 'true' && !(github.event_name == 'pull_request' && github.event.pull_request.draft)
+    runs-on: windows-2022
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      # The version and components named in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile && pnpm build
+        working-directory: web
+      # clippy here is the only lint of the cfg(windows) code.
+      - run: python scripts/check.py --stream --require-tools clippy test smoke desktop
+      - run: cargo build --locked
+        working-directory: desktop
+      - name: Smoke the unpackaged desktop binary (not packaging evidence)
+        timeout-minutes: 10
+        run: python scripts/desktop_smoke.py --expect-spa web/dist --layout unpackaged -- "$env:GITHUB_WORKSPACE\target\debug\uguisu-desktop.exe"

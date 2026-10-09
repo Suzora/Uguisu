@@ -1,0 +1,108 @@
+{
+  "schema": 1,
+  "origin": "spec-example",
+  "recorded_at": "2026-09-17T00:00:00Z",
+  "source": "https://github.com/Podcastindex-org/docs-api/blob/master/docs/pi_api.yaml (per-field schema examples)",
+  "provider": "podcastindex",
+  "case": "search_byterm",
+  "request": {
+    "method": "GET",
+    "path": "/search/byterm",
+    "query": {
+      "q": "batman university"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "public, max-age=300"
+    },
+    "body": {
+      "status": "true",
+      "feeds": [
+        {
+          "id": 75075,
+          "podcastGuid": "9b024349-ccf0-5f69-a609-6b82873eab3c",
+          "title": "Batman University",
+          "url": "https://feeds.theincomparable.com/batmanuniversity",
+          "originalUrl": "https://feeds.theincomparable.com/batmanuniversity",
+          "link": "https://www.theincomparable.com/batmanuniversity/",
+          "description": "Batman University is a seasonal podcast about you know who. It began with an analysis of episodes of “Batman: The Animated Series” but has now expanded to cover other series, movies, and media. Your professor is Tony Sindelar.",
+          "author": "Tony Sindelar",
+          "ownerName": "The Incomparable",
+          "image": "https://www.theincomparable.com/imgs/logos/logo-batmanuniversity-3x.jpg?cache-buster=2019-06-11",
+          "artwork": "https://www.theincomparable.com/imgs/logos/logo-batmanuniversity-3x.jpg?cache-buster=2019-06-11",
+          "lastUpdateTime": 1613394044,
+          "lastCrawlTime": 1613394034,
+          "lastParseTime": 1613394045,
+          "lastGoodHttpStatusTime": 1613394034,
+          "lastHttpStatus": 200,
+          "contentType": "application/rss+xml",
+          "itunesId": 1441923632,
+          "generator": "my podcast host",
+          "language": "en-us",
+          "explicit": false,
+          "type": 0,
+          "medium": "music",
+          "dead": 0,
+          "episodeCount": 19,
+          "crawlErrors": 0,
+          "parseErrors": 0,
+          "categories": {
+            "104": "Tv",
+            "105": "Film",
+            "107": "Reviews"
+          },
+          "locked": 0,
+          "imageUrlHash": 3969216649,
+          "newestItemPubdate": 1546399813
+        },
+        {
+          "id": 75076,
+          "podcastGuid": "2b5b7a4b-9a0f-5c9d-8f0e-000000000002",
+          "title": "Batman University Fan Recap",
+          "url": "https://example-recap.test/feed.xml",
+          "originalUrl": "https://example-recap.test/feed.xml",
+          "link": "https://example-recap.test/",
+          "description": "Batman University is a seasonal podcast about you know who. It began with an analysis of episodes of “Batman: The Animated Series” but has now expanded to cover other series, movies, and media. Your professor is Tony Sindelar.",
+          "author": "Recap Crew",
+          "ownerName": "Recap Crew",
+          "image": "https://www.theincomparable.com/imgs/logos/logo-batmanuniversity-3x.jpg?cache-buster=2019-06-11",
+          "artwork": "https://www.theincomparable.com/imgs/logos/logo-batmanuniversity-3x.jpg?cache-buster=2019-06-11",
+          "lastUpdateTime": 1613394044,
+          "lastCrawlTime": 1613394034,
+          "lastParseTime": 1613394045,
+          "lastGoodHttpStatusTime": 1613394034,
+          "lastHttpStatus": 200,
+          "contentType": "application/rss+xml",
+          "itunesId": null,
+          "generator": "my podcast host",
+          "language": "en-us",
+          "explicit": false,
+          "type": 0,
+          "medium": "music",
+          "dead": 0,
+          "episodeCount": 12,
+          "crawlErrors": 0,
+          "parseErrors": 0,
+          "categories": {
+            "104": "Tv",
+            "105": "Film",
+            "107": "Reviews"
+          },
+          "locked": 0,
+          "imageUrlHash": 3969216649,
+          "newestItemPubdate": 1546399813
+        }
+      ],
+      "count": 2,
+      "query": "batman university",
+      "description": "Found matching feeds."
+    }
+  },
+  "notes": [
+    "First feed is the spec's own example (Batman University); second is derived. status is the string \"true\" per spec examples.",
+    "cache-control header is an assumption to exercise the TTL rule — verify live."
+  ]
+}

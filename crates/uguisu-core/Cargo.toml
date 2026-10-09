@@ -1,0 +1,33 @@
+[package]
+name = "uguisu-core"
+description = "Uguisu domain model, identifiers, errors, events and configuration types"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+directories = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+subtle = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+ulid = { workspace = true }
+url = { workspace = true }
+utoipa = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+proptest = { workspace = true }
+serde_json = { workspace = true }
+
+[[bench]]
+name = "schedule"
+harness = false

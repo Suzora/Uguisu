@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Just a Blog</title>
+    <link>https://blog.test/</link>
+    <description>Posts, no audio.</description>
+    <item><title>Post 1</title><link>https://blog.test/1</link><pubDate>Mon, 01 Sep 2025 08:00:00 GMT</pubDate></item>
+    <item><title>Post 2</title><link>https://blog.test/2</link></item>
+  </channel>
+</rss>

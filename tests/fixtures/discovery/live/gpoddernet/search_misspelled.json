@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "origin": "recorded",
+  "recorded_at": "2026-09-17T13:36:40.851852551Z",
+  "source": "https://gpodder.net/search.json?q=darknet+diariez&scale_logo=256",
+  "provider": "gpoddernet",
+  "case": "search_misspelled",
+  "request": {
+    "method": "GET",
+    "path": "/search.json",
+    "query": {
+      "q": "darknet diariez",
+      "scale_logo": "256"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "max-age=3600",
+      "content-type": "application/json"
+    },
+    "body": []
+  }
+}

@@ -1,0 +1,57 @@
+[package]
+name = "uguisu-engine"
+description = "Application services, scheduler, pipelines and event bus"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+# Failure injection and the scenario media server for tests of dependent crates.
+testing = ["uguisu-download/testing", "uguisu-storage/testing"]
+
+[dependencies]
+utoipa = { workspace = true }
+argon2 = { workspace = true }
+async-trait = { workspace = true }
+uguisu-archive = { workspace = true }
+uguisu-metadata = { workspace = true }
+uguisu-core = { workspace = true }
+uguisu-discovery = { workspace = true }
+uguisu-download = { workspace = true }
+uguisu-feed = { workspace = true }
+uguisu-http = { workspace = true }
+uguisu-storage = { workspace = true }
+futures-util = { workspace = true }
+getrandom = { workspace = true }
+hex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+uguisu-engine = { path = ".", features = ["testing"] }
+sqlx = { workspace = true }
+criterion = { workspace = true }
+tempfile = { workspace = true }
+wiremock = { workspace = true }
+
+[[bench]]
+name = "refresh"
+harness = false
+
+[[bench]]
+name = "argon2"
+harness = false

@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Dates</title>
+    <item><title>missing</title><guid>d1</guid><enclosure url="https://cdn.example/d1.mp3" type="audio/mpeg"/></item>
+    <item><title>invalid</title><guid>d2</guid><pubDate>yesterday-ish</pubDate><enclosure url="https://cdn.example/d2.mp3" type="audio/mpeg"/></item>
+    <item><title>future</title><guid>d3</guid><pubDate>Fri, 01 Jan 2100 00:00:00 +0000</pubDate><enclosure url="https://cdn.example/d3.mp3" type="audio/mpeg"/></item>
+    <item><title>ancient</title><guid>d4</guid><pubDate>Thu, 01 Jan 1970 00:00:00 +0000</pubDate><enclosure url="https://cdn.example/d4.mp3" type="audio/mpeg"/></item>
+    <item><title>zoneless</title><guid>d5</guid><pubDate>2025-09-01T10:00:00</pubDate><enclosure url="https://cdn.example/d5.mp3" type="audio/mpeg"/></item>
+    <item><title>offset</title><guid>d6</guid><pubDate>Mon, 01 Sep 2025 12:00:00 +0200</pubDate><enclosure url="https://cdn.example/d6.mp3" type="audio/mpeg"/></item>
+    <item><title>dc</title><guid>d7</guid><dc:date>2025-09-01T10:00:00+00:00</dc:date><enclosure url="https://cdn.example/d7.mp3" type="audio/mpeg"/></item>
+    <item><title>no seconds</title><guid>d8</guid><pubDate>Mon, 01 Sep 2025 10:00 GMT</pubDate><enclosure url="https://cdn.example/d8.mp3" type="audio/mpeg"/></item>
+  </channel>
+</rss>

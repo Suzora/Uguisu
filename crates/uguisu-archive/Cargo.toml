@@ -1,0 +1,40 @@
+[package]
+name = "uguisu-archive"
+description = "Archive layout, path templates, integrity, verification, reconciliation and import"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+uguisu-core = { workspace = true }
+deunicode = { workspace = true }
+hex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+strsim = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+tracing = { workspace = true }
+unicode-normalization = { workspace = true }
+walkdir = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+hex = { workspace = true }
+proptest = { workspace = true }
+sha2 = { workspace = true }
+tempfile = { workspace = true }
+# Only the policy fixtures build an `Enclosure`, which carries a `Url`.
+url = { workspace = true }
+
+[[bench]]
+name = "archive"
+harness = false

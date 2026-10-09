@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:podcast="https://podcastindex.org/namespace/1.0">
+  <channel>
+    <title>Versioned Show</title>
+    <link>https://versioned.example/</link>
+    <description>Version two</description>
+    <itunes:author>V Host</itunes:author>
+    <itunes:image href="https://versioned.example/art-v2.jpg"/>
+    <item>
+      <title>Episode Four</title><guid isPermaLink="false">v-4</guid>
+      <pubDate>Thu, 04 Sep 2025 10:00:00 +0000</pubDate>
+      <description>Fourth description</description>
+      <enclosure url="https://cdn.versioned.example/four.mp3" type="audio/mpeg" length="4000"/>
+      <podcast:transcript url="https://versioned.example/four.vtt" type="text/vtt"/>
+    </item>
+    <item>
+      <title>Episode One (remastered)</title><guid isPermaLink="false">v-1</guid>
+      <pubDate>Mon, 01 Sep 2025 10:00:00 +0000</pubDate>
+      <description>First description, revised</description>
+      <itunes:duration>10:00</itunes:duration>
+      <itunes:episode>1</itunes:episode>
+      <enclosure url="https://cdn.versioned.example/one-v2.mp3" type="audio/mpeg" length="1100"/>
+      <podcast:chapters url="https://versioned.example/one.chapters.json" type="application/json+chapters"/>
+    </item>
+    <item>
+      <title>Episode Two</title><guid isPermaLink="false">v-2</guid>
+      <pubDate>Tue, 02 Sep 2025 10:00:00 +0000</pubDate>
+      <description>Second description</description>
+      <itunes:duration>20:00</itunes:duration>
+      <itunes:episode>2</itunes:episode>
+      <enclosure url="https://cdn.versioned.example/two.mp3" type="audio/mpeg" length="2000"/>
+    </item>
+  </channel>
+</rss>

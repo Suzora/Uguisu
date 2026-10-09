@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<rss version="2.0">
+  <channel>
+    <title>One bad apple</title>
+    <item><title>Good 1</title><guid>g1</guid><enclosure url="https://cdn.example/g1.mp3" type="audio/mpeg"/></item>
+    <item><title>Bad</title><guid>bad</guid><description>oops</descriptoin><enclosure url="https://cdn.example/bad.mp3" type="audio/mpeg"/></item>
+    <item><title>Good 2</title><guid>g2</guid><enclosure url="https://cdn.example/g2.mp3" type="audio/mpeg"/></item>
+  </channel>
+</rss>

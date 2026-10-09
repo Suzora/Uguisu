@@ -1,0 +1,6 @@
+# uguisu manifest - podcast 01M4184G1AKGH64D5BFSBHJHBY - generated 2026-10-03T16:04:13.177602805Z
+# rendered from the archive index; the bytes were not re-read
+# paths are relative to the media directory
+# verify: cd <media directory> && sha256sum -c <this file>
+f9bbe28bc5af66266961c931e2cd7ae4b6c3f863428ef2b1ade242690c42d327  Upgrade Fixture/2026/2026-01-01 - Episode 1.wav
+aebf62a81ad213faaf36a3f35022b349967ff3f9feaa93626fbdef65f4292c37  Upgrade Fixture/2026/2026-01-02 - Episode 2.wav

@@ -1,0 +1,51 @@
+// The shell: navigation, page titles, the connection and the footer.
+export const app = {
+  name: 'Uguisu',
+  skip: 'Skip to content',
+  nav: {
+    label: 'Primary',
+    dashboard: 'Dashboard',
+    library: 'Podcasts',
+    downloads: 'Downloads',
+    archive: 'Archive',
+    discover: 'Discover',
+    search: 'Search',
+    settings: 'Settings',
+    service: 'Service',
+  },
+  titles: {
+    dashboard: 'Dashboard',
+    library: 'Podcasts',
+    podcast: 'Podcast',
+    episode: 'Episode',
+    discover: 'Discover',
+    search: 'Search',
+    downloads: 'Downloads',
+    archive: 'Archive',
+    archiveImport: 'Import an archive',
+    archiveRepair: 'Repair missing files',
+    settings: 'Settings',
+    service: 'Service',
+    unknown: 'Not found',
+  },
+  documentTitle: (page: string) => `${page} · Uguisu`,
+  announcePage: (page: string) => `${page} page`,
+  connection: {
+    label: 'Event stream:',
+    open: 'live',
+    connecting: 'connecting',
+    reconnecting: 'reconnecting',
+  },
+  signOut: (username: string | null) => (username ? `Sign out (${username})` : 'Sign out'),
+  offline: (reason: string) =>
+    `The Uguisu API is not answering — ${reason}. Views below show the last data they managed to load.`,
+  notFound: {
+    title: 'Not found',
+    // There is no page at <path>. <Back to the dashboard>.
+    before: 'There is no page at ',
+    between: '. ',
+    back: 'Back to the dashboard',
+    end: '.',
+  },
+  footer: (version: string) => `Uguisu ${version} · local archive, no account, no tracking`,
+};

@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<rss version="2.0" xmlns:it="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:pi="https://podcastindex.org/namespace/1.0" xmlns:a="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Odd prefixes</title>
+    <a:link rel="self" href="https://odd.example/feed"/>
+    <it:author>Prefix Person</it:author>
+    <pi:guid>odd-guid</pi:guid>
+    <item>
+      <title>Ep</title><guid>o1</guid>
+      <it:duration>10:00</it:duration>
+      <pi:transcript url="https://odd.example/t.vtt" type="text/vtt"/>
+      <enclosure url="https://cdn.example/o1.mp3" type="audio/mpeg"/>
+    </item>
+  </channel>
+</rss>

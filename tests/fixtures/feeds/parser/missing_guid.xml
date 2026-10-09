@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+  <channel>
+    <title>No GUIDs</title>
+    <item>
+      <title>First</title>
+      <pubDate>Mon, 01 Sep 2025 10:00:00 +0000</pubDate>
+      <enclosure url="https://cdn.example/first.mp3" type="audio/mpeg" length="100"/>
+    </item>
+    <item>
+      <title>Second</title>
+      <pubDate>Tue, 02 Sep 2025 10:00:00 +0000</pubDate>
+      <enclosure url="https://cdn.example/second.mp3" type="audio/mpeg" length="200"/>
+    </item>
+    <item>
+      <title>Third without enclosure</title>
+      <pubDate>Wed, 03 Sep 2025 10:00:00 +0000</pubDate>
+    </item>
+  </channel>
+</rss>

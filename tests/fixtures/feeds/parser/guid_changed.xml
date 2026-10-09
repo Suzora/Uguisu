@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+  <channel>
+    <title>Versioned Show</title>
+    <link>https://versioned.example/</link>
+    <description>Version one</description>
+    <itunes:author>V Host</itunes:author>
+    <item>
+      <title>Episode One</title><guid isPermaLink="false">https://versioned.example/one-new-guid</guid>
+      <pubDate>Mon, 01 Sep 2025 10:00:00 +0000</pubDate>
+      <description>First description</description>
+      <itunes:duration>10:00</itunes:duration>
+      <itunes:episode>1</itunes:episode>
+      <enclosure url="https://cdn.versioned.example/one.mp3" type="audio/mpeg" length="1000"/>
+    </item>
+    <item>
+      <title>Episode Two</title>
+      <pubDate>Tue, 02 Sep 2025 10:00:00 +0000</pubDate>
+      <description>Second description</description>
+      <itunes:duration>20:00</itunes:duration>
+      <itunes:episode>2</itunes:episode>
+      <enclosure url="https://cdn.versioned.example/two.mp3" type="audio/mpeg" length="2000"/>
+    </item>
+    <item>
+      <title>Episode Three</title><guid isPermaLink="false">v-3</guid>
+      <pubDate>Wed, 03 Sep 2025 10:00:00 +0000</pubDate>
+      <description>Third description</description>
+      <enclosure url="https://cdn.versioned.example/three.mp3" type="audio/mpeg" length="3000"/>
+    </item>
+  </channel>
+</rss>

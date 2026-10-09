@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<rss version="2.0">
+  <channel>
+    <title>Duplicates</title>
+    <item>
+      <title>Twice</title><guid>twice</guid>
+      <pubDate>Mon, 01 Sep 2025 10:00:00 +0000</pubDate>
+      <enclosure url="https://cdn.example/twice.mp3" type="audio/mpeg" length="5"/>
+    </item>
+    <item>
+      <title>Twice</title><guid>twice</guid>
+      <pubDate>Mon, 01 Sep 2025 10:00:00 +0000</pubDate>
+      <enclosure url="https://cdn.example/twice.mp3" type="audio/mpeg" length="5"/>
+    </item>
+    <item>
+      <title>Once</title><guid>once</guid>
+      <pubDate>Tue, 02 Sep 2025 10:00:00 +0000</pubDate>
+      <enclosure url="https://cdn.example/once.mp3" type="audio/mpeg" length="6"/>
+    </item>
+  </channel>
+</rss>

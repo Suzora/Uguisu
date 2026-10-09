@@ -1,0 +1,148 @@
+{
+  "schema": 1,
+  "origin": "spec-example",
+  "recorded_at": "2026-09-17T00:00:00Z",
+  "source": "https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/ (Constructing Searches, Understanding Search Results)",
+  "provider": "apple",
+  "case": "search_darknet",
+  "request": {
+    "method": "GET",
+    "path": "/search",
+    "query": {
+      "term": "darknet diaries",
+      "media": "podcast",
+      "entity": "podcast"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/javascript; charset=utf-8"
+    },
+    "body": {
+      "resultCount": 3,
+      "results": [
+        {
+          "wrapperType": "track",
+          "kind": "podcast",
+          "collectionId": 1296350485,
+          "trackId": 1296350485,
+          "artistName": "Jack Rhysider",
+          "collectionName": "Darknet Diaries",
+          "trackName": "Darknet Diaries",
+          "collectionCensoredName": "Darknet Diaries",
+          "trackCensoredName": "Darknet Diaries",
+          "collectionViewUrl": "https://podcasts.apple.com/us/podcast/id1296350485",
+          "trackViewUrl": "https://podcasts.apple.com/us/podcast/id1296350485",
+          "artworkUrl30": "https://is1-ssl.mzstatic.com/image/thumb/1296350485/30x30bb.jpg",
+          "artworkUrl60": "https://is1-ssl.mzstatic.com/image/thumb/1296350485/60x60bb.jpg",
+          "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/1296350485/100x100bb.jpg",
+          "artworkUrl600": "https://is1-ssl.mzstatic.com/image/thumb/1296350485/600x600bb.jpg",
+          "collectionPrice": 0.0,
+          "trackPrice": 0.0,
+          "collectionHdPrice": 0,
+          "releaseDate": "2025-09-02T10:00:00Z",
+          "collectionExplicitness": "notExplicit",
+          "trackExplicitness": "notExplicit",
+          "trackCount": 180,
+          "trackTimeMillis": 3600000,
+          "country": "USA",
+          "currency": "USD",
+          "primaryGenreName": "Technology",
+          "contentAdvisoryRating": "Clean",
+          "genreIds": [
+            "1300",
+            "1301",
+            "26"
+          ],
+          "genres": [
+            "Technology",
+            "True Crime",
+            "Podcasts"
+          ],
+          "feedUrl": "https://feeds.megaphone.fm/darknetdiaries"
+        },
+        {
+          "wrapperType": "track",
+          "kind": "podcast",
+          "collectionId": 1500000001,
+          "trackId": 1500000001,
+          "artistName": "Recap Crew",
+          "collectionName": "Darknet Diaries Fan Recap",
+          "trackName": "Darknet Diaries Fan Recap",
+          "collectionCensoredName": "Darknet Diaries Fan Recap",
+          "trackCensoredName": "Darknet Diaries Fan Recap",
+          "collectionViewUrl": "https://podcasts.apple.com/us/podcast/id1500000001",
+          "trackViewUrl": "https://podcasts.apple.com/us/podcast/id1500000001",
+          "artworkUrl30": "https://is1-ssl.mzstatic.com/image/thumb/1500000001/30x30bb.jpg",
+          "artworkUrl60": "https://is1-ssl.mzstatic.com/image/thumb/1500000001/60x60bb.jpg",
+          "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/1500000001/100x100bb.jpg",
+          "artworkUrl600": "https://is1-ssl.mzstatic.com/image/thumb/1500000001/600x600bb.jpg",
+          "collectionPrice": 0.0,
+          "trackPrice": 0.0,
+          "collectionHdPrice": 0,
+          "releaseDate": "2025-09-02T10:00:00Z",
+          "collectionExplicitness": "notExplicit",
+          "trackExplicitness": "notExplicit",
+          "trackCount": 12,
+          "trackTimeMillis": 3600000,
+          "country": "USA",
+          "currency": "USD",
+          "primaryGenreName": "Technology",
+          "contentAdvisoryRating": "Clean",
+          "genreIds": [
+            "1300",
+            "26"
+          ],
+          "genres": [
+            "Technology",
+            "Podcasts"
+          ],
+          "feedUrl": "https://example-recap.test/feed.xml"
+        },
+        {
+          "wrapperType": "track",
+          "kind": "podcast",
+          "collectionId": 1500000002,
+          "trackId": 1500000002,
+          "artistName": "Some Network",
+          "collectionName": "Dark Net",
+          "trackName": "Dark Net",
+          "collectionCensoredName": "Dark Net",
+          "trackCensoredName": "Dark Net",
+          "collectionViewUrl": "https://podcasts.apple.com/us/podcast/id1500000002",
+          "trackViewUrl": "https://podcasts.apple.com/us/podcast/id1500000002",
+          "artworkUrl30": "https://is1-ssl.mzstatic.com/image/thumb/1500000002/30x30bb.jpg",
+          "artworkUrl60": "https://is1-ssl.mzstatic.com/image/thumb/1500000002/60x60bb.jpg",
+          "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/1500000002/100x100bb.jpg",
+          "artworkUrl600": "https://is1-ssl.mzstatic.com/image/thumb/1500000002/600x600bb.jpg",
+          "collectionPrice": 0.0,
+          "trackPrice": 0.0,
+          "collectionHdPrice": 0,
+          "releaseDate": "2025-09-02T10:00:00Z",
+          "collectionExplicitness": "notExplicit",
+          "trackExplicitness": "notExplicit",
+          "trackCount": 40,
+          "trackTimeMillis": 3600000,
+          "country": "USA",
+          "currency": "USD",
+          "primaryGenreName": "Society & Culture",
+          "contentAdvisoryRating": "Clean",
+          "genreIds": [
+            "1300",
+            "26"
+          ],
+          "genres": [
+            "Society & Culture",
+            "Podcasts"
+          ],
+          "feedUrl": "https://darknet-show.test/rss"
+        }
+      ]
+    }
+  },
+  "notes": [
+    "Field set per Apple docs; podcast-specific keys (feedUrl, artworkUrl600, genres, trackCount, releaseDate) documented by observation — verify live in Part B.",
+    "Apple serves JSON with content-type text/javascript."
+  ]
+}

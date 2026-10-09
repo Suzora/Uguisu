@@ -1,0 +1,42 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Node / web
+node_modules/
+web/dist/
+web/.svelte-kit/
+web/.vite/
+*.tsbuildinfo
+
+# Tauri. The desktop workspace builds into /target/ when cargo runs inside
+# desktop/ (desktop/.cargo/config.toml); run from the root with
+# --manifest-path, it builds into desktop/target/.
+desktop/src-tauri/gen/
+/desktop/target/
+
+# Flatpak: the vendored crates CI generates, and flatpak-builder's own state
+/flatpak-vendor/
+/.flatpak-builder/
+/flatpak-build/
+/flatpak-repo/
+
+# Local data and scratch
+/data/
+/podcasts/
+*.db
+*.db-wal
+*.db-shm
+# An upgrade fixture's database is the fixture (ADR 0054).
+!tests/fixtures/upgrade/*/data/uguisu.db
+*.log
+.env
+.env.*
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+__pycache__/

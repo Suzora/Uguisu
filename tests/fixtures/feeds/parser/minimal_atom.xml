@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en">
+  <title>Atom Show</title>
+  <id>urn:atom-show</id>
+  <updated>2025-09-01T10:00:00Z</updated>
+  <link rel="self" href="https://atom.example/feed.atom"/>
+  <link rel="alternate" href="https://atom.example/"/>
+  <author><name>Atom Author</name></author>
+  <entry>
+    <title>Atom Episode</title>
+    <id>urn:atom-ep-1</id>
+    <published>2025-09-01T10:00:00Z</published>
+    <updated>2025-09-02T10:00:00Z</updated>
+    <summary>Atom summary</summary>
+    <link rel="enclosure" href="https://atom.example/ep1.m4a" type="audio/mp4" length="4321"/>
+    <link rel="alternate" href="https://atom.example/ep1"/>
+  </entry>
+</feed>

@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "origin": "recorded",
+  "recorded_at": "2026-09-17T13:36:51.209514281Z",
+  "source": "https://twit.tv/shows/security-now",
+  "provider": "web/twit_tv",
+  "case": "twit_security_now",
+  "request": {
+    "method": "GET",
+    "path": "/shows/security-now",
+    "query": {}
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "public, s-maxage=2592000, stale-while-revalidate=30, stale-if-error=86400",
+      "content-type": "text/html; charset=utf-8"
+    },
+    "body": "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>\n      \nSecurity Now | A Podcast Covering Hot Topics in Tech Security | TWiT\n\n</title>\n<link type=\"application/rss+xml\" rel=\"alternate\" title=\"Security Now\" href=\"https://feeds.twit.tv/sn.xml\"/>\n</head>\n<body></body>\n</html>\n"
+  },
+  "notes": [
+    "Body reduced to the head's <title> and its autodiscovery <link> elements, copied verbatim; the page content is third-party copyright and no test reads it. The recorded body's etag is dropped."
+  ]
+}

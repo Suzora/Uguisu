@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "origin": "spec-example",
+  "recorded_at": "2026-09-17T00:00:00Z",
+  "source": "https://github.com/Podcastindex-org/docs-api/blob/master/docs/pi_api.yaml (per-field schema examples)",
+  "provider": "podcastindex",
+  "case": "search_empty",
+  "request": {
+    "method": "GET",
+    "path": "/search/byterm",
+    "query": {
+      "q": "zzqqxxnothing"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json; charset=utf-8"
+    },
+    "body": {
+      "status": "true",
+      "feeds": [],
+      "count": 0,
+      "query": "zzqqxxnothing",
+      "description": "No matching feeds."
+    }
+  }
+}

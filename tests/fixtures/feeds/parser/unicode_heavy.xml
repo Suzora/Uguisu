@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+  <channel>
+    <title>Ünïcödé — 日本語のポッドキャスト 🎙️</title>
+    <itunes:author>Zoë Ångström &amp; 李雷</itunes:author>
+    <description>Ｆｕｌｌｗｉｄｔｈ text, combining é, RTL ‏עברית‏ and emoji 👩‍👩‍👧</description>
+    <item>
+      <title>Épisode № 1 – „Zitat“ 🚀</title>
+      <guid>ü-1</guid>
+      <enclosure url="https://cdn.example/%C3%BC-1.mp3" type="audio/mpeg"/>
+      <pubDate>Mon, 01 Sep 2025 10:00:00 +0000</pubDate>
+    </item>
+  </channel>
+</rss>

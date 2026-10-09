@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "origin": "recorded",
+  "recorded_at": "2026-09-17T13:36:46.528140601Z",
+  "source": "https://gpodder.net/api/2/data/podcast.json?url=https%3A%2F%2Fnowhere.invalid%2Ffeed.xml",
+  "provider": "gpoddernet",
+  "case": "podcast_by_url_404",
+  "request": {
+    "method": "GET",
+    "path": "/api/2/data/podcast.json",
+    "query": {
+      "url": "https://nowhere.invalid/feed.xml"
+    }
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "content-type": "text/html; charset=utf-8"
+    },
+    "body": "\n<html>\n    <head>\n        <title>404 Not found (gpodder.net)</title>\n        <link rel=\"stylesheet\" type=\"text/css\" href=\"/static/css/fail.css\" />\n    </head>\n    <body>\n        <div id=\"c\">\n            <div id=\"fail\">\n                <h1>404 - Not found.</h1>\n                <p>\n                The requested document was not found on this server.\n                Please try again later or contact us.\n                </p>\n            </div>\n        </div>\n        <img id=\"icon\" src=\"/static/failpodder.png\">\n    </body>\n</html>\n\n"
+  }
+}

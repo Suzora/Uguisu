@@ -1,0 +1,194 @@
+{
+  "schema": 1,
+  "origin": "recorded",
+  "recorded_at": "2026-09-17T13:36:37.403103254Z",
+  "source": "https://itunes.apple.com/search?term=Gemischtes+Hack&country=DE&media=podcast&entity=podcast&limit=10",
+  "provider": "apple",
+  "case": "search_german",
+  "request": {
+    "method": "GET",
+    "path": "/search",
+    "query": {
+      "country": "DE",
+      "entity": "podcast",
+      "limit": "10",
+      "media": "podcast",
+      "term": "Gemischtes Hack"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "max-age=86400",
+      "content-type": "text/javascript; charset=utf-8"
+    },
+    "body": {
+      "resultCount": 4,
+      "results": [
+        {
+          "artistName": "Felix Lobrecht & Tommi Schmitt",
+          "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/dc/37/50/dc3750de-5c3b-6446-f32d-eaaf399f0b8c/mza_12821350567191789117.jpeg/100x100bb.jpg",
+          "artworkUrl30": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/dc/37/50/dc3750de-5c3b-6446-f32d-eaaf399f0b8c/mza_12821350567191789117.jpeg/30x30bb.jpg",
+          "artworkUrl60": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/dc/37/50/dc3750de-5c3b-6446-f32d-eaaf399f0b8c/mza_12821350567191789117.jpeg/60x60bb.jpg",
+          "artworkUrl600": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/dc/37/50/dc3750de-5c3b-6446-f32d-eaaf399f0b8c/mza_12821350567191789117.jpeg/600x600bb.jpg",
+          "collectionCensoredName": "Gemischtes Hack",
+          "collectionExplicitness": "notExplicit",
+          "collectionHdPrice": 0,
+          "collectionId": 1292709842,
+          "collectionName": "Gemischtes Hack",
+          "collectionPrice": 0.0,
+          "collectionViewUrl": "https://podcasts.apple.com/de/podcast/gemischtes-hack/id1292709842?uo=4",
+          "contentAdvisoryRating": "Clean",
+          "country": "DEU",
+          "currency": "EUR",
+          "feedUrl": "https://feeds.megaphone.fm/GLT8390938385",
+          "genreIds": [
+            "1303",
+            "26",
+            "1324"
+          ],
+          "genres": [
+            "Comedy",
+            "Podcasts",
+            "Gesellschaft und Kultur"
+          ],
+          "kind": "podcast",
+          "primaryGenreName": "Comedy",
+          "releaseDate": "2026-09-15T21:55:00Z",
+          "trackCensoredName": "Gemischtes Hack",
+          "trackCount": 378,
+          "trackExplicitness": "cleaned",
+          "trackId": 1292709842,
+          "trackName": "Gemischtes Hack",
+          "trackPrice": 0.0,
+          "trackTimeMillis": 5408,
+          "trackViewUrl": "https://podcasts.apple.com/de/podcast/gemischtes-hack/id1292709842?uo=4",
+          "wrapperType": "track"
+        },
+        {
+          "artistName": "Example Host A",
+          "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts115/v4/d2/66/eb/d266eb18-32da-8f4e-a23f-def0e3115b5d/mza_14325906307507191814.jpg/100x100bb.jpg",
+          "artworkUrl30": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts115/v4/d2/66/eb/d266eb18-32da-8f4e-a23f-def0e3115b5d/mza_14325906307507191814.jpg/30x30bb.jpg",
+          "artworkUrl60": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts115/v4/d2/66/eb/d266eb18-32da-8f4e-a23f-def0e3115b5d/mza_14325906307507191814.jpg/60x60bb.jpg",
+          "artworkUrl600": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts115/v4/d2/66/eb/d266eb18-32da-8f4e-a23f-def0e3115b5d/mza_14325906307507191814.jpg/600x600bb.jpg",
+          "collectionCensoredName": "Pechweiss",
+          "collectionExplicitness": "notExplicit",
+          "collectionHdPrice": 0,
+          "collectionId": 1498460401,
+          "collectionName": "Pechweiss",
+          "collectionPrice": 0.0,
+          "collectionViewUrl": "https://podcasts.apple.com/de/podcast/pechweiss/id1498460401?uo=4",
+          "contentAdvisoryRating": "Clean",
+          "country": "DEU",
+          "currency": "EUR",
+          "feedUrl": "https://pechweiss.podigee.io/feed/mp3",
+          "genreIds": [
+            "1544",
+            "26",
+            "1324",
+            "1303"
+          ],
+          "genres": [
+            "Beziehungen",
+            "Podcasts",
+            "Gesellschaft und Kultur",
+            "Comedy"
+          ],
+          "kind": "podcast",
+          "primaryGenreName": "Beziehungen",
+          "releaseDate": "2021-02-23T09:20:00Z",
+          "trackCensoredName": "Pechweiss",
+          "trackCount": 31,
+          "trackExplicitness": "cleaned",
+          "trackId": 1498460401,
+          "trackName": "Pechweiss",
+          "trackPrice": 0.0,
+          "trackTimeMillis": 3094,
+          "trackViewUrl": "https://podcasts.apple.com/de/podcast/pechweiss/id1498460401?uo=4",
+          "wrapperType": "track"
+        },
+        {
+          "artistName": "Example Host B",
+          "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts126/v4/c7/ac/77/c7ac7772-1a2e-abd7-55f1-2faa9e1422c4/mza_16777419111041594670.jpg/100x100bb.jpg",
+          "artworkUrl30": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts126/v4/c7/ac/77/c7ac7772-1a2e-abd7-55f1-2faa9e1422c4/mza_16777419111041594670.jpg/30x30bb.jpg",
+          "artworkUrl60": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts126/v4/c7/ac/77/c7ac7772-1a2e-abd7-55f1-2faa9e1422c4/mza_16777419111041594670.jpg/60x60bb.jpg",
+          "artworkUrl600": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts126/v4/c7/ac/77/c7ac7772-1a2e-abd7-55f1-2faa9e1422c4/mza_16777419111041594670.jpg/600x600bb.jpg",
+          "collectionCensoredName": "Tante Emma Talk",
+          "collectionExplicitness": "notExplicit",
+          "collectionHdPrice": 0,
+          "collectionId": 1591577313,
+          "collectionName": "Tante Emma Talk",
+          "collectionPrice": 0.0,
+          "collectionViewUrl": "https://podcasts.apple.com/de/podcast/tante-emma-talk/id1591577313?uo=4",
+          "contentAdvisoryRating": "Clean",
+          "country": "DEU",
+          "currency": "EUR",
+          "feedUrl": "https://anchor.fm/s/70c93c70/podcast/rss",
+          "genreIds": [
+            "1324",
+            "26"
+          ],
+          "genres": [
+            "Gesellschaft und Kultur",
+            "Podcasts"
+          ],
+          "kind": "podcast",
+          "primaryGenreName": "Gesellschaft und Kultur",
+          "releaseDate": "2023-02-22T03:16:00Z",
+          "trackCensoredName": "Tante Emma Talk",
+          "trackCount": 81,
+          "trackExplicitness": "cleaned",
+          "trackId": 1591577313,
+          "trackName": "Tante Emma Talk",
+          "trackPrice": 0.0,
+          "trackTimeMillis": 3382,
+          "trackViewUrl": "https://podcasts.apple.com/de/podcast/tante-emma-talk/id1591577313?uo=4",
+          "wrapperType": "track"
+        },
+        {
+          "artistName": "Example Host C",
+          "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts125/v4/08/dc/77/08dc77df-03d2-4847-9e38-e70ae8698999/mza_3918437287179629155.jpg/100x100bb.jpg",
+          "artworkUrl30": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts125/v4/08/dc/77/08dc77df-03d2-4847-9e38-e70ae8698999/mza_3918437287179629155.jpg/30x30bb.jpg",
+          "artworkUrl60": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts125/v4/08/dc/77/08dc77df-03d2-4847-9e38-e70ae8698999/mza_3918437287179629155.jpg/60x60bb.jpg",
+          "artworkUrl600": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts125/v4/08/dc/77/08dc77df-03d2-4847-9e38-e70ae8698999/mza_3918437287179629155.jpg/600x600bb.jpg",
+          "collectionCensoredName": "Rock2Life - Die Unterhaltungsshow (Rock2Life)",
+          "collectionExplicitness": "notExplicit",
+          "collectionHdPrice": 0,
+          "collectionId": 1155661338,
+          "collectionName": "Rock2Life - Die Unterhaltungsshow (Rock2Life)",
+          "collectionPrice": 0.0,
+          "collectionViewUrl": "https://podcasts.apple.com/de/podcast/rock2life-die-unterhaltungsshow-rock2life/id1155661338?uo=4",
+          "contentAdvisoryRating": "Explicit",
+          "country": "DEU",
+          "currency": "EUR",
+          "feedUrl": "http://rock2life.de/feed/podcast/",
+          "genreIds": [
+            "1303",
+            "26",
+            "1324"
+          ],
+          "genres": [
+            "Comedy",
+            "Podcasts",
+            "Gesellschaft und Kultur"
+          ],
+          "kind": "podcast",
+          "primaryGenreName": "Comedy",
+          "releaseDate": "2026-04-21T19:09:00Z",
+          "trackCensoredName": "Rock2Life - Die Unterhaltungsshow (Rock2Life)",
+          "trackCount": 8,
+          "trackExplicitness": "explicit",
+          "trackId": 1155661338,
+          "trackName": "Rock2Life - Die Unterhaltungsshow (Rock2Life)",
+          "trackPrice": 0.0,
+          "trackTimeMillis": 4106,
+          "trackViewUrl": "https://podcasts.apple.com/de/podcast/rock2life-die-unterhaltungsshow-rock2life/id1155661338?uo=4",
+          "wrapperType": "track"
+        }
+      ]
+    }
+  },
+  "notes": [
+    "artistName of hosts who are not public figures replaced by placeholders (tests/fixtures/README.md)."
+  ]
+}

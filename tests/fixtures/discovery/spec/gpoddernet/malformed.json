@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "origin": "spec-example",
+  "recorded_at": "2026-09-17T00:00:00Z",
+  "source": "https://github.com/gpodder/mygpo/blob/master/doc/api/reference/directory.rst",
+  "provider": "gpoddernet",
+  "case": "malformed",
+  "request": {
+    "method": "GET",
+    "path": "/search.json",
+    "query": {
+      "q": "malformed"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": "[{\"url\": "
+  }
+}

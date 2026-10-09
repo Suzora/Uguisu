@@ -1,0 +1,8 @@
+# rustfmt.toml requires Unix newlines, so every checkout must have them,
+# including on Windows, where Git would otherwise convert to CRLF and
+# `cargo fmt --check` would reject every file.
+* text=auto eol=lf
+
+# An upgrade fixture is a data directory exactly as a build left it; its
+# hashes and manifests describe these bytes, so Git must never touch them.
+tests/fixtures/upgrade/*/data/** -text

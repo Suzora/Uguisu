@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "origin": "recorded",
+  "recorded_at": "2026-09-17T13:36:45.067194148Z",
+  "source": "https://gpodder.net/search.json?q=Gemischtes+Hack&scale_logo=256",
+  "provider": "gpoddernet",
+  "case": "search_german",
+  "request": {
+    "method": "GET",
+    "path": "/search.json",
+    "query": {
+      "q": "Gemischtes Hack",
+      "scale_logo": "256"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "max-age=3600",
+      "content-type": "application/json"
+    },
+    "body": [
+      {
+        "author": "Felix Lobrecht & Tommi Schmitt",
+        "description": "Felix Lobrecht (Comedian) und Tommi Schmitt (Come…",
+        "logo_url": "https://i1.sndcdn.com/avatars-000604074438-tofppy-original.jpg",
+        "mygpo_link": "http://gpodder.net/podcast/gemischtes-hack-2",
+        "scaled_logo_url": "http://gpodder.net/logo/256/46e/46e36d864312c050bc4096c980581e7222220494",
+        "subscribers": 0,
+        "title": "Gemischtes Hack",
+        "url": "https://feeds.soundcloud.com/users/soundcloud%3Ausers%3A334742538/sounds.rss",
+        "website": "https://soundcloud.com/user-910339503"
+      },
+      {
+        "author": "Felix Lobrecht & Tommi Schmitt",
+        "description": "Felix Lobrecht (Comedian) und Tommi Schmitt (Come…",
+        "logo_url": "https://i1.sndcdn.com/avatars-000604074438-tofppy-original.jpg",
+        "mygpo_link": "http://gpodder.net/podcast/gemischtes-hack",
+        "scaled_logo_url": "http://gpodder.net/logo/256/46e/46e36d864312c050bc4096c980581e7222220494",
+        "subscribers": 0,
+        "title": "Gemischtes Hack",
+        "url": "http://feeds.soundcloud.com/users/soundcloud%3Ausers%3A334742538/sounds.rss",
+        "website": "https://soundcloud.com/user-910339503"
+      },
+      {
+        "author": "Felix Lobrecht & Tommi Schmitt",
+        "description": "Felix Lobrecht (Comedian und Autor) und Tommi Schmitt (TV-Moderator und\nKolumnist) haben einen Podcast. Jeden Mittwoch exklusiv auf Spotify.",
+        "logo_url": "https://i.scdn.co/image/ab6765630000ba8a600517c89583ea4193783271",
+        "mygpo_link": "http://gpodder.net/podcast/gemischtes-hack-1",
+        "scaled_logo_url": "http://gpodder.net/logo/256/4ad/4ad49b40f3204825381a112e90527b964d7e6c43",
+        "subscribers": 0,
+        "title": "Gemischtes Hack",
+        "url": "https://spotifeed.timdorr.com/7BTOsF2boKmlYr76BelijW",
+        "website": "https://open.spotify.com/show/7BTOsF2boKmlYr76BelijW"
+      }
+    ]
+  }
+}

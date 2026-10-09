@@ -1,0 +1,44 @@
+[package]
+name = "uguisu-server"
+description = "Uguisu HTTP API (axum) and static web UI hosting"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+utoipa = { workspace = true }
+uguisu-archive = { workspace = true }
+uguisu-core = { workspace = true }
+uguisu-discovery = { workspace = true }
+uguisu-download = { workspace = true }
+uguisu-engine = { workspace = true }
+uguisu-storage = { workspace = true }
+axum = { workspace = true }
+futures-util = { workspace = true }
+ipnet = { workspace = true }
+url = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+time = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+uguisu-discovery = { workspace = true, features = ["testing"] }
+uguisu-engine = { workspace = true, features = ["testing"] }
+sha2 = { workspace = true }
+hex = { workspace = true }
+http-body-util = { workspace = true }
+tempfile = { workspace = true }
+tower = { workspace = true }
+wiremock = { workspace = true }

@@ -1,0 +1,8 @@
+# The desktop workspace shares the root's target directory.
+#
+# It is a separate workspace but it builds the same ten Uguisu crates and much
+# of the same dependency tree; cargo keys artifacts by package, version and
+# feature set, so sharing reuses those builds instead of compiling a second
+# copy of everything. That is several gigabytes either way.
+[build]
+target-dir = "../target"

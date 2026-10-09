@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "origin": "recorded",
+  "recorded_at": "2026-09-17T13:36:43.945692343Z",
+  "source": "https://gpodder.net/search.json?q=zzqxjvwplk+nonexistent&scale_logo=256",
+  "provider": "gpoddernet",
+  "case": "search_empty",
+  "request": {
+    "method": "GET",
+    "path": "/search.json",
+    "query": {
+      "q": "zzqxjvwplk nonexistent",
+      "scale_logo": "256"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "max-age=3600",
+      "content-type": "application/json"
+    },
+    "body": []
+  }
+}

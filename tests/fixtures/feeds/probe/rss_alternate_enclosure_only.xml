@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:podcast="https://podcastindex.org/namespace/1.0">
+  <channel>
+    <title>Alt Enclosure Show</title>
+    <link>https://alt.test/</link>
+    <description>Uses only the Podcasting 2.0 alternate enclosure tag.</description>
+    <item>
+      <title>One</title>
+      <podcast:alternateEnclosure type="audio/opus" length="4000" bitrate="64000" default="true">
+        <podcast:source uri="https://alt.test/1.opus"/>
+      </podcast:alternateEnclosure>
+    </item>
+  </channel>
+</rss>

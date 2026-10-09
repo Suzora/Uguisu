@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "origin": "spec-example",
+  "recorded_at": "2026-09-17T00:00:00Z",
+  "source": "https://github.com/gpodder/mygpo/blob/master/doc/api/reference/directory.rst",
+  "provider": "gpoddernet",
+  "case": "podcast_by_url_404",
+  "request": {
+    "method": "GET",
+    "path": "/api/2/data/podcast.json",
+    "query": {
+      "url": "http://nowhere.test/feed"
+    }
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "content-type": "text/html"
+    },
+    "body": "Not Found"
+  }
+}

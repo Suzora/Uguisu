@@ -1,0 +1,16 @@
+# Workspace-wide clippy configuration. Lint levels live in Cargo.toml [workspace.lints].
+msrv = "1.90"
+too-many-arguments-threshold = 8
+type-complexity-threshold = 300
+
+# Tag writing must never open the artifact itself: Uguisu copies the file,
+# tags the copy, proves the copy readable and only then renames it into
+# place (ADR 0026). Every lofty method that opens a path and writes it would
+# edit the real thing, so each is forbidden rather than merely avoided by
+# convention.
+disallowed-methods = [
+  { path = "lofty::tag::TagExt::save_to_path", reason = "tag a copy and rename it; never edit the artifact in place" },
+  { path = "lofty::tag::TagExt::remove_from_path", reason = "tag a copy and rename it; never edit the artifact in place" },
+  { path = "lofty::file::AudioFile::save_to_path", reason = "tag a copy and rename it; never edit the artifact in place" },
+  { path = "lofty::tag::TagType::remove_from_path", reason = "tag a copy and rename it; never edit the artifact in place" },
+]

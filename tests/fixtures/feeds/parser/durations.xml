@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+  <channel>
+    <title>Durations</title>
+    <item><title>hms</title><guid>u1</guid><itunes:duration>1:02:03</itunes:duration><enclosure url="https://cdn.example/u1.mp3" type="audio/mpeg"/></item>
+    <item><title>ms</title><guid>u2</guid><itunes:duration>45:10</itunes:duration><enclosure url="https://cdn.example/u2.mp3" type="audio/mpeg"/></item>
+    <item><title>secs</title><guid>u3</guid><itunes:duration>3600</itunes:duration><enclosure url="https://cdn.example/u3.mp3" type="audio/mpeg"/></item>
+    <item><title>fractional</title><guid>u4</guid><itunes:duration>1834.5</itunes:duration><enclosure url="https://cdn.example/u4.mp3" type="audio/mpeg"/></item>
+    <item><title>invalid</title><guid>u5</guid><itunes:duration>about an hour</itunes:duration><enclosure url="https://cdn.example/u5.mp3" type="audio/mpeg"/></item>
+    <item><title>missing</title><guid>u6</guid><enclosure url="https://cdn.example/u6.mp3" type="audio/mpeg"/></item>
+    <item><title>padded</title><guid>u7</guid><itunes:duration> 00:05:00 </itunes:duration><enclosure url="https://cdn.example/u7.mp3" type="audio/mpeg"/></item>
+    <item><title>huge</title><guid>u8</guid><itunes:duration>99999999</itunes:duration><enclosure url="https://cdn.example/u8.mp3" type="audio/mpeg"/></item>
+    <item><title>hm words</title><guid>u9</guid><itunes:duration>1h 2m</itunes:duration><enclosure url="https://cdn.example/u9.mp3" type="audio/mpeg"/></item>
+  </channel>
+</rss>

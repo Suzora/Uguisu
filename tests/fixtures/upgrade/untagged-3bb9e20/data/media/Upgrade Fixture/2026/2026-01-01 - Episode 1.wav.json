@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "generator": "uguisu/0.1.0",
+  "written_at": "2026-10-03T16:04:13Z",
+  "podcast": {
+    "id": "01M4184G1AKGH64D5BFSBHJHBY",
+    "title": "Upgrade Fixture",
+    "author": null,
+    "publisher": null,
+    "feed_url": "http://127.0.0.1:58947/feed.xml",
+    "language": null,
+    "categories": []
+  },
+  "episode": {
+    "id": "01M4184G1HY5B3E03EZAKXNZ8W",
+    "identity_key": "guid:upgrade-1",
+    "identity_source": "guid",
+    "title": "Episode 1",
+    "published_at": "2026-01-01T10:00:00Z",
+    "season": null,
+    "number": null,
+    "duration_secs": 1,
+    "description_text": "Episode 1 of the upgrade fixture.",
+    "guid": "upgrade-1",
+    "link": null,
+    "enclosure_url": "http://127.0.0.1:58947/ep1.wav",
+    "enclosure_type": "audio/wav",
+    "enclosure_length_bytes": 4044
+  },
+  "archive": {
+    "relative_path": "Upgrade Fixture/2026/2026-01-01 - Episode 1.wav",
+    "size_bytes": 4044,
+    "hash_algo": "sha256",
+    "hash_value": "f9bbe28bc5af66266961c931e2cd7ae4b6c3f863428ef2b1ade242690c42d327",
+    "content_type": "audio/wav",
+    "sniffed_type": "wav",
+    "origin": "download",
+    "tag_state": "untagged",
+    "tag_mode": null,
+    "tagged_at": null,
+    "registered_at": "2026-10-03T16:04:13Z"
+  },
+  "source": {
+    "hash_algo": "sha256",
+    "hash_value": "f9bbe28bc5af66266961c931e2cd7ae4b6c3f863428ef2b1ade242690c42d327",
+    "size_bytes": 4044,
+    "origin_detail": "http://127.0.0.1:58947/ep1.wav"
+  }
+}

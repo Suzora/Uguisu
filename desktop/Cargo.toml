@@ -1,0 +1,42 @@
+# The desktop shell is its own workspace on purpose: it needs WebKitGTK and the
+# WebView2 SDK to build, and the root workspace's `--workspace` checks must keep
+# working on a machine that has neither. `scripts/check.py desktop` and a
+# desktop-scoped `cargo deny` cover it instead (ADR 0041).
+[workspace]
+resolver = "3"
+members = ["src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/suzora/uguisu"
+homepage = "https://github.com/suzora/uguisu"
+authors = ["Suzora contributors"]
+
+# Restated rather than inherited: a separate workspace cannot read the root's
+# table, and a laxer set here would be a quality gate that only looks enforced.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+doc_markdown = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+unwrap_used = "warn"
+expect_used = "warn"
+dbg_macro = "warn"
+todo = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

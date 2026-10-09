@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Uguisu
+Comment=Archive podcasts to a folder you own
+Exec=uguisu-desktop
+Icon=io.github.suzora.Uguisu
+Categories=AudioVideo;Audio;
+Keywords=podcast;archive;rss;feed;
+StartupNotify=true

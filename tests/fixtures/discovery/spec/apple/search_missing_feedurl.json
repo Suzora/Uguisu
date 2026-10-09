@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "origin": "spec-example",
+  "recorded_at": "2026-09-17T00:00:00Z",
+  "source": "https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/ (Constructing Searches, Understanding Search Results)",
+  "provider": "apple",
+  "case": "search_missing_feedurl",
+  "request": {
+    "method": "GET",
+    "path": "/search",
+    "query": {
+      "term": "apple exclusive",
+      "media": "podcast",
+      "entity": "podcast"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/javascript; charset=utf-8"
+    },
+    "body": {
+      "resultCount": 1,
+      "results": [
+        {
+          "wrapperType": "track",
+          "kind": "podcast",
+          "collectionId": 1600000001,
+          "trackId": 1600000001,
+          "artistName": "Apple Studios",
+          "collectionName": "Apple Exclusive Show",
+          "trackName": "Apple Exclusive Show",
+          "collectionCensoredName": "Apple Exclusive Show",
+          "trackCensoredName": "Apple Exclusive Show",
+          "collectionViewUrl": "https://podcasts.apple.com/us/podcast/id1600000001",
+          "trackViewUrl": "https://podcasts.apple.com/us/podcast/id1600000001",
+          "artworkUrl30": "https://is1-ssl.mzstatic.com/image/thumb/1600000001/30x30bb.jpg",
+          "artworkUrl60": "https://is1-ssl.mzstatic.com/image/thumb/1600000001/60x60bb.jpg",
+          "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/1600000001/100x100bb.jpg",
+          "artworkUrl600": "https://is1-ssl.mzstatic.com/image/thumb/1600000001/600x600bb.jpg",
+          "collectionPrice": 0.0,
+          "trackPrice": 0.0,
+          "collectionHdPrice": 0,
+          "releaseDate": "2025-09-02T10:00:00Z",
+          "collectionExplicitness": "notExplicit",
+          "trackExplicitness": "notExplicit",
+          "trackCount": 5,
+          "trackTimeMillis": 3600000,
+          "country": "USA",
+          "currency": "USD",
+          "primaryGenreName": "Arts",
+          "contentAdvisoryRating": "Clean",
+          "genreIds": [
+            "1300",
+            "26"
+          ],
+          "genres": [
+            "Arts",
+            "Podcasts"
+          ]
+        }
+      ]
+    }
+  },
+  "notes": [
+    "feedUrl is absent for Apple-hosted / subscription-only shows."
+  ]
+}

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+  <title>Atom Cast</title>
+  <subtitle>An Atom-based podcast</subtitle>
+  <link href="https://atomcast.test/"/>
+  <link rel="self" href="https://atomcast.test/feed.atom"/>
+  <author><name>Atom Author</name></author>
+  <logo>https://atomcast.test/logo.png</logo>
+  <updated>2025-09-01T00:00:00Z</updated>
+  <entry>
+    <title>Episode One</title>
+    <id>urn:uuid:1</id>
+    <updated>2025-09-01T00:00:00Z</updated>
+    <published>2025-09-01T00:00:00Z</published>
+    <link rel="enclosure" type="audio/mpeg" length="1000" href="https://atomcast.test/1.mp3"/>
+  </entry>
+  <entry>
+    <title>Episode Two</title>
+    <id>urn:uuid:2</id>
+    <updated>2025-09-08T00:00:00Z</updated>
+    <link rel="alternate" href="https://atomcast.test/2"/>
+  </entry>
+</feed>

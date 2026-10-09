@@ -1,0 +1,23 @@
+# The build context is the repository minus what the image never needs:
+# build output, dependencies the build installs itself, the desktop shell and
+# anything that may hold a secret.
+.git
+target
+**/node_modules
+web/dist
+desktop
+flatpak-vendor
+.flatpak-builder
+docs
+scripts
+tests
+benches
+**/*.env
+**/.env*
+data
+podcasts
+**/*.db
+**/*.db-wal
+**/*.db-shm
+flatpak-build
+flatpak-repo

@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "origin": "spec-example",
+  "recorded_at": "2026-09-17T00:00:00Z",
+  "source": "https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/ (Constructing Searches, Understanding Search Results)",
+  "provider": "apple",
+  "case": "error_403",
+  "request": {
+    "method": "GET",
+    "path": "/search",
+    "query": {
+      "term": "ratelimited",
+      "media": "podcast",
+      "entity": "podcast"
+    }
+  },
+  "response": {
+    "status": 403,
+    "headers": {
+      "content-type": "text/html"
+    },
+    "body": "<html><body>Forbidden</body></html>"
+  },
+  "notes": [
+    "Apple answers 403 (sometimes 429) when the ~20 requests/minute limit is exceeded."
+  ]
+}

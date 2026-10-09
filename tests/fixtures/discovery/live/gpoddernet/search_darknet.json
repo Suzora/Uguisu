@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "origin": "recorded",
+  "recorded_at": "2026-09-17T13:36:39.793865439Z",
+  "source": "https://gpodder.net/search.json?q=Darknet+Diaries&scale_logo=256",
+  "provider": "gpoddernet",
+  "case": "search_darknet",
+  "request": {
+    "method": "GET",
+    "path": "/search.json",
+    "query": {
+      "q": "Darknet Diaries",
+      "scale_logo": "256"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "max-age=3600",
+      "content-type": "application/json"
+    },
+    "body": [
+      {
+        "author": "Jack Rhysider",
+        "description": "Explore the dark side of the Internet with host Jack Rhysider as he takes you\non a journey through the chilling world of privacy hacks, data breaches, and\ncyber crime. The masterful criminal hackers who dwell on the dark side show us\njust how vulnerable we all are.",
+        "logo_url": "https://darknetdiaries.com/imgs/darknet-diaries-rss.jpg",
+        "mygpo_link": "http://gpodder.net/podcast/darknet-diaries",
+        "scaled_logo_url": "http://gpodder.net/logo/256/8b0/8b048e5228c30bb2950c39d8bb0e3fae2571f69b",
+        "subscribers": 0,
+        "title": "Darknet Diaries",
+        "url": "https://darknetdiaries.com/podcast.xml",
+        "website": "https://darknetdiaries.com/"
+      },
+      {
+        "author": "Jack Rhysider",
+        "description": "Explore the dark side of the Internet with host Jack Rhysider as he takes you\non a journey through the chilling world of privacy hacks, data breaches, and\ncyber crime. The masterful criminal hackers who dwell on the dark side show us\njust how vulnerable we all are.",
+        "logo_url": "https://darknetdiaries.com/imgs/darknet-diaries-rss.jpg",
+        "mygpo_link": "http://gpodder.net/podcast/darknet-diaries-1",
+        "scaled_logo_url": "http://gpodder.net/logo/256/8b0/8b048e5228c30bb2950c39d8bb0e3fae2571f69b",
+        "subscribers": 0,
+        "title": "Darknet Diaries",
+        "url": "https://darknetdiaries.com/podcast",
+        "website": "https://darknetdiaries.com/"
+      },
+      {
+        "author": "Jack Rhysider",
+        "description": "Explore true stories of the dark side of the Internet with host Jack Rhysider\nas he takes you on a journey through the chilling world of hacking, data\nbreaches, and cyber crime.",
+        "logo_url": "https://megaphone.imgix.net/podcasts/29bed80a-d8cc-11e8-b199-aba552a0bbdf/image/uploads_2F1562951997273-pdd2keiryql-99f75240ab90a579e25720d85d3057b2_2Fdarknet-diaries-rss.jpg?ixlib=rails-2.1.2&max-w=3000&max-h=3000&fit=crop&auto=format%2Ccompress",
+        "mygpo_link": "http://gpodder.net/podcast/darknet-diaries-2",
+        "scaled_logo_url": "http://gpodder.net/logo/256/c2f/c2f93b8cc83424c9998ffb39f0bf605d05b717e7",
+        "subscribers": 0,
+        "title": "Darknet Diaries",
+        "url": "https://feeds.megaphone.fm/darknetdiaries",
+        "website": "https://darknetdiaries.com/"
+      },
+      {
+        "author": "Jack Rhysider",
+        "description": "Explore the dark side of the Internet with host Jack Rhysider as he takes you\non a journey through the chilling world of privacy hacks, data breaches, and\ncyber crime. The masterful criminal hackers who dwell on the dark side show us\njust how vulnerable we all are.",
+        "logo_url": "https://darknetdiaries.com/imgs/darknet-diaries-rss.jpg",
+        "mygpo_link": "http://gpodder.net/podcast/darknet-diaries-ad-free",
+        "scaled_logo_url": "http://gpodder.net/logo/256/8b0/8b048e5228c30bb2950c39d8bb0e3fae2571f69b",
+        "subscribers": 0,
+        "title": "Darknet Diaries (ad free)",
+        "url": "https://darknetdiaries.com/feedfree.xml",
+        "website": "https://darknetdiaries.com/"
+      }
+    ]
+  }
+}

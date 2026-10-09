@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "origin": "recorded",
+  "recorded_at": "2026-09-17T13:36:45.839243462Z",
+  "source": "https://gpodder.net/api/2/data/podcast.json?url=https%3A%2F%2Ffeeds.megaphone.fm%2Fdarknetdiaries",
+  "provider": "gpoddernet",
+  "case": "podcast_by_url",
+  "request": {
+    "method": "GET",
+    "path": "/api/2/data/podcast.json",
+    "query": {
+      "url": "https://feeds.megaphone.fm/darknetdiaries"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "max-age=3600",
+      "content-type": "application/json"
+    },
+    "body": {
+      "author": "Jack Rhysider",
+      "description": "Explore true stories of the dark side of the Internet with host Jack Rhysider\nas he takes you on a journey through the chilling world of hacking, data\nbreaches, and cyber crime.",
+      "logo_url": "https://megaphone.imgix.net/podcasts/29bed80a-d8cc-11e8-b199-aba552a0bbdf/image/uploads_2F1562951997273-pdd2keiryql-99f75240ab90a579e25720d85d3057b2_2Fdarknet-diaries-rss.jpg?ixlib=rails-2.1.2&max-w=3000&max-h=3000&fit=crop&auto=format%2Ccompress",
+      "mygpo_link": "http://gpodder.net/podcast/darknet-diaries-2",
+      "scaled_logo_url": "http://gpodder.net/logo/64/c2f/c2f93b8cc83424c9998ffb39f0bf605d05b717e7",
+      "subscribers": 0,
+      "title": "Darknet Diaries",
+      "url": "https://feeds.megaphone.fm/darknetdiaries",
+      "website": "https://darknetdiaries.com/"
+    }
+  }
+}

@@ -1,0 +1,52 @@
+[package]
+name = "uguisu-discovery"
+description = "Podcast discovery: providers, ranking, deduplication and feed resolution"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+# Fixture loading and wiremock mounting helpers for tests in other crates.
+testing = ["dep:wiremock"]
+
+[dependencies]
+utoipa = { workspace = true }
+uguisu-core = { workspace = true }
+uguisu-feed = { workspace = true }
+uguisu-http = { workspace = true }
+async-trait = { workspace = true }
+deunicode = { workspace = true }
+hex = { workspace = true }
+moka = { workspace = true }
+percent-encoding = { workspace = true }
+scraper = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha1 = { workspace = true }
+strsim = { workspace = true }
+thiserror = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+unicode-normalization = { workspace = true }
+url = { workspace = true }
+wiremock = { workspace = true, optional = true }
+
+[dev-dependencies]
+uguisu-discovery = { path = ".", features = ["testing"] }
+criterion = { workspace = true }
+insta = { workspace = true }
+proptest = { workspace = true }
+wiremock = { workspace = true }
+
+[[bench]]
+name = "discovery"
+harness = false

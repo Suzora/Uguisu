@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "origin": "spec-example",
+  "recorded_at": "2026-09-17T00:00:00Z",
+  "source": "https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/ (Constructing Searches, Understanding Search Results)",
+  "provider": "apple",
+  "case": "search_empty",
+  "request": {
+    "method": "GET",
+    "path": "/search",
+    "query": {
+      "term": "zzqqxxnothing",
+      "media": "podcast",
+      "entity": "podcast"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/javascript; charset=utf-8"
+    },
+    "body": {
+      "resultCount": 0,
+      "results": []
+    }
+  }
+}

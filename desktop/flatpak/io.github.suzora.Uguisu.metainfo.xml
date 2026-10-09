@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.suzora.Uguisu</id>
+  <name>Uguisu</name>
+  <summary>Archive podcasts to a folder you own</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-or-later</project_license>
+  <developer id="io.github.suzora">
+    <name>Suzora contributors</name>
+  </developer>
+  <description>
+    <p>
+      Uguisu, a podcast downloader and archive manager by Suzora, subscribes to podcast feeds,
+      downloads their episodes and keeps them in a plain, verifiable archive on disk. Every file is checked against its recorded hash, and nothing
+      Uguisu archives is ever deleted by Uguisu.
+    </p>
+    <p>
+      The application runs the same server and interface as the standalone Uguisu binary, on a
+      private loopback port, and the two can open the same data directory.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.suzora.Uguisu.desktop</launchable>
+  <url type="homepage">https://github.com/suzora/uguisu</url>
+  <url type="bugtracker">https://github.com/suzora/uguisu/issues</url>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-09-24"/>
+  </releases>
+</component>

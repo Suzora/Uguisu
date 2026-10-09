@@ -1,0 +1,479 @@
+name: Desktop
+
+# Packaging, on a tag or a manual run only (ADR 0043, ADR 0046): build every
+# package, install each one in its own job, and smoke the installed
+# application against the exact web/dist that went into it. The desktop
+# crate and the unpackaged smoke run with every pull request in ci.yml.
+# `desktop-packaging` passes only if all six formats and the .deb upgrade
+# passed.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bundle-linux:
+    name: Bundle deb, rpm, AppImage (Ubuntu 22.04 baseline)
+    # The oldest supported system, so the packages need nothing newer than
+    # glibc 2.35; desktop_bundle.py refuses a binary that does.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries and bundler tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+            patchelf xdg-utils gstreamer1.0-plugins-base gstreamer1.0-plugins-good
+      # The version and components named in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: bundle-linux
+      # A prebuilt cargo-tauri through cargo-binstall; building it took 11-19 minutes.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-cli@2.11.5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile && pnpm build
+        working-directory: web
+      - run: python3 scripts/desktop_bundle.py deb rpm appimage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          if-no-files-found: error
+          path: |
+            target/release/bundle/deb/*.deb
+            target/release/bundle/rpm/*.rpm
+            target/release/bundle/appimage/*.AppImage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spa-linux
+          if-no-files-found: error
+          path: web/dist
+
+  bundle-windows:
+    name: Bundle NSIS and MSI
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      # The version and components named in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: bundle-windows
+      # A prebuilt cargo-tauri through cargo-binstall; building it took 11-19 minutes.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-cli@2.11.5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile && pnpm build
+        working-directory: web
+      # The bundler downloads and hash-checks WiX and NSIS itself.
+      - run: python scripts/desktop_bundle.py nsis msi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-packages
+          if-no-files-found: error
+          path: |
+            target/release/bundle/nsis/*-setup.exe
+            target/release/bundle/msi/*.msi
+      # Its own build of the UI: a Windows checkout's line endings could give
+      # different bytes, and the comparison is against what was bundled here.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spa-windows
+          if-no-files-found: error
+          path: web/dist
+
+  bundle-flatpak:
+    name: Bundle the Flatpak (GNOME 50)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      # The version and components named in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile && pnpm build
+        working-directory: web
+      - name: Vendor the crates the manifest builds from
+        run: cargo vendor --locked --versioned-dirs ../flatpak-vendor > /dev/null
+        working-directory: desktop
+      - name: flatpak-builder and the GNOME 50 SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          # Ubuntu 24.04 confines unprivileged user namespaces, which bwrap needs.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+      - name: Build offline from declared sources
+        run: >-
+          flatpak-builder --user --install-deps-from=flathub --disable-rofiles-fuse
+          --force-clean --repo=flatpak-repo flatpak-build
+          desktop/flatpak/io.github.suzora.Uguisu.yml
+      - run: >-
+          flatpak build-bundle flatpak-repo uguisu.flatpak io.github.suzora.Uguisu
+          --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak-package
+          if-no-files-found: error
+          path: uguisu.flatpak
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spa-flatpak
+          if-no-files-found: error
+          path: web/dist
+
+  upgrade-deb:
+    name: Upgrade a .deb in place and keep the data (Ubuntu 22.04)
+    needs: bundle-linux
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries and bundler tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+            patchelf xdg-utils gstreamer1.0-plugins-base gstreamer1.0-plugins-good
+      # The version and components named in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: bundle-linux
+      # A prebuilt cargo-tauri through cargo-binstall; building it took 11-19 minutes.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-cli@2.11.5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile && pnpm build
+        working-directory: web
+      # Build A is this source at an older version: a different build that
+      # identifies itself differently, which is what an upgrade replaces.
+      - name: Build A (version 0.0.1)
+        run: |
+          set -euo pipefail
+          sed -i '0,/^version = ".*"/s//version = "0.0.1"/' Cargo.toml desktop/Cargo.toml
+          python3 scripts/desktop_bundle.py deb
+          mkdir -p before && mv target/release/bundle/deb/*.deb before/
+          git checkout Cargo.toml desktop/Cargo.toml Cargo.lock desktop/Cargo.lock
+      - name: The standalone CLI at this version
+        run: cargo build --release -p uguisu-cli
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+          path: pkgs
+      - name: Install A, populate, upgrade to B with apt, reopen
+        timeout-minutes: 30
+        run: |
+          set -euo pipefail
+          test "$(ls before/*.deb | wc -l)" -eq 1
+          test "$(ls pkgs/deb/*.deb | wc -l)" -eq 1
+          after=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+          docker run --rm --init -e DEBIAN_FRONTEND=noninteractive -e AFTER="$after" -v "$PWD:/w:ro" ubuntu:22.04 bash -euo pipefail -c '
+            apt-get update -qq
+            apt-get install -y -qq /w/before/*.deb python3 xvfb xauth
+            cd /
+            xvfb-run -a env WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 \
+              LIBGL_ALWAYS_SOFTWARE=1 NO_AT_BRIDGE=1 PYTHONDONTWRITEBYTECODE=1 \
+              python3 /w/scripts/desktop_upgrade.py --cli /w/target/release/uguisu \
+                --before /usr/bin/uguisu-desktop --before-version 0.0.1 \
+                --replace "apt-get install -y -qq /w/pkgs/deb/*.deb" \
+                --after /usr/bin/uguisu-desktop --after-version "$AFTER"'
+
+  package-deb:
+    name: Install and smoke the .deb (Ubuntu 22.04, Ubuntu 24.04, Debian 12)
+    needs: bundle-linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+          path: pkgs
+      - uses: actions/download-artifact@v4
+        with:
+          name: spa-linux
+          path: spa
+      - name: Install into each clean container and smoke it
+        timeout-minutes: 30
+        run: |
+          set -euo pipefail
+          test "$(ls pkgs/deb/*.deb | wc -l)" -eq 1
+          for image in ubuntu:22.04 ubuntu:24.04 debian:12; do
+            echo "::group::$image"
+            docker run --rm --init -e DEBIAN_FRONTEND=noninteractive -v "$PWD:/w:ro" "$image" bash -euo pipefail -c '
+              apt-get update -qq
+              apt-get install -y -qq /w/pkgs/deb/*.deb python3 xvfb xauth
+              dpkg -L uguisu | grep -qx /usr/lib/Uguisu/web/index.html
+              cd /
+              xvfb-run -a env WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 \
+                LIBGL_ALWAYS_SOFTWARE=1 NO_AT_BRIDGE=1 PYTHONDONTWRITEBYTECODE=1 \
+                python3 /w/scripts/desktop_smoke.py --expect-spa /w/spa --layout deb \
+                  --installed-binary /usr/bin/uguisu-desktop -- /usr/bin/uguisu-desktop'
+            echo "::endgroup::"
+          done
+
+  package-rpm:
+    name: Install and smoke the .rpm (Fedora 43)
+    needs: bundle-linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+          path: pkgs
+      - uses: actions/download-artifact@v4
+        with:
+          name: spa-linux
+          path: spa
+      - name: Install into a clean container and smoke it
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          test "$(ls pkgs/rpm/*.rpm | wc -l)" -eq 1
+          docker run --rm --init -v "$PWD:/w:ro" fedora:43 bash -euo pipefail -c '
+            dnf install -y -q /w/pkgs/rpm/*.rpm python3 xorg-x11-server-Xvfb xorg-x11-xauth
+            rpm -qlp /w/pkgs/rpm/*.rpm | grep -qx /usr/lib/Uguisu/web/index.html
+            cd /
+            xvfb-run -a env WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 \
+              LIBGL_ALWAYS_SOFTWARE=1 NO_AT_BRIDGE=1 PYTHONDONTWRITEBYTECODE=1 \
+              python3 /w/scripts/desktop_smoke.py --expect-spa /w/spa --layout rpm \
+                --installed-binary /usr/bin/uguisu-desktop -- /usr/bin/uguisu-desktop'
+
+  package-appimage:
+    name: Extract and smoke the AppImage (Ubuntu 22.04, Debian 12, and FUSE on the runner)
+    needs: bundle-linux
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+          path: pkgs
+      - uses: actions/download-artifact@v4
+        with:
+          name: spa-linux
+          path: spa
+      - name: Extract into clean containers with no WebKitGTK, and run its AppRun
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          test "$(ls pkgs/appimage/*.AppImage | wc -l)" -eq 1
+          chmod +x pkgs/appimage/*.AppImage
+          for image in ubuntu:22.04 debian:12; do
+            echo "::group::$image"
+            docker run --rm --init -e DEBIAN_FRONTEND=noninteractive -v "$PWD:/w:ro" "$image" bash -euo pipefail -c '
+              apt-get update -qq
+              apt-get install -y -qq python3 xvfb xauth libgl1 libegl1 libgbm1 libfontconfig1 libharfbuzz0b libfribidi0 ca-certificates
+              cd /tmp && /w/pkgs/appimage/*.AppImage --appimage-extract > /dev/null
+              test -f /tmp/squashfs-root/usr/lib/Uguisu/web/index.html
+              cd /
+              xvfb-run -a env WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 \
+                LIBGL_ALWAYS_SOFTWARE=1 NO_AT_BRIDGE=1 PYTHONDONTWRITEBYTECODE=1 \
+                python3 /w/scripts/desktop_smoke.py --expect-spa /w/spa --layout appimage \
+                  --installed-binary /tmp/squashfs-root/usr/bin/uguisu-desktop -- /tmp/squashfs-root/AppRun'
+            echo "::endgroup::"
+          done
+      - name: Run the AppImage itself through FUSE, as a user would
+        timeout-minutes: 10
+        env:
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
+          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          NO_AT_BRIDGE: "1"
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libfuse2 xvfb xauth libgl1 libegl1 libgbm1 libfontconfig1 libharfbuzz0b libfribidi0 ca-certificates
+          cd /
+          xvfb-run -a python3 "$GITHUB_WORKSPACE/scripts/desktop_smoke.py" \
+            --expect-spa "$GITHUB_WORKSPACE/spa" --layout appimage \
+            -- "$(ls "$GITHUB_WORKSPACE"/pkgs/appimage/*.AppImage)"
+
+  package-flatpak:
+    name: Install and smoke the Flatpak
+    needs: bundle-flatpak
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: flatpak-package
+          path: pkgs
+      - uses: actions/download-artifact@v4
+        with:
+          name: spa-flatpak
+          path: spa
+      - name: Install the bundle and its runtime
+        run: |
+          set -euo pipefail
+          test "$(ls pkgs/*.flatpak | wc -l)" -eq 1
+          sudo apt-get update
+          sudo apt-get install -y flatpak xvfb xauth
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive pkgs/*.flatpak
+          flatpak run --command=test io.github.suzora.Uguisu -f /app/lib/Uguisu/web/index.html
+      - name: Smoke the installed application
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          files="$(flatpak info --user --show-location io.github.suzora.Uguisu)/files"
+          cd /
+          xvfb-run -a python3 "$GITHUB_WORKSPACE/scripts/desktop_smoke.py" \
+            --expect-spa "$GITHUB_WORKSPACE/spa" --layout flatpak --default-data-dir \
+            --installed-binary "$files/bin/uguisu-desktop" \
+            -- flatpak run --env=WEBKIT_DISABLE_DMABUF_RENDERER=1 --env=WEBKIT_DISABLE_COMPOSITING_MODE=1 \
+               --env=LIBGL_ALWAYS_SOFTWARE=1 --env=NO_AT_BRIDGE=1 io.github.suzora.Uguisu
+
+  package-nsis:
+    name: Install and smoke the NSIS installer
+    needs: bundle-windows
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-packages
+          path: pkgs
+      - uses: actions/download-artifact@v4
+        with:
+          name: spa-windows
+          path: spa
+      - name: Install, smoke, uninstall, and keep the data
+        timeout-minutes: 15
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = @(Get-ChildItem pkgs -Recurse -Filter *-setup.exe)
+          if ($setup.Count -ne 1) { throw "expected one NSIS installer, found $($setup.Count)" }
+          $dir = 'C:\av-nsis'
+          $p = Start-Process $setup[0].FullName -ArgumentList '/S', "/D=$dir" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "the installer exited with $($p.ExitCode)" }
+          if (-not (Test-Path "$dir\web\index.html")) { throw "no web\index.html beside the installed executable" }
+          $main = @(Get-ChildItem $dir -Filter *.exe | Where-Object { $_.Name -notmatch 'uninstall' })
+          if ($main.Count -ne 1) { throw "expected one application executable, found $($main.Name)" }
+          Push-Location $env:RUNNER_TEMP
+          $out = python "$env:GITHUB_WORKSPACE\scripts\desktop_smoke.py" --expect-spa "$env:GITHUB_WORKSPACE\spa" `
+            --layout nsis --default-data-dir --installed-binary $main[0].FullName -- $main[0].FullName
+          $code = $LASTEXITCODE
+          Pop-Location
+          $out
+          if ($code -ne 0) { throw "the smoke test failed" }
+          $data = ($out | Select-String '^data_dir=(.*)$').Matches[0].Groups[1].Value
+          # A login item for the uninstaller to remove: the Run value the app writes, named after the product.
+          $run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+          $item = (Get-Content desktop\src-tauri\tauri.conf.json -Raw | ConvertFrom-Json).productName
+          New-ItemProperty $run -Name $item -Value "`"$($main[0].FullName)`" " -Force | Out-Null
+          & "$dir\uninstall.exe" /S
+          $deadline = (Get-Date).AddSeconds(120)
+          while ((Test-Path $main[0].FullName) -and (Get-Date) -lt $deadline) { Start-Sleep 2 }
+          if (Test-Path $main[0].FullName) { throw "the uninstaller did not remove the application" }
+          # It removes the Run value after the executable.
+          while ((Get-ItemProperty $run -Name $item -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep 2 }
+          if ($null -ne (Get-ItemProperty $run -Name $item -ErrorAction SilentlyContinue)) { throw "the uninstaller left the login item $item" }
+          if (-not (Test-Path "$data\uguisu.db")) { throw "uninstalling removed $data\uguisu.db" }
+          "data kept at $data"
+
+  package-msi:
+    name: Install and smoke the MSI
+    needs: bundle-windows
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-packages
+          path: pkgs
+      - uses: actions/download-artifact@v4
+        with:
+          name: spa-windows
+          path: spa
+      - name: Install, smoke, uninstall, and keep the data
+        timeout-minutes: 15
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msi = @(Get-ChildItem pkgs -Recurse -Filter *.msi)
+          if ($msi.Count -ne 1) { throw "expected one MSI, found $($msi.Count)" }
+          $dir = 'C:\av-msi'
+          $p = Start-Process msiexec -ArgumentList "/i `"$($msi[0].FullName)`" /qn INSTALLDIR=$dir /l*v `"$env:RUNNER_TEMP\install.log`"" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content "$env:RUNNER_TEMP\install.log" -Tail 60; throw "msiexec exited with $($p.ExitCode)" }
+          if (-not (Test-Path "$dir\web\index.html")) { throw "no web\index.html beside the installed executable" }
+          $main = @(Get-ChildItem $dir -Filter *.exe | Where-Object { $_.Name -notmatch 'uninstall' })
+          if ($main.Count -ne 1) { throw "expected one application executable, found $($main.Name)" }
+          Push-Location $env:RUNNER_TEMP
+          $out = python "$env:GITHUB_WORKSPACE\scripts\desktop_smoke.py" --expect-spa "$env:GITHUB_WORKSPACE\spa" `
+            --layout msi --default-data-dir --installed-binary $main[0].FullName -- $main[0].FullName
+          $code = $LASTEXITCODE
+          Pop-Location
+          $out
+          if ($code -ne 0) { throw "the smoke test failed" }
+          $data = ($out | Select-String '^data_dir=(.*)$').Matches[0].Groups[1].Value
+          # A login item for the uninstaller to remove: the Run value the app writes, named after the product.
+          $run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+          $item = (Get-Content desktop\src-tauri\tauri.conf.json -Raw | ConvertFrom-Json).productName
+          New-ItemProperty $run -Name $item -Value "`"$($main[0].FullName)`" " -Force | Out-Null
+          $p = Start-Process msiexec -ArgumentList "/x `"$($msi[0].FullName)`" /qn /l*v `"$env:RUNNER_TEMP\uninstall.log`"" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "msiexec /x exited with $($p.ExitCode)" }
+          if (Test-Path $main[0].FullName) { throw "uninstalling did not remove the application" }
+          if ($null -ne (Get-ItemProperty $run -Name $item -ErrorAction SilentlyContinue)) { throw "uninstalling left the login item $item" }
+          if (-not (Test-Path "$data\uguisu.db")) { throw "uninstalling removed $data\uguisu.db" }
+          "data kept at $data"
+
+  desktop-packaging:
+    name: Desktop packaging (all six formats and the upgrade)
+    needs: [package-deb, package-rpm, package-appimage, package-flatpak, package-nsis, package-msi, upgrade-deb]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/check_needs.py "$NEEDS"

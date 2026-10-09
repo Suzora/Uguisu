@@ -1,0 +1,47 @@
+[package]
+name = "uguisu-cli"
+description = "The `uguisu` binary: server and command-line interface"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "uguisu"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+uguisu-archive = { workspace = true }
+uguisu-core = { workspace = true }
+uguisu-discovery = { workspace = true }
+uguisu-download = { workspace = true }
+uguisu-engine = { workspace = true }
+uguisu-http = { workspace = true }
+uguisu-server = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+rpassword = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+time = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+uguisu-discovery = { workspace = true, features = ["testing"] }
+uguisu-download = { workspace = true, features = ["testing"] }
+uguisu-engine = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
+tempfile = { workspace = true }
+wiremock = { workspace = true }

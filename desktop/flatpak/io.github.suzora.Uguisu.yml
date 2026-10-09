@@ -1,0 +1,75 @@
+# The Uguisu desktop application as a Flatpak (ADR 0044).
+#
+# Built offline from declared sources: this checkout (with web/dist already
+# built, since the UI is platform-independent static files) and the crates
+# `cargo vendor` wrote to flatpak-vendor/. CI produces both before running
+# flatpak-builder; nothing is fetched while building.
+#
+# GNOME 50: its platform ships WebKitGTK 4.1, the GTK3/libsoup3 API the
+# pinned tauri-runtime-wry links, and its SDK base (freedesktop 25.08) has a
+# rust-stable extension at 1.98.1. GNOME 48's base, 24.08, ships 1.89, below
+# the MSRV.
+id: io.github.suzora.Uguisu
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: uguisu-desktop
+
+# Every permission is here for a stated reason, and there is no --filesystem
+# at all: the archive lives in the app's own data directory unless the user
+# picks a folder through the portal.
+finish-args:
+  # The window. Wayland first; X11 only where there is no Wayland.
+  - --socket=wayland
+  - --socket=fallback-x11
+  # X11 shared memory, which WebKitGTK uses under X11.
+  - --share=ipc
+  # WebKitGTK's GPU compositing; it falls back to software without it.
+  - --device=dri
+  # Feeds, artwork and episodes come from the network.
+  - --share=network
+  # The player.
+  - --socket=pulseaudio
+  # Finished and failed downloads raise a notification.
+  - --talk-name=org.freedesktop.Notifications
+
+modules:
+  - name: uguisu
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/uguisu/cargo-home
+        CARGO_NET_OFFLINE: 'true'
+    build-commands:
+      # `--no-default-features --features flatpak` swaps the GTK file chooser,
+      # which would only ever show the sandbox, for the xdg-desktop-portal one.
+      # `tauri/custom-protocol` is what `cargo tauri build` adds for every
+      # other package.
+      - >-
+        cd desktop &&
+        cargo build --release --offline --locked -p uguisu-desktop --no-default-features
+        --features flatpak,tauri/custom-protocol
+        --config 'source.crates-io.replace-with="vendored"'
+        --config 'source.vendored.directory="../flatpak-vendor"'
+      - install -Dm755 target/release/uguisu-desktop /app/bin/uguisu-desktop
+      # Tauri finds bundled resources at <exe>/../lib/<productName>, so this
+      # path follows productName in tauri.conf.json; check-desktop-layout.py
+      # fails if the two drift apart.
+      - mkdir -p /app/lib/Uguisu && cp -r web/dist /app/lib/Uguisu/web
+      - install -Dm644 desktop/flatpak/io.github.suzora.Uguisu.desktop -t /app/share/applications
+      - install -Dm644 desktop/flatpak/io.github.suzora.Uguisu.metainfo.xml -t /app/share/metainfo
+      - install -Dm644 desktop/src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/io.github.suzora.Uguisu.png
+      - install -Dm644 desktop/branding/uguisu.svg /app/share/icons/hicolor/scalable/apps/io.github.suzora.Uguisu.svg
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - target
+          - web/node_modules
+          - .git
+          - .flatpak-builder
+          - flatpak-build
+          - flatpak-repo

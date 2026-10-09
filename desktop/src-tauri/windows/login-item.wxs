@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  An MSI uninstall removes the login item, as the NSIS uninstaller does.
+
+  The Run value is the app's (auto-launch writes it), so no component owns
+  it, and MSI has no declarative way to remove one value on uninstall:
+  RemoveRegistryValue acts only at install, and RemoveRegistryKey would take
+  every program's Run entry with it. A deferred custom action runs reg.exe
+  instead. It names the hive by the uninstalling user's SID rather than
+  HKCU, so the value removed is that user's whichever account the custom
+  action's process runs as. The package is per-machine, so another user's
+  value stays (docs/DESKTOP.md, Known limits).
+  Return="ignore": an absent value never blocks an uninstall. Skipped on a
+  major upgrade, which keeps the user's choice.
+
+  tauri-bundler renders this file with handlebars before candle compiles the
+  original, so it holds no double braces; [ProductName] is the MSI property.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <!-- Referenced from bundle.windows.wix.componentGroupRefs: only a reference links this fragment. -->
+    <ComponentGroup Id="LoginItemCleanup" />
+    <SetProperty Id="RemoveLoginItem" Before="RemoveLoginItem" Sequence="execute"
+                 Value="&quot;[System64Folder]reg.exe&quot; delete &quot;HKU\[UserSID]\Software\Microsoft\Windows\CurrentVersion\Run&quot; /v &quot;[ProductName]&quot; /f" />
+    <CustomAction Id="RemoveLoginItem" BinaryKey="WixCA" DllEntry="WixQuietExec64"
+                  Execute="deferred" Impersonate="yes" Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="RemoveLoginItem" Before="InstallFinalize">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
+    </InstallExecuteSequence>
+  </Fragment>
+</Wix>

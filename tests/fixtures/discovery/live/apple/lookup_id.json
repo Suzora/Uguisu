@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "origin": "recorded",
+  "recorded_at": "2026-09-17T13:36:37.897682618Z",
+  "source": "https://itunes.apple.com/lookup?id=1296350485&entity=podcast",
+  "provider": "apple",
+  "case": "lookup_id",
+  "request": {
+    "method": "GET",
+    "path": "/lookup",
+    "query": {
+      "entity": "podcast",
+      "id": "1296350485"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "cache-control": "max-age=18277",
+      "content-type": "text/javascript; charset=utf-8"
+    },
+    "body": {
+      "resultCount": 1,
+      "results": [
+        {
+          "artistName": "Jack Rhysider",
+          "artworkUrl100": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts122/v4/3a/80/a7/3a80a7db-5620-f77b-9935-016e61cc2fbc/mza_9399859904175514567.jpg/100x100bb.jpg",
+          "artworkUrl30": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts122/v4/3a/80/a7/3a80a7db-5620-f77b-9935-016e61cc2fbc/mza_9399859904175514567.jpg/30x30bb.jpg",
+          "artworkUrl60": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts122/v4/3a/80/a7/3a80a7db-5620-f77b-9935-016e61cc2fbc/mza_9399859904175514567.jpg/60x60bb.jpg",
+          "artworkUrl600": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts122/v4/3a/80/a7/3a80a7db-5620-f77b-9935-016e61cc2fbc/mza_9399859904175514567.jpg/600x600bb.jpg",
+          "collectionCensoredName": "Darknet Diaries",
+          "collectionExplicitness": "notExplicit",
+          "collectionHdPrice": 0,
+          "collectionId": 1296350485,
+          "collectionName": "Darknet Diaries",
+          "collectionPrice": 0.0,
+          "collectionViewUrl": "https://podcasts.apple.com/us/podcast/darknet-diaries/id1296350485?uo=4",
+          "contentAdvisoryRating": "Clean",
+          "country": "USA",
+          "currency": "USD",
+          "feedUrl": "https://podcast.darknetdiaries.com",
+          "genreIds": [
+            "1318",
+            "26"
+          ],
+          "genres": [
+            "Technology",
+            "Podcasts"
+          ],
+          "kind": "podcast",
+          "primaryGenreName": "Technology",
+          "releaseDate": "2026-09-01T07:00:00Z",
+          "trackCensoredName": "Darknet Diaries",
+          "trackCount": 198,
+          "trackExplicitness": "cleaned",
+          "trackId": 1296350485,
+          "trackName": "Darknet Diaries",
+          "trackPrice": 0.0,
+          "trackTimeMillis": 5702,
+          "trackViewUrl": "https://podcasts.apple.com/us/podcast/darknet-diaries/id1296350485?uo=4",
+          "wrapperType": "track"
+        }
+      ]
+    }
+  }
+}

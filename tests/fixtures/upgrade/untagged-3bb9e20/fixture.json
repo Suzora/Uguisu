@@ -1,0 +1,841 @@
+{
+  "commands": [
+    {
+      "args": [
+        "podcast",
+        "list"
+      ],
+      "output": {
+        "podcasts": [
+          {
+            "announced": {
+              "canonical_url": null,
+              "created_at": "2026-10-03T16:04:13Z",
+              "discovered_at": "2026-10-03T16:04:13Z",
+              "feed_url": "http://127.0.0.1:58947/moved.xml",
+              "fetch": {
+                "consecutive_failures": 1,
+                "content_fingerprint": null,
+                "etag": null,
+                "last_attempt_at": "2026-10-03T16:04:13Z",
+                "last_content_length": null,
+                "last_error_at": "2026-10-03T16:04:13Z",
+                "last_error_detail": "http status 404",
+                "last_error_kind": "not_found",
+                "last_http_status": 404,
+                "last_modified": null,
+                "last_not_modified_at": null,
+                "last_success_at": null,
+                "state": "failed"
+              },
+              "id": "01M4184GK5213X3JSHGB9Q5YT7",
+              "is_current": false,
+              "podcast_id": "01M4184G1AKGH64D5BFSBHJHBY",
+              "provider": "direct",
+              "provider_ref": null,
+              "replaced_by_source_id": null,
+              "replacement_reason": null,
+              "updated_at": "2026-10-03T16:04:13Z",
+              "verified_at": null,
+              "website_url": "https://upgrade.example/"
+            },
+            "episodes_present": 3,
+            "episodes_total": 3,
+            "last_fetch": {
+              "duration_ms": 11,
+              "episodes": {
+                "added": 1,
+                "ambiguous": 1,
+                "malformed": 0,
+                "removed_detected": 0,
+                "seen": 2,
+                "unchanged": 1,
+                "updated": 0
+              },
+              "fetched_at": "2026-10-03T16:04:13Z",
+              "fingerprint_changed": true,
+              "http": {
+                "bytes": 995,
+                "conditional": false,
+                "etag": null,
+                "etag_changed": false,
+                "final_url": null,
+                "last_modified": null,
+                "redirects": 0,
+                "status": 200
+              },
+              "id": "01M4184GJVC1EDYSRV9HP20EVQ",
+              "outcome": "fetched",
+              "partial": false,
+              "podcast_changed": false,
+              "podcast_id": "01M4184G1AKGH64D5BFSBHJHBY",
+              "source_id": "01M4184G1AKGH64D5BFSBHJHBZ",
+              "truncated": false,
+              "url_change_detected": true,
+              "warnings": [
+                "item 1: probably the same episode as 01M4184G1HY5B3E03EZAKXNZ8X (same_enclosure_url, same_fingerprint, same_published_minute, same_title); stored as a skipped candidate",
+                "feed announces http://127.0.0.1:58947/moved.xml (itunes:new-feed-url) but it could not be verified: not_found: http status 404"
+              ]
+            },
+            "podcast": {
+              "artwork_url": "http://127.0.0.1:58947/cover.png",
+              "author": null,
+              "categories": [],
+              "copyright": null,
+              "created_at": "2026-10-03T16:04:12Z",
+              "description_html": "A feed served from this machine.",
+              "description_text": "A feed served from this machine.",
+              "directory_name": null,
+              "explicit": null,
+              "feed_kind": "rss2",
+              "id": "01M4184G1AKGH64D5BFSBHJHBY",
+              "language": null,
+              "last_error": null,
+              "last_refresh_at": "2026-10-03T16:04:13Z",
+              "metadata_hash": "e3992911f88ef00029f1fcff71d27191e8fca7b0a86e395a18feb436cdfad427",
+              "next_refresh_at": "2026-10-03T17:06:10Z",
+              "owner_email": null,
+              "owner_name": null,
+              "podcast_guid": null,
+              "publisher": null,
+              "refresh_interval_secs": null,
+              "sort_title": "upgrade fixture",
+              "status": "active",
+              "subtitle": null,
+              "title": "Upgrade Fixture",
+              "updated_at": "2026-10-03T16:04:13Z",
+              "website": "https://upgrade.example/"
+            },
+            "source": {
+              "canonical_url": null,
+              "created_at": "2026-10-03T16:04:12Z",
+              "discovered_at": "2026-10-03T16:04:12Z",
+              "feed_url": "http://127.0.0.1:58947/feed.xml",
+              "fetch": {
+                "consecutive_failures": 0,
+                "content_fingerprint": "eb18bb5c64dd277696a310fba2e0970ffdf48d6104209fbc6dfb618a7f0a180d",
+                "etag": null,
+                "last_attempt_at": "2026-10-03T16:04:13Z",
+                "last_content_length": 995,
+                "last_error_at": null,
+                "last_error_detail": null,
+                "last_error_kind": null,
+                "last_http_status": 200,
+                "last_modified": null,
+                "last_not_modified_at": null,
+                "last_success_at": "2026-10-03T16:04:13Z",
+                "state": "fetched"
+              },
+              "id": "01M4184G1AKGH64D5BFSBHJHBZ",
+              "is_current": true,
+              "podcast_id": "01M4184G1AKGH64D5BFSBHJHBY",
+              "provider": "direct",
+              "provider_ref": null,
+              "replaced_by_source_id": null,
+              "replacement_reason": null,
+              "updated_at": "2026-10-03T16:04:13Z",
+              "verified_at": "2026-10-03T16:04:13Z",
+              "website_url": "https://upgrade.example/"
+            }
+          }
+        ],
+        "schema": 1
+      }
+    },
+    {
+      "args": [
+        "podcast",
+        "show",
+        "01M4184G1AKGH64D5BFSBHJHBY"
+      ],
+      "output": {
+        "announced": {
+          "canonical_url": null,
+          "created_at": "2026-10-03T16:04:13Z",
+          "discovered_at": "2026-10-03T16:04:13Z",
+          "feed_url": "http://127.0.0.1:58947/moved.xml",
+          "fetch": {
+            "consecutive_failures": 1,
+            "content_fingerprint": null,
+            "etag": null,
+            "last_attempt_at": "2026-10-03T16:04:13Z",
+            "last_content_length": null,
+            "last_error_at": "2026-10-03T16:04:13Z",
+            "last_error_detail": "http status 404",
+            "last_error_kind": "not_found",
+            "last_http_status": 404,
+            "last_modified": null,
+            "last_not_modified_at": null,
+            "last_success_at": null,
+            "state": "failed"
+          },
+          "id": "01M4184GK5213X3JSHGB9Q5YT7",
+          "is_current": false,
+          "podcast_id": "01M4184G1AKGH64D5BFSBHJHBY",
+          "provider": "direct",
+          "provider_ref": null,
+          "replaced_by_source_id": null,
+          "replacement_reason": null,
+          "updated_at": "2026-10-03T16:04:13Z",
+          "verified_at": null,
+          "website_url": "https://upgrade.example/"
+        },
+        "episodes_present": 3,
+        "episodes_total": 3,
+        "last_fetch": {
+          "duration_ms": 11,
+          "episodes": {
+            "added": 1,
+            "ambiguous": 1,
+            "malformed": 0,
+            "removed_detected": 0,
+            "seen": 2,
+            "unchanged": 1,
+            "updated": 0
+          },
+          "fetched_at": "2026-10-03T16:04:13Z",
+          "fingerprint_changed": true,
+          "http": {
+            "bytes": 995,
+            "conditional": false,
+            "etag": null,
+            "etag_changed": false,
+            "final_url": null,
+            "last_modified": null,
+            "redirects": 0,
+            "status": 200
+          },
+          "id": "01M4184GJVC1EDYSRV9HP20EVQ",
+          "outcome": "fetched",
+          "partial": false,
+          "podcast_changed": false,
+          "podcast_id": "01M4184G1AKGH64D5BFSBHJHBY",
+          "source_id": "01M4184G1AKGH64D5BFSBHJHBZ",
+          "truncated": false,
+          "url_change_detected": true,
+          "warnings": [
+            "item 1: probably the same episode as 01M4184G1HY5B3E03EZAKXNZ8X (same_enclosure_url, same_fingerprint, same_published_minute, same_title); stored as a skipped candidate",
+            "feed announces http://127.0.0.1:58947/moved.xml (itunes:new-feed-url) but it could not be verified: not_found: http status 404"
+          ]
+        },
+        "podcast": {
+          "artwork_url": "http://127.0.0.1:58947/cover.png",
+          "author": null,
+          "categories": [],
+          "copyright": null,
+          "created_at": "2026-10-03T16:04:12Z",
+          "description_html": "A feed served from this machine.",
+          "description_text": "A feed served from this machine.",
+          "directory_name": null,
+          "explicit": null,
+          "feed_kind": "rss2",
+          "id": "01M4184G1AKGH64D5BFSBHJHBY",
+          "language": null,
+          "last_error": null,
+          "last_refresh_at": "2026-10-03T16:04:13Z",
+          "metadata_hash": "e3992911f88ef00029f1fcff71d27191e8fca7b0a86e395a18feb436cdfad427",
+          "next_refresh_at": "2026-10-03T17:06:10Z",
+          "owner_email": null,
+          "owner_name": null,
+          "podcast_guid": null,
+          "publisher": null,
+          "refresh_interval_secs": null,
+          "sort_title": "upgrade fixture",
+          "status": "active",
+          "subtitle": null,
+          "title": "Upgrade Fixture",
+          "updated_at": "2026-10-03T16:04:13Z",
+          "website": "https://upgrade.example/"
+        },
+        "schema": 1,
+        "source": {
+          "canonical_url": null,
+          "created_at": "2026-10-03T16:04:12Z",
+          "discovered_at": "2026-10-03T16:04:12Z",
+          "feed_url": "http://127.0.0.1:58947/feed.xml",
+          "fetch": {
+            "consecutive_failures": 0,
+            "content_fingerprint": "eb18bb5c64dd277696a310fba2e0970ffdf48d6104209fbc6dfb618a7f0a180d",
+            "etag": null,
+            "last_attempt_at": "2026-10-03T16:04:13Z",
+            "last_content_length": 995,
+            "last_error_at": null,
+            "last_error_detail": null,
+            "last_error_kind": null,
+            "last_http_status": 200,
+            "last_modified": null,
+            "last_not_modified_at": null,
+            "last_success_at": "2026-10-03T16:04:13Z",
+            "state": "fetched"
+          },
+          "id": "01M4184G1AKGH64D5BFSBHJHBZ",
+          "is_current": true,
+          "podcast_id": "01M4184G1AKGH64D5BFSBHJHBY",
+          "provider": "direct",
+          "provider_ref": null,
+          "replaced_by_source_id": null,
+          "replacement_reason": null,
+          "updated_at": "2026-10-03T16:04:13Z",
+          "verified_at": "2026-10-03T16:04:13Z",
+          "website_url": "https://upgrade.example/"
+        }
+      }
+    },
+    {
+      "args": [
+        "archive",
+        "list"
+      ],
+      "output": {
+        "files": [
+          {
+            "content_type": "audio/wav",
+            "created_at": "2026-10-03T16:04:13Z",
+            "episode_id": "01M4184G1HY5B3E03EZAKXNZ8W",
+            "hash_algo": "sha256",
+            "hash_value": "f9bbe28bc5af66266961c931e2cd7ae4b6c3f863428ef2b1ade242690c42d327",
+            "id": "01M4184G7K7SDE5B2ZGYTPAQXR",
+            "mtime_unix": 1791043453,
+            "origin": "download",
+            "podcast_id": "01M4184G1AKGH64D5BFSBHJHBY",
+            "registered_at": "2026-10-03T16:04:13Z",
+            "relative_path": "Upgrade Fixture/2026/2026-01-01 - Episode 1.wav",
+            "sidecar_written_at": "2026-10-03T16:04:13Z",
+            "size_bytes": 4044,
+            "sniffed_type": "wav",
+            "source_hash_algo": "sha256",
+            "source_hash_value": "f9bbe28bc5af66266961c931e2cd7ae4b6c3f863428ef2b1ade242690c42d327",
+            "source_size_bytes": 4044,
+            "tag_mode": null,
+            "tag_state": "untagged",
+            "tagged_at": null,
+            "updated_at": "2026-10-03T16:04:13Z",
+            "verification_reason": "size_match",
+            "verification_state": "verified",
+            "verified_at": "2026-10-03T16:04:13Z"
+          },
+          {
+            "content_type": "audio/wav",
+            "created_at": "2026-10-03T16:04:13Z",
+            "episode_id": "01M4184G1HY5B3E03EZAKXNZ8X",
+            "hash_algo": "sha256",
+            "hash_value": "aebf62a81ad213faaf36a3f35022b349967ff3f9feaa93626fbdef65f4292c37",
+            "id": "01M4184G7748CF7FZFQGWBACND",
+            "mtime_unix": 1791043453,
+            "origin": "download",
+            "podcast_id": "01M4184G1AKGH64D5BFSBHJHBY",
+            "registered_at": "2026-10-03T16:04:13Z",
+            "relative_path": "Upgrade Fixture/2026/2026-01-02 - Episode 2.wav",
+            "sidecar_written_at": "2026-10-03T16:04:13Z",
+            "size_bytes": 4044,
+            "sniffed_type": "wav",
+            "source_hash_algo": "sha256",
+            "source_hash_value": "aebf62a81ad213faaf36a3f35022b349967ff3f9feaa93626fbdef65f4292c37",
+            "source_size_bytes": 4044,
+            "tag_mode": null,
+            "tag_state": "untagged",
+            "tagged_at": null,
+            "updated_at": "2026-10-03T16:04:13Z",
+            "verification_reason": "size_match",
+            "verification_state": "verified",
+            "verified_at": "2026-10-03T16:04:13Z"
+          }
+        ],
+        "schema": 1
+      }
+    },
+    {
+      "args": [
+        "archive",
+        "policy",
+        "list"
+      ],
+      "output": {
+        "policies": [
+          {
+            "max_age_days": null,
+            "max_backlog": 2,
+            "mode": "manual",
+            "podcast_id": "01M4184G1AKGH64D5BFSBHJHBY",
+            "priority": null,
+            "updated_at": "2026-10-03T16:04:13Z"
+          }
+        ],
+        "schema": 1
+      }
+    },
+    {
+      "args": [
+        "archive",
+        "manifest",
+        "status"
+      ],
+      "output": {
+        "manifests": [
+          {
+            "entries": 2,
+            "generated_at": "2026-10-03T16:04:13Z",
+            "hash_value": "67a3dc01a520dbeabfd9e40d1529c77def0e7a6a2d8716ddc2538808cef9d9f3",
+            "podcast_id": "01M4184G1AKGH64D5BFSBHJHBY",
+            "relative_path": ".uguisu/manifests/01M4184G1AKGH64D5BFSBHJHBY/manifest.sha256",
+            "stale": false,
+            "stale_since": null,
+            "updated_at": "2026-10-03T16:04:13Z"
+          }
+        ],
+        "schema": 1
+      }
+    },
+    {
+      "args": [
+        "archive",
+        "artwork",
+        "show",
+        "01M4184G1AKGH64D5BFSBHJHBY"
+      ],
+      "output": {
+        "current": {
+          "content_type": "image/png",
+          "created_at": "2026-10-03T16:04:13Z",
+          "etag": null,
+          "format": "png",
+          "hash_algo": "sha256",
+          "hash_value": "67fd88794a6cdd728bb9924ff7be9e030ae31c7585d5804fd6500ac43b4bb02e",
+          "id": "01M4184GCDZ8YXDF3YKD94PBHF",
+          "is_current": true,
+          "last_modified": null,
+          "podcast_id": "01M4184G1AKGH64D5BFSBHJHBY",
+          "relative_path": ".uguisu/artwork/01M4184G1AKGH64D5BFSBHJHBY/67fd88794a6cdd728bb9924ff7be9e030ae31c7585d5804fd6500ac43b4bb02e.png",
+          "retrieved_at": "2026-10-03T16:04:13Z",
+          "size_bytes": 67,
+          "source_url": "http://127.0.0.1:58947/cover.png",
+          "updated_at": "2026-10-03T16:04:13Z"
+        },
+        "schema": 1,
+        "state": "stored"
+      }
+    },
+    {
+      "args": [
+        "download",
+        "list"
+      ],
+      "output": {
+        "jobs": [
+          {
+            "accept_ranges": false,
+            "attempt_count": 1,
+            "bytes_downloaded": 4044,
+            "claimed_at": "2026-10-03T16:04:13Z",
+            "content_type": "audio/wav",
+            "created_at": "2026-10-03T16:04:13Z",
+            "enclosure_id": "01M4184G1HY5B3E03EZAKXNZ8S",
+            "episode_id": "01M4184G1HY5B3E03EZAKXNZ8W",
+            "episode_title": "Episode 1",
+            "etag": null,
+            "finished_at": "2026-10-03T16:04:13Z",
+            "hash_algo": "sha256",
+            "hash_value": "f9bbe28bc5af66266961c931e2cd7ae4b6c3f863428ef2b1ade242690c42d327",
+            "host_key": "http://127.0.0.1:58947",
+            "id": "01M4184G4BBY06BKD3VF86W51R",
+            "last_error_detail": null,
+            "last_error_kind": null,
+            "last_http_status": 200,
+            "last_modified": null,
+            "max_attempts": 8,
+            "next_attempt_at": null,
+            "part_path": "01M4184G1AKGH64D5BFSBHJHBY/.uguisu-tmp/01M4184G4BBY06BKD3VF86W51R.part",
+            "percentage": 100.0,
+            "podcast_id": "01M4184G1AKGH64D5BFSBHJHBY",
+            "podcast_title": "Upgrade Fixture",
+            "priority": "normal",
+            "progress_at": null,
+            "published_at": "2026-01-01T10:00:00Z",
+            "sniffed_type": "wav",
+            "source_url": "http://127.0.0.1:58947/ep1.wav",
+            "started_at": "2026-10-03T16:04:13Z",
+            "state": "completed",
+            "state_reason": null,
+            "target_path": "Upgrade Fixture/2026/2026-01-01 - Episode 1.wav",
+            "total_bytes": 4044,
+            "updated_at": "2026-10-03T16:04:13Z"
+          },
+          {
+            "accept_ranges": false,
+            "attempt_count": 1,
+            "bytes_downloaded": 4044,
+            "claimed_at": "2026-10-03T16:04:13Z",
+            "content_type": "audio/wav",
+            "created_at": "2026-10-03T16:04:13Z",
+            "enclosure_id": "01M4184G1HY5B3E03EZAKXNZ8V",
+            "episode_id": "01M4184G1HY5B3E03EZAKXNZ8X",
+            "episode_title": "Episode 2",
+            "etag": null,
+            "finished_at": "2026-10-03T16:04:13Z",
+            "hash_algo": "sha256",
+            "hash_value": "aebf62a81ad213faaf36a3f35022b349967ff3f9feaa93626fbdef65f4292c37",
+            "host_key": "http://127.0.0.1:58947",
+            "id": "01M4184G4AM7B0T7X9JHD13DAS",
+            "last_error_detail": null,
+            "last_error_kind": null,
+            "last_http_status": 200,
+            "last_modified": null,
+            "max_attempts": 8,
+            "next_attempt_at": null,
+            "part_path": "01M4184G1AKGH64D5BFSBHJHBY/.uguisu-tmp/01M4184G4AM7B0T7X9JHD13DAS.part",
+            "percentage": 100.0,
+            "podcast_id": "01M4184G1AKGH64D5BFSBHJHBY",
+            "podcast_title": "Upgrade Fixture",
+            "priority": "normal",
+            "progress_at": null,
+            "published_at": "2026-01-02T10:00:00Z",
+            "sniffed_type": "wav",
+            "source_url": "http://127.0.0.1:58947/ep2.wav",
+            "started_at": "2026-10-03T16:04:13Z",
+            "state": "completed",
+            "state_reason": null,
+            "target_path": "Upgrade Fixture/2026/2026-01-02 - Episode 2.wav",
+            "total_bytes": 4044,
+            "updated_at": "2026-10-03T16:04:13Z"
+          }
+        ],
+        "next_after": null,
+        "schema": 1
+      }
+    },
+    {
+      "args": [
+        "episode",
+        "duplicates"
+      ],
+      "output": {
+        "duplicates": [
+          {
+            "candidate": {
+              "archive_state": "skipped",
+              "artwork_url": null,
+              "author": null,
+              "content_hash": "35f58dc67605b2ca4c0b5242706a8d7366a0d3d8d506d1d31afa4382733f1a67",
+              "created_at": "2026-10-03T16:04:13Z",
+              "description_html": "Episode 2 of the upgrade fixture.",
+              "description_text": "Episode 2 of the upgrade fixture.",
+              "duplicate_of_episode_id": "01M4184G1HY5B3E03EZAKXNZ8X",
+              "duplicate_reasons": [
+                "same_enclosure_url",
+                "same_fingerprint",
+                "same_published_minute",
+                "same_title"
+              ],
+              "duration_raw": "0:02",
+              "duration_secs": 2,
+              "enclosures": [
+                {
+                  "bitrate": null,
+                  "codecs": null,
+                  "episode_id": "01M4184GK2PT9JABGS5JBXS73S",
+                  "height": null,
+                  "id": "01M4184GK2PT9JABGS5JBXS73R",
+                  "integrity_type": null,
+                  "integrity_value": null,
+                  "is_primary": true,
+                  "kind": "audio",
+                  "lang": null,
+                  "length_bytes": 4044,
+                  "mime_type": "audio/wav",
+                  "position": 0,
+                  "sources": [],
+                  "title": null,
+                  "url": "http://127.0.0.1:58947/ep2.wav"
+                }
+              ],
+              "episode_number": null,
+              "episode_type": null,
+              "explicit": null,
+              "extras": {
+                "chapters": [],
+                "funding": [],
+                "license": null,
+                "location": null,
+                "persons": [],
+                "raw_extensions": [],
+                "soundbites": [],
+                "transcripts": [],
+                "txt": [],
+                "value": null
+              },
+              "first_seen_at": "2026-10-03T16:04:13Z",
+              "guid": "upgrade-2-rewritten",
+              "guid_is_permalink": false,
+              "id": "01M4184GK2PT9JABGS5JBXS73S",
+              "identity": {
+                "enclosure_key": "127.0.0.1:58947/ep2.wav",
+                "fingerprint_key": "7e2d67bd8832a446bb9552ca92132568cb41aec21994fe00cad885932f0bc6a6",
+                "guid_key": "upgrade-2-rewritten",
+                "key": "guid:upgrade-2-rewritten",
+                "reason": "unique guid",
+                "source": "guid"
+              },
+              "last_seen_in_feed_at": "2026-10-03T16:04:13Z",
+              "link": null,
+              "malformed": false,
+              "malformed_reason": null,
+              "missing_streak": 0,
+              "podcast_id": "01M4184G1AKGH64D5BFSBHJHBY",
+              "published_at": "2026-01-02T10:00:00Z",
+              "published_at_quality": "exact",
+              "published_at_raw": "02 Jan 2026 10:00:00 +0000",
+              "removed_from_feed_at": null,
+              "season": null,
+              "skip_reason": "duplicate of 01M4184G1HY5B3E03EZAKXNZ8X",
+              "sort_at": "2026-01-02T10:00:00Z",
+              "sort_title": "episode 2",
+              "source_metadata": null,
+              "subtitle": null,
+              "title": "Episode 2",
+              "updated_at": "2026-10-03T16:04:13Z",
+              "updated_at_source": null
+            },
+            "original": {
+              "archive_state": "archived",
+              "artwork_url": null,
+              "author": null,
+              "content_hash": "35f58dc67605b2ca4c0b5242706a8d7366a0d3d8d506d1d31afa4382733f1a67",
+              "created_at": "2026-10-03T16:04:12Z",
+              "description_html": "Episode 2 of the upgrade fixture.",
+              "description_text": "Episode 2 of the upgrade fixture.",
+              "duplicate_of_episode_id": null,
+              "duplicate_reasons": [],
+              "duration_raw": "0:02",
+              "duration_secs": 2,
+              "enclosures": [
+                {
+                  "bitrate": null,
+                  "codecs": null,
+                  "episode_id": "01M4184G1HY5B3E03EZAKXNZ8X",
+                  "height": null,
+                  "id": "01M4184G1HY5B3E03EZAKXNZ8V",
+                  "integrity_type": null,
+                  "integrity_value": null,
+                  "is_primary": true,
+                  "kind": "audio",
+                  "lang": null,
+                  "length_bytes": 4044,
+                  "mime_type": "audio/wav",
+                  "position": 0,
+                  "sources": [],
+                  "title": null,
+                  "url": "http://127.0.0.1:58947/ep2.wav"
+                }
+              ],
+              "episode_number": null,
+              "episode_type": null,
+              "explicit": null,
+              "extras": {
+                "chapters": [],
+                "funding": [],
+                "license": null,
+                "location": null,
+                "persons": [],
+                "raw_extensions": [],
+                "soundbites": [],
+                "transcripts": [],
+                "txt": [],
+                "value": null
+              },
+              "first_seen_at": "2026-10-03T16:04:12Z",
+              "guid": "upgrade-2",
+              "guid_is_permalink": false,
+              "id": "01M4184G1HY5B3E03EZAKXNZ8X",
+              "identity": {
+                "enclosure_key": "127.0.0.1:58947/ep2.wav",
+                "fingerprint_key": "7e2d67bd8832a446bb9552ca92132568cb41aec21994fe00cad885932f0bc6a6",
+                "guid_key": "upgrade-2",
+                "key": "guid:upgrade-2",
+                "reason": "unique guid",
+                "source": "guid"
+              },
+              "last_seen_in_feed_at": "2026-10-03T16:04:12Z",
+              "link": null,
+              "malformed": false,
+              "malformed_reason": null,
+              "missing_streak": 1,
+              "podcast_id": "01M4184G1AKGH64D5BFSBHJHBY",
+              "published_at": "2026-01-02T10:00:00Z",
+              "published_at_quality": "exact",
+              "published_at_raw": "02 Jan 2026 10:00:00 +0000",
+              "removed_from_feed_at": null,
+              "season": null,
+              "skip_reason": null,
+              "sort_at": "2026-01-02T10:00:00Z",
+              "sort_title": "episode 2",
+              "source_metadata": null,
+              "subtitle": null,
+              "title": "Episode 2",
+              "updated_at": "2026-10-03T16:04:13Z",
+              "updated_at_source": null
+            }
+          }
+        ],
+        "schema": 1
+      }
+    },
+    {
+      "args": [
+        "config",
+        "get",
+        "UGUISU_ARCHIVE_MAX_AGE_DAYS"
+      ],
+      "output": {
+        "key": "UGUISU_ARCHIVE_MAX_AGE_DAYS",
+        "live": true,
+        "origin": "settings",
+        "persistable": true,
+        "pinned": false,
+        "schema": 1,
+        "stored": "30",
+        "value": "30"
+      }
+    },
+    {
+      "args": [
+        "auth",
+        "token",
+        "list"
+      ],
+      "output": {
+        "schema": 1,
+        "tokens": [
+          {
+            "created_at": "2026-10-03T16:04:15Z",
+            "expires_at": null,
+            "id": "01M4184JGPAB7EVSS027BV7FZT",
+            "last_used_at": null,
+            "name": "upgrade-fixture",
+            "revoked_at": null,
+            "scope": "read"
+          }
+        ]
+      }
+    },
+    {
+      "args": [
+        "archive",
+        "sidecar",
+        "show",
+        "01M4184G1HY5B3E03EZAKXNZ8W"
+      ],
+      "output": {
+        "archive": {
+          "content_type": "audio/wav",
+          "hash_algo": "sha256",
+          "hash_value": "f9bbe28bc5af66266961c931e2cd7ae4b6c3f863428ef2b1ade242690c42d327",
+          "origin": "download",
+          "registered_at": "2026-10-03T16:04:13Z",
+          "relative_path": "Upgrade Fixture/2026/2026-01-01 - Episode 1.wav",
+          "size_bytes": 4044,
+          "sniffed_type": "wav",
+          "tag_mode": null,
+          "tag_state": "untagged",
+          "tagged_at": null
+        },
+        "episode": {
+          "description_text": "Episode 1 of the upgrade fixture.",
+          "duration_secs": 1,
+          "enclosure_length_bytes": 4044,
+          "enclosure_type": "audio/wav",
+          "enclosure_url": "http://127.0.0.1:58947/ep1.wav",
+          "guid": "upgrade-1",
+          "id": "01M4184G1HY5B3E03EZAKXNZ8W",
+          "identity_key": "guid:upgrade-1",
+          "identity_source": "guid",
+          "link": null,
+          "number": null,
+          "published_at": "2026-01-01T10:00:00Z",
+          "season": null,
+          "title": "Episode 1"
+        },
+        "generator": "uguisu/0.1.0",
+        "podcast": {
+          "author": null,
+          "categories": [],
+          "feed_url": "http://127.0.0.1:58947/feed.xml",
+          "id": "01M4184G1AKGH64D5BFSBHJHBY",
+          "language": null,
+          "publisher": null,
+          "title": "Upgrade Fixture"
+        },
+        "schema": 1,
+        "source": {
+          "hash_algo": "sha256",
+          "hash_value": "f9bbe28bc5af66266961c931e2cd7ae4b6c3f863428ef2b1ade242690c42d327",
+          "origin_detail": "http://127.0.0.1:58947/ep1.wav",
+          "size_bytes": 4044
+        },
+        "written_at": "2026-10-03T16:04:13Z"
+      }
+    },
+    {
+      "args": [
+        "archive",
+        "sidecar",
+        "show",
+        "01M4184G1HY5B3E03EZAKXNZ8X"
+      ],
+      "output": {
+        "archive": {
+          "content_type": "audio/wav",
+          "hash_algo": "sha256",
+          "hash_value": "aebf62a81ad213faaf36a3f35022b349967ff3f9feaa93626fbdef65f4292c37",
+          "origin": "download",
+          "registered_at": "2026-10-03T16:04:13Z",
+          "relative_path": "Upgrade Fixture/2026/2026-01-02 - Episode 2.wav",
+          "size_bytes": 4044,
+          "sniffed_type": "wav",
+          "tag_mode": null,
+          "tag_state": "untagged",
+          "tagged_at": null
+        },
+        "episode": {
+          "description_text": "Episode 2 of the upgrade fixture.",
+          "duration_secs": 2,
+          "enclosure_length_bytes": 4044,
+          "enclosure_type": "audio/wav",
+          "enclosure_url": "http://127.0.0.1:58947/ep2.wav",
+          "guid": "upgrade-2",
+          "id": "01M4184G1HY5B3E03EZAKXNZ8X",
+          "identity_key": "guid:upgrade-2",
+          "identity_source": "guid",
+          "link": null,
+          "number": null,
+          "published_at": "2026-01-02T10:00:00Z",
+          "season": null,
+          "title": "Episode 2"
+        },
+        "generator": "uguisu/0.1.0",
+        "podcast": {
+          "author": null,
+          "categories": [],
+          "feed_url": "http://127.0.0.1:58947/feed.xml",
+          "id": "01M4184G1AKGH64D5BFSBHJHBY",
+          "language": null,
+          "publisher": null,
+          "title": "Upgrade Fixture"
+        },
+        "schema": 1,
+        "source": {
+          "hash_algo": "sha256",
+          "hash_value": "aebf62a81ad213faaf36a3f35022b349967ff3f9feaa93626fbdef65f4292c37",
+          "origin_detail": "http://127.0.0.1:58947/ep2.wav",
+          "size_bytes": 4044
+        },
+        "written_at": "2026-10-03T16:04:13Z"
+      }
+    }
+  ],
+  "commit": "3bb9e20",
+  "name": "untagged-3bb9e20",
+  "password": "upgrade-fixture-password",
+  "token": "ea340e9bfacdf701ec122996d8ffb005b15b9ca24d015e373332aaee31f05f45",
+  "username": "fixture",
+  "version": "uguisu 0.1.0"
+}
