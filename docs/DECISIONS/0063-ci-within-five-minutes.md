@@ -41,12 +41,26 @@ The owner set the target: every pull request run within five minutes, from a col
 | `win-desktop` | Windows | `web-build desktop-test`, then the unpackaged desktop smoke |
 | `win-test-full` | Windows | `test`, the whole suite: on a push to `main`, a tag, the schedule or by hand, never on a pull request |
 
-- **The budget is per job: 4.5 minutes from a cold cache.** The rest of the five minutes is runner setup and `ci` itself. A change that pushes a job over brings it back under in the same pull request, by splitting the job or by making what it runs cheaper.
+- **The budget is per job: 4.5 minutes from a cold cache**, leaving the rest of the five minutes for queueing and `ci` itself. `win-desktop` and `win-desktop-lint` are over it (below), and the owner accepted that. A change that makes any job slower than measured here brings it back in the same pull request, by splitting the job or by making what it runs cheaper.
 - **The tests run under cargo-nextest**, every test in its own process and many at once, then `cargo test --doc`, which nextest does not run. Where nextest is not installed, `check.py` runs the same tests under `cargo test` and says so on the `PASS` line. CI passes `--require-tools`, so it never falls back.
 - **argon2, blake2 and sha2 build optimised in the dev profile** (`Cargo.toml`). Release builds are unchanged.
 - **CI builds without debug info** (`CARGO_PROFILE_DEV_DEBUG=0`): linking is faster and the caches smaller. A panic still names its file and line.
 - **Caches are saved only from branch runs**: `main`, the schedule and manual runs. A pull request restores `main`'s caches and saves nothing, so it never evicts them. A run twice a week reads them, because GitHub evicts a cache nobody read for seven days. When `Cargo.lock` changes, the cache of the previous lockfile is restored and only what changed is built.
 - **Every push to a pull request runs everything, drafts included.** The Markdown-only shortcut is gone, because a skipped job would fail `ci`.
+
+**Measured** on pull request #1 (run 37972426744), every job cold:
+
+| Job | Took | Job | Took |
+|---|---|---|---|
+| `quick` | 1:08 | `win-clippy` | 3:45 |
+| `clippy` | 1:51 | `win-cli` | 3:26 |
+| `test-engine` | 2:26 | `win-tests` | 3:38 |
+| `test-rest` | 3:42 | `win-desktop-lint` | 4:38 |
+| `e2e` | 2:09 | `win-desktop` | 5:34 |
+| `desktop-lint` | 2:39 | `ci` | 0:04 |
+| `desktop` | 4:23 | **the run** | **5:44** |
+
+The two Windows desktop jobs compile the desktop workspace — Tauri, WebView2 and the server — which takes about four minutes on the runner's four cores before anything runs. A Dev Drive for cargo's and rustup's homes was measured and gained nothing net (alternatives). The owner kept them as they are rather than turning off Defender's real-time scan or moving them after the merge: a cold run follows only a toolchain change or an evicted cache.
 
 **Kept from ADR 0046:** `--locked` on every cargo command that resolves dependencies, the pinned toolchain, a timeout on every job (`check_needs.py --workflow`), packaging only on a `v*` tag or by hand, and `build`, `openapi` and `bench` as local checks only.
 
@@ -54,7 +68,7 @@ The owner set the target: every pull request run within five minutes, from a col
 
 - A Windows-only defect outside `test-windows`' binaries is found by `win-test-full` on `main`, minutes after the merge. A red `main` is fixed before the next merge (CLAUDE.md).
 - A run is 13 jobs, 14 on `main`. GitHub Free runs 20 jobs at once across the organisation, so two overlapping runs queue.
-- A cold run follows every toolchain change and every Rust update on the runner image: the cache key covers the installed toolchains.
+- A cold run takes about 5:45, because of `win-desktop`. It follows every toolchain change and every Rust update on the runner image, because the cache key covers the installed toolchains.
 - A backtrace in a CI log names functions but no lines.
 - A Markdown-only pull request runs everything too.
 
@@ -62,6 +76,7 @@ The owner set the target: every pull request run within five minutes, from a col
 
 - **Larger runners.** Rejected by the owner: they need a paid plan and bill per minute even for a public repository.
 - **The whole Windows suite on every pull request.** Rejected: compiling the test suite alone took 5.5 minutes on Windows from a cold cache.
-- **ring instead of aws-lc-rs as the TLS crypto provider.** Deferred. It would shorten the longest step of every cold job, but changes a production dependency and drops post-quantum key exchange. It gets its own ADR if a job stays over the budget.
+- **A Windows Dev Drive for cargo's and rustup's homes.** Measured and reverted: unpacking the crates took 23 s less and compiling 8 s less, but setting up the drive took 8 s and installing the toolchain into a new rustup home 14 s more; `win-desktop` took 5:46.
+- **ring instead of aws-lc-rs as the TLS crypto provider.** Not done. aws-lc's C build is the longest single step of every cold job, but in the desktop jobs the Tauri chain is about as long, so it would save an estimated 10–30 s there, for a change to a production dependency that also drops post-quantum key exchange.
 - **A nextest archive built once and run in partitions.** Rejected: the archive's upload and download add a step to every job's critical path.
 - **sccache.** Rejected: it does nothing for a cold run.
