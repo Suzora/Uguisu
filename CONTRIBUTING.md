@@ -16,7 +16,7 @@ Thank you for considering a contribution. Uguisu is pre-alpha: the engine, the C
 1. Open an issue describing the change and which phase it belongs to.
 2. Branch from `main`, implement with tests and docs.
 3. Run `python3 scripts/check.py`.
-4. Open a draft pull request, and mark it ready for review when it is done. Every push runs all of CI in about five minutes, and the `ci` check must be green on a head that contains the current `main` ([ADR 0063](docs/DECISIONS/0063-ci-within-five-minutes.md)).
+4. Open a draft pull request, and mark it ready for review when it is done. Every push runs CI in about five minutes (the whole Windows suite runs after the merge), and the `ci` check must be green on a head that contains the current `main` ([ADR 0063](docs/DECISIONS/0063-ci-within-five-minutes.md)).
 
 ## Fixtures
 
