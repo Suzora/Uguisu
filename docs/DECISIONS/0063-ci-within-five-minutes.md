@@ -48,17 +48,19 @@ The owner set the target: every pull request run within five minutes, from a col
 - **Caches are saved only from branch runs**: `main`, the schedule and manual runs. A pull request restores `main`'s caches and saves nothing, so it never evicts them. A run twice a week reads them, because GitHub evicts a cache nobody read for seven days. When `Cargo.lock` changes, the cache of the previous lockfile is restored and only what changed is built.
 - **Every push to a pull request runs everything, drafts included.** The Markdown-only shortcut is gone, because a skipped job would fail `ci`.
 
-**Measured** on pull request #1 (run 37972426744), every job cold:
+**Measured** on pull request #1: cold in its first run (37972426744), every job without a cache; warm in a manual run on the branch (37976378733), after an earlier run saved its caches.
 
-| Job | Took | Job | Took |
-|---|---|---|---|
-| `quick` | 1:08 | `win-clippy` | 3:45 |
-| `clippy` | 1:51 | `win-cli` | 3:26 |
-| `test-engine` | 2:26 | `win-tests` | 3:38 |
-| `test-rest` | 3:42 | `win-desktop-lint` | 4:38 |
-| `e2e` | 2:09 | `win-desktop` | 5:34 |
-| `desktop-lint` | 2:39 | `ci` | 0:04 |
-| `desktop` | 4:23 | **the run** | **5:44** |
+| Job | Cold | Warm | Job | Cold | Warm |
+|---|---|---|---|---|---|
+| `quick` | 1:08 | 0:47 | `win-clippy` | 3:45 | 1:24 |
+| `clippy` | 1:51 | 0:37 | `win-cli` | 3:26 | 1:53 |
+| `test-engine` | 2:26 | 2:02 | `win-tests` | 3:38 | 1:59 |
+| `test-rest` | 3:42 | 2:28 | `win-desktop-lint` | 4:38 | 2:01 |
+| `e2e` | 2:09 | 1:07 | `win-desktop` | 5:34 | 3:22 |
+| `desktop-lint` | 2:39 | 1:18 | `ci` | 0:04 | 0:05 |
+| `desktop` | 4:23 | 2:10 | `win-test-full` (not on a pull request) | — | 6:45 |
+
+A cold run took 5:44 and a warm one about 3:30, not counting time queued behind another run. Runners vary: across four cold runs `win-desktop` took between 4:29 and 6:43.
 
 The two Windows desktop jobs compile the desktop workspace — Tauri, WebView2 and the server — which takes about four minutes on the runner's four cores before anything runs. A Dev Drive for cargo's and rustup's homes was measured and gained nothing net (alternatives). The owner kept them as they are rather than turning off Defender's real-time scan or moving them after the merge: a cold run follows only a toolchain change or an evicted cache.
 
@@ -68,7 +70,7 @@ The two Windows desktop jobs compile the desktop workspace — Tauri, WebView2 a
 
 - A Windows-only defect outside `test-windows`' binaries is found by `win-test-full` on `main`, minutes after the merge. A red `main` is fixed before the next merge (CLAUDE.md).
 - A run is 13 jobs, 14 on `main`. GitHub Free runs 20 jobs at once across the organisation, so two overlapping runs queue.
-- A cold run takes about 5:45, because of `win-desktop`. It follows every toolchain change and every Rust update on the runner image, because the cache key covers the installed toolchains.
+- A cold run takes about 5:45, and up to about seven minutes on a slow runner, because of `win-desktop`. It follows every toolchain change and every Rust update on the runner image, because the cache key covers the installed toolchains.
 - A backtrace in a CI log names functions but no lines.
 - A Markdown-only pull request runs everything too.
 
