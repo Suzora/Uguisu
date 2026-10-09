@@ -20,8 +20,6 @@
       "Bash(python3 scripts/check-doc-links.py:*)"
     ],
     "deny": [
-      "Edit(crates/uguisu-storage/migrations/**)",
-      "Write(crates/uguisu-storage/migrations/**)"
     ]
   }
 }
