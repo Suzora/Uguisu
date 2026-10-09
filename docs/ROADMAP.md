@@ -29,7 +29,7 @@ From an audit of every phase against its code, tests and CI on 2026-10-01. **Pen
 | Phase | Item | Goes to |
 |---|---|---|
 | 2 | Podcast Index's authenticated responses were never recorded; only the 401 path is verified | 11 (needs a key) |
-| 9a | Never observed on Windows: a logoff closing the engine (F11), autostart restored after an NSIS upgrade (F12), the quoted login item starting Uguisu (F16), `e2e.py` and `desktop_upgrade.py`, a machine without network or WebView2 | 11 (Windows clean machine) |
+| 9a | Never observed on Windows: a real logoff closing the engine (F11; `package-msi` simulates one), the quoted login item starting Uguisu at login (F16), a machine without network or WebView2 | 11 (Windows clean machine) |
 | 9a | The graphical Flatpak journey, including its zenity dialogs | 11 |
 
 ### TODO before v1
@@ -293,7 +293,7 @@ From an audit of every phase against its code, tests and CI on 2026-10-01. **Pen
 - **Not claimed (→ 11):** see [Pending](#pending): the Windows journeys after the fixes (F11, F12, F16, `e2e.py`, `desktop_upgrade.py`, no network or WebView2) and the graphical Flatpak journey.
 
 **Deferred with reasons:**
-- **Automated upgrades other than the `.deb`:** NSIS over NSIS, MSI major upgrades and `dnf upgrade` were verified once by hand; Flatpak updates not at all. Each needs a second build at a lower version, and only the `.deb` upgrade runs in CI (→ 11).
+- **Automated upgrades other than the `.deb`:** NSIS over NSIS, MSI major upgrades and `dnf upgrade` were verified once by hand; Flatpak updates not at all. Each needs a second build at a lower version, and only the `.deb` upgrade ran in CI. Built in Phase 11 ([ADR 0064](DECISIONS/0064-linux-floor-in-a-container-and-every-update-tested.md)), passing in Desktop run 37992951708.
 - **A silent NSIS downgrade, and the MSI's folder after an NSIS install:** both come from tauri-bundler's templates ([`DESKTOP.md`](DESKTOP.md) § Known limits). Fixing them means maintaining Uguisu's own copies of the templates (post-v1).
 - **Persistence of a folder granted through the Flatpak portal:** it needs a graphical Flatpak session (ADR 0044; → 11).
 - **The holder's pid in the lock refusal on Windows:** a Windows lock is mandatory, so the pid had to move out of `uguisu.lock`; built in Phase 10, in a sibling `uguisu.pid` (ADR 0016).
@@ -412,7 +412,7 @@ Found while fixing them, and fixed: a tag write that failed after its rename cle
 - artwork the network policy refuses answered as a network failure (exit 8); it is `blocked_by_policy` (exit 6), as for a feed;
 - the second of two similar shows in a search named the first by its folded key ("the daily").
 
-Scripted since: the discovery scenarios (`tests/fixtures/discovery/README.md`), hostile names on NTFS and ext4, case-only collisions, a newer database refused unchanged, no `Authorization` from the browser in three layers, a real process killed mid-download and mid-import ([`docs/benchmarks/2026-10-04-phase11-verification.md`](benchmarks/2026-10-04-phase11-verification.md)), and the Docker image ([ADR 0061](DECISIONS/0061-the-docker-image.md), [`DOCKER.md`](../DOCKER.md)): 22.8 MB compressed, `scripts/docker_smoke.py` green in nine checks, SIGTERM mid-download parking the job and a restart resuming it with a range request; trusted reverse proxies ([ADR 0062](DECISIONS/0062-trusted-proxies.md)). The threat model review is done, with seven gaps fixed in code and `pnpm audit` clean (`docs/SECURITY.md` §3.10).
+Scripted since: the discovery scenarios (`tests/fixtures/discovery/README.md`), hostile names on NTFS and ext4, case-only collisions, a newer database refused unchanged, no `Authorization` from the browser in three layers, a real process killed mid-download and mid-import ([`docs/benchmarks/2026-10-04-phase11-verification.md`](benchmarks/2026-10-04-phase11-verification.md)), and the Docker image ([ADR 0061](DECISIONS/0061-the-docker-image.md), [`DOCKER.md`](../DOCKER.md)): 22.8 MB compressed, `scripts/docker_smoke.py` green in nine checks, SIGTERM mid-download parking the job and a restart resuming it with a range request; trusted reverse proxies ([ADR 0062](DECISIONS/0062-trusted-proxies.md)); every format's update but the AppImage's, the Linux floor in an `ubuntu:22.04` container, and a simulated Windows logoff ([ADR 0064](DECISIONS/0064-linux-floor-in-a-container-and-every-update-tested.md)), all passing in Desktop run 37992951708, where autostart came back after an NSIS upgrade (F12); `e2e.py` and `desktop_upgrade.py` on Windows 11. The threat model review is done, with seven gaps fixed in code and `pnpm audit` clean (`docs/SECURITY.md` §3.10).
 
 Settled rather than fixed: RUSTSEC-2024-0436 (`paste` through lofty) stays accepted, since lofty 0.25.4 still uses it and upstream declined a replacement (`docs/SECURITY.md` §3.10).
 

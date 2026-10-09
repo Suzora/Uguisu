@@ -61,7 +61,7 @@ Two Windows behaviours were read from source and never observed:
 
 ## Consequences
 
-- A packaging run builds every format but the AppImage twice, and takes longer.
+- A packaging run builds every format but the AppImage twice. In Desktop run 37992951708 the bundle jobs took 15 minutes (Linux), 25 (Windows) and 19 (Flatpak), against 12, 14 and 10 in run 37985697410 before.
 - The floor's container is pinned by tag, not digest. An `ubuntu:22.04` image update can change the build, and the glibc check still guards the floor.
 - A silent NSIS upgrade (`/S` over an installation) skips the reinstall page, so the old uninstaller does not run and the Run value stays. That path is not checked; `upgrade-nsis` checks the one a person takes.
 - A silent NSIS downgrade is still not refused ([`DESKTOP.md`](../DESKTOP.md) § Known limits). Only the MSI's refusal is tested.
