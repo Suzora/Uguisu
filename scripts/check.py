@@ -103,6 +103,18 @@ class Check:
         self.summary = summary
 
 
+# The desktop shell is a separate workspace because building it needs
+# WebKitGTK or the WebView2 SDK, which `--workspace` below must not start
+# requiring. Deliberately outside DEFAULT: on a machine without those
+# libraries this fails with a linker error naming them, which is the right
+# answer for someone who asked for it and the wrong one for someone who just
+# ran `check.py`.
+DESKTOP_LINT = (
+    Step(["cargo", "fmt", "--all", "--check"], cwd="desktop"),
+    Step(["cargo", "clippy", "--all-targets", "--locked", "--", "-D", "warnings"], cwd="desktop"),
+)
+DESKTOP_TEST = Step(["cargo", "test", "--locked"], cwd="desktop", tool="cargo")
+
 # `-D warnings` after `--` denies rustc lints too, so `missing_docs` fails here
 # exactly as it does under CI's RUSTFLAGS. CI sets RUSTFLAGS and this does not,
 # so dropping the flag would make the local check weaker than the remote one.
@@ -119,6 +131,18 @@ CHECKS: dict[str, Check] = {
     # Every test runs even after one fails, so a red run shows every failure
     # at once rather than the first one's.
     "test": Check(*rust_tests("--workspace"), summary=count_tests),
+    # CI's slices of `test`, each in its own job so that no pull-request job
+    # builds and runs the whole suite (ADR 0063).
+    "test-engine": Check(*rust_tests("-p", "uguisu-engine"), summary=count_tests),
+    "test-rest": Check(
+        *rust_tests("--workspace", "--exclude", "uguisu-engine"), summary=count_tests
+    ),
+    # The binaries with `#[cfg(windows)]` tests, for Windows' pull-request
+    # job; the whole suite runs on Windows after the merge.
+    "test-windows": Check(
+        nextest("-p", "uguisu-download", "-p", "uguisu-archive", "--lib", "--test", "filesystem"),
+        summary=count_tests,
+    ),
     "bench": Check(Step(["cargo", "bench", "--workspace", "--no-run"])),
     # Both workspaces: needs no compiler, so CI runs it in its first job.
     "deny": Check(
@@ -174,24 +198,15 @@ CHECKS: dict[str, Check] = {
         Step([PY, "scripts/check-desktop-layout.py"]),
         Step([PY, "scripts/check_needs.py", "--workflow"]),
     ),
-    # The desktop shell is a separate workspace because building it needs
-    # WebKitGTK or the WebView2 SDK, which `--workspace` above must not start
-    # requiring. Deliberately outside DEFAULT: on a machine without those
-    # libraries this fails with a linker error naming them, which is the right
-    # answer for someone who asked for it and the wrong one for someone who
-    # just ran `check.py`.
-    "desktop": Check(
-        Step(["cargo", "fmt", "--all", "--check"], cwd="desktop"),
-        Step(
-            ["cargo", "clippy", "--all-targets", "--locked", "--", "-D", "warnings"],
-            cwd="desktop",
-        ),
-        Step(["cargo", "test", "--locked"], cwd="desktop", tool="cargo"),
-        summary=count_tests,
-    ),
+    "desktop": Check(*DESKTOP_LINT, DESKTOP_TEST, summary=count_tests),
+    # CI's halves of `desktop`, one per job (ADR 0063).
+    "desktop-lint": Check(*DESKTOP_LINT),
+    "desktop-test": Check(DESKTOP_TEST, summary=count_tests),
 }
 
 DEFAULT = ["fmt", "clippy", "test", "web", "docs", "openapi", "api-types", "version", "docker"]
+# Parts of `test` and `desktop` for CI's jobs; `all` runs the wholes instead.
+SLICES = {"test-engine", "test-rest", "test-windows", "desktop-lint", "desktop-test"}
 
 
 def missing_tool(check: Check, *, required: bool) -> str | None:
@@ -268,7 +283,7 @@ def main() -> int:
 
     selected = args.checks or DEFAULT
     if selected == ["all"]:
-        selected = list(CHECKS)
+        selected = [name for name in CHECKS if name not in SLICES]
     unknown = [c for c in selected if c not in CHECKS]
     if unknown:
         print(f"unknown check(s): {' '.join(unknown)}", file=sys.stderr)
