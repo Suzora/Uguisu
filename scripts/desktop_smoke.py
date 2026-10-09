@@ -9,6 +9,11 @@ Usage:
 The command after `--` is launched with `--print-port` appended. It may be a
 wrapper such as `flatpak run <app-id>`.
 
+`--close logoff` (Windows) ends the application the way a logoff does rather
+than through its window: every top-level window is asked whether the session
+may end and told that it ends, and then the process is terminated, as Windows
+does once those messages are answered. The engine must have closed by then.
+
 What a pass means, in order: the process stays up and announces a port; the
 port is not reachable from outside loopback; `/api/v1/health` answers; `/`, a
 deep route and every asset `index.html` references are byte-identical to the
@@ -217,6 +222,34 @@ def user_closable(visible: bool, style: int, ex_style: int) -> bool:
     return visible and bool(style & WS_SYSMENU) and not ex_style & WS_EX_TOOLWINDOW
 
 
+def top_level_windows(pid: int) -> list[tuple[int, bool, int, int]]:
+    """Each top-level window of `pid`: handle, visibility, style, extended style."""
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.GetWindowLongW.restype = ctypes.c_long
+    GWL_STYLE, GWL_EXSTYLE = -16, -20
+    found: list[tuple[int, bool, int, int]] = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def visit(hwnd, _lparam):
+        owner = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        if owner.value == pid:
+            found.append((
+                hwnd,
+                bool(user32.IsWindowVisible(hwnd)),
+                user32.GetWindowLongW(hwnd, GWL_STYLE) & 0xFFFF_FFFF,
+                user32.GetWindowLongW(hwnd, GWL_EXSTYLE) & 0xFFFF_FFFF,
+            ))
+        return True
+
+    user32.EnumWindows(visit, 0)
+    return found
+
+
 def close_windows(pid: int) -> None:
     """Asks every window of `pid` a user could close to close, as the user would.
 
@@ -224,31 +257,44 @@ def close_windows(pid: int) -> None:
     control event to reach; `WM_CLOSE` is the request it actually handles.
     """
     import ctypes
-    from ctypes import wintypes
 
-    user32 = ctypes.windll.user32
-    user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
-    user32.GetWindowLongW.restype = ctypes.c_long
-    GWL_STYLE, GWL_EXSTYLE, WM_CLOSE = -16, -20, 0x0010
-    handles: list[int] = []
-
-    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
-    def visit(hwnd, _lparam):
-        owner = wintypes.DWORD()
-        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
-        if owner.value == pid and user_closable(
-            bool(user32.IsWindowVisible(hwnd)),
-            user32.GetWindowLongW(hwnd, GWL_STYLE) & 0xFFFF_FFFF,
-            user32.GetWindowLongW(hwnd, GWL_EXSTYLE) & 0xFFFF_FFFF,
-        ):
-            handles.append(hwnd)
-        return True
-
-    user32.EnumWindows(visit, 0)
+    WM_CLOSE = 0x0010
+    handles = [hwnd for hwnd, *shape in top_level_windows(pid) if user_closable(*shape)]
     if not handles:
         raise Failure(f"no window of pid {pid} has a close box to press")
     for hwnd in handles:
-        user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+        ctypes.windll.user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+
+
+def end_session(pid: int) -> None:
+    """Tells every top-level window of `pid` that the user is logging off.
+
+    Every one, not only those a user could close: tao answers `WM_ENDSESSION`
+    in its event-target window, and Windows sends it to all of them. Each
+    message is sent and its answer awaited, as Windows does before it ends the
+    process; a window gone by the time its turn comes is skipped.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    user32.SendMessageTimeoutW.argtypes = [
+        wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM,
+        wintypes.UINT, wintypes.UINT, ctypes.POINTER(ctypes.c_size_t),
+    ]
+    user32.SendMessageTimeoutW.restype = ctypes.c_size_t
+    WM_QUERYENDSESSION, WM_ENDSESSION, ENDSESSION_LOGOFF, SMTO_BLOCK = 0x0011, 0x0016, 0x8000_0000, 0x0001
+    handles = [hwnd for hwnd, *_shape in top_level_windows(pid)]
+    if not handles:
+        raise Failure(f"pid {pid} has no top-level window to tell")
+    for name, message, ending in (("WM_QUERYENDSESSION", WM_QUERYENDSESSION, 0), ("WM_ENDSESSION", WM_ENDSESSION, 1)):
+        for hwnd in handles:
+            answer = ctypes.c_size_t()
+            sent = user32.SendMessageTimeoutW(
+                hwnd, message, ending, ENDSESSION_LOGOFF, SMTO_BLOCK, 90_000, ctypes.byref(answer)
+            )
+            if not sent and user32.IsWindow(hwnd):
+                raise Failure(f"window {hwnd:#x} of pid {pid} did not answer {name} within 90 s")
 
 
 def request_close(process: subprocess.Popen) -> None:
@@ -325,7 +371,7 @@ def opened_data_dir(output: str) -> Path | None:
     return Path(match.group(1)) if match else None
 
 
-def smoke(command: list[str], spa: Spa, layout: str, default_data_dir: bool) -> int:
+def smoke(command: list[str], spa: Spa, layout: str, default_data_dir: bool, close: str) -> int:
     if "UGUISU_WEB_DIR" in os.environ:
         raise Failure(
             "UGUISU_WEB_DIR is set. It overrides the bundled UI, so a pass would not "
@@ -384,6 +430,10 @@ def smoke(command: list[str], spa: Spa, layout: str, default_data_dir: bool) -> 
 
         if layout == "flatpak":
             os.kill(sandboxed_app(process.pid), signal.SIGTERM)
+        elif close == "logoff":
+            end_session(process.pid)
+            # What Windows does once the session's end is answered.
+            process.kill()
         else:
             request_close(process)
         try:
@@ -391,10 +441,13 @@ def smoke(command: list[str], spa: Spa, layout: str, default_data_dir: bool) -> 
         except subprocess.TimeoutExpired:
             process.kill()
             raise Failure(f"[{layout}] did not exit within 90 s of a close request") from None
-        if code != 0:
+        if code != 0 and close != "logoff":
             raise Failure(f"[{layout}] exited with {code} after a close request")
-        if CLOSED not in streams.text():
-            raise Failure(f"[{layout}] exited without logging {CLOSED!r}: the engine was not closed")
+        # The pipes may still hold the last lines after the exit.
+        try:
+            wait_for(lambda: CLOSED in streams.text(), what=CLOSED, timeout=5)
+        except Failure:
+            raise Failure(f"[{layout}] exited without logging {CLOSED!r}: the engine was not closed") from None
         checks += 1
 
         if not refused("127.0.0.1", port):
@@ -583,8 +636,16 @@ def main() -> int:
         type=Path,
         help="the executable the package installed, to check the format recorded in it",
     )
+    parser.add_argument(
+        "--close",
+        choices=("window", "logoff"),
+        default="window",
+        help="how the application is ended: its close request, or a Windows logoff",
+    )
     parser.add_argument("command", nargs=argparse.REMAINDER, help="-- <launcher and arguments>")
     args = parser.parse_args()
+    if args.close == "logoff" and os.name != "nt":
+        parser.error("--close logoff simulates a Windows logoff")
 
     try:
         if args.self_test:
@@ -597,7 +658,7 @@ def main() -> int:
         if args.installed_binary is not None:
             check_bundle_type(args.installed_binary.read_bytes(), args.layout)
             checks += 1
-        checks += smoke(command, expected_spa(args.expect_spa), args.layout, args.default_data_dir)
+        checks += smoke(command, expected_spa(args.expect_spa), args.layout, args.default_data_dir, args.close)
     except Failure as failure:
         print(f"FAIL desktop smoke\n\n{failure}")
         return 1
