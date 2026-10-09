@@ -119,12 +119,17 @@ async fn setup_with(h: &Harness, audio: Vec<u8>) -> (Podcast, Vec<EpisodeId>) {
         .unwrap();
     h.engine.start_downloads();
     h.engine.downloads().wait_idle().await.unwrap();
-    wait_for("the download to be archived", || async {
+    // The record exists before the check on completion has run, and that
+    // check changes it: wait for both, or a test reads it half-way.
+    wait_for("the download to be archived and checked", || async {
         let mut reader = h.engine.storage().reader().await.unwrap();
-        !archive_files::list(&mut reader, &ArchiveFilter::default(), None, 10)
+        let files = archive_files::list(&mut reader, &ArchiveFilter::default(), None, 10)
             .await
-            .unwrap()
-            .is_empty()
+            .unwrap();
+        !files.is_empty()
+            && files
+                .iter()
+                .all(|f| f.verification_state != VerificationState::Unchecked)
     })
     .await;
     let ids = h
