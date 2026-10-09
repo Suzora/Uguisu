@@ -102,6 +102,54 @@ where
     }
 }
 
+/// Only a change of state is announced: a file found intact again is not
+/// news, while a finding and its repair both are.
+#[tokio::test]
+async fn unchanged_verification_is_not_announced() {
+    let h = Harness::new().await;
+    let (_podcast, episodes) = archived_podcast(&h, 1).await;
+    let announced = |sub: &mut uguisu_engine::events::Subscription| {
+        let mut kinds = Vec::new();
+        while let Some(event) = sub.try_recv() {
+            if matches!(
+                event.kind,
+                EventKind::ArchiveVerified { .. } | EventKind::ArchiveInvalid { .. }
+            ) {
+                kinds.push(event.kind.name());
+            }
+        }
+        kinds
+    };
+    let mut sub = h.engine.subscribe();
+
+    let summary = h
+        .engine
+        .verify_all(&ArchiveFilter::default(), VerifyDepth::Full)
+        .await
+        .unwrap();
+    assert_eq!(summary.verified, 1);
+    assert_eq!(announced(&mut sub), Vec::<&str>::new(), "still intact");
+
+    let file = h.engine.archive_file(episodes[0]).await.unwrap().unwrap();
+    let path = h.media_dir().join(&file.relative_path);
+    let bytes = std::fs::read(&path).unwrap();
+    std::fs::write(&path, &bytes[..bytes.len() - 1]).unwrap();
+    h.engine
+        .verify_episode(episodes[0], VerifyDepth::Light)
+        .await
+        .unwrap();
+    std::fs::write(&path, &bytes).unwrap();
+    h.engine
+        .verify_episode(episodes[0], VerifyDepth::Full)
+        .await
+        .unwrap();
+    assert_eq!(
+        announced(&mut sub),
+        ["archive.invalid", "archive.verified"],
+        "the finding and its repair"
+    );
+}
+
 #[tokio::test]
 async fn a_finished_download_becomes_a_record() {
     let h = Harness::new().await;

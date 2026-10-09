@@ -223,7 +223,7 @@ All persisted; none is transient.
 | Event | Payload | Emitted when |
 |---|---|---|
 | `archive.registered` | `archive_file_id`, `path`, `size_bytes`, `hash_algo`, `hash_value` | a finished download became a record |
-| `archive.verified` | `archive_file_id`, `path`, `depth`, `reason` | a pass found the artifact intact |
+| `archive.verified` | `archive_file_id`, `path`, `depth`, `reason` | a pass found intact an artifact that was not `verified` before; one that stays intact is not announced |
 | `archive.missing` | `archive_file_id`, `path` | the recorded file is gone |
 | `archive.invalid` | `archive_file_id`, `path`, `depth`, `reason` | something is there but wrong |
 | `archive.relocated` | `archive_file_id`, `from`, `to` | an artifact moved |

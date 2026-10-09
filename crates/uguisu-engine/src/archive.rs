@@ -545,12 +545,15 @@ impl Engine {
         }
 
         let event = match outcome.state {
-            VerificationState::Verified => Some(EventKind::ArchiveVerified {
-                archive_file_id: file.id,
-                path: file.relative_path.clone(),
-                depth: outcome.depth,
-                reason: outcome.reason.to_owned(),
-            }),
+            // Staying intact is no news; announcing it let one pass over a
+            // large archive fill the bounded event log (ADR 0021, amended).
+            VerificationState::Verified => (file.verification_state != VerificationState::Verified)
+                .then(|| EventKind::ArchiveVerified {
+                    archive_file_id: file.id,
+                    path: file.relative_path.clone(),
+                    depth: outcome.depth,
+                    reason: outcome.reason.to_owned(),
+                }),
             VerificationState::Missing => Some(EventKind::ArchiveMissing {
                 archive_file_id: file.id,
                 path: file.relative_path.clone(),

@@ -44,7 +44,7 @@ A pass may read the file and write the database. It may not write, truncate, ren
 1. The Phase-4 completion transaction (unchanged).
 2. Registration, in its own transaction.
 3. Verification, outside any transaction.
-4. The verification transaction and its event.
+4. The verification transaction and its event. *(Amended 2026-10-10: `archive.verified` only when the state was something else; a pass over 100 000 intact files wrote 100 000 events and pushed the rest of the history out of the event log, which keeps 100 000 rows.)*
 
 ## Consequences
 

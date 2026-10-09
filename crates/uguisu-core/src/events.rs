@@ -323,7 +323,7 @@ pub enum EventKind {
         /// Hash of the file.
         hash_value: String,
     },
-    /// A verification pass found the artifact intact.
+    /// A verification pass found intact an artifact that was not verified before.
     #[serde(rename = "archive.verified")]
     ArchiveVerified {
         /// Archive record id.

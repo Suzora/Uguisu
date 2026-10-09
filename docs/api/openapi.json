@@ -8482,7 +8482,7 @@
           },
           {
             "type": "object",
-            "description": "A verification pass found the artifact intact.",
+            "description": "A verification pass found intact an artifact that was not verified before.",
             "required": [
               "archive_file_id",
               "path",
