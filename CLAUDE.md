@@ -52,7 +52,7 @@ Success prints one line per check. A failure prints `FAIL <name>`, the command t
 ## CI
 
 - Every pull request push runs all of `ci.yml` at once, and `ci` is the check a merge needs ([ADR 0063](docs/DECISIONS/0063-ci-within-five-minutes.md)). Every check passes locally before a push, and a push is finished work, not each commit.
-- No pull-request job takes more than 4.5 minutes from a cold cache. A change that pushes one over brings it back under in the same pull request.
+- No pull-request job takes more than 4.5 minutes from a cold cache; `win-desktop` and `win-desktop-lint` are the accepted exceptions. A change that makes a job slower than ADR 0063 measured brings it back in the same pull request.
 - Merge only a head that contains the current `main` and has a green `ci`. The push to `main` runs the whole Windows suite; a red `main` is fixed before the next merge.
 - A `#[cfg(windows)]` test goes in a binary that `check.py test-windows` runs, or Windows checks it only after the merge.
 - Packaging runs on a `v*` tag or a manual `desktop.yml` run, never on a pull request.
