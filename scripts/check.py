@@ -34,22 +34,52 @@ PY = sys.executable or "python3"
 
 
 class Step:
-    """One command, and the directory and tool it needs."""
+    """One command, and the directory and tool it needs.
+
+    `fallback` runs instead when `tool` is missing and tools are not required,
+    so a machine without the tool still runs the step rather than skipping it.
+    """
 
     def __init__(
-        self, argv: list[str], cwd: str | None = None, tool: str | None = None
+        self,
+        argv: list[str],
+        cwd: str | None = None,
+        tool: str | None = None,
+        fallback: list[str] | None = None,
     ) -> None:
         self.argv = argv
         self.cwd = ROOT / cwd if cwd else ROOT
         self.tool = tool or argv[0]
+        self.fallback = fallback
+
+    def falls_back(self) -> bool:
+        return self.fallback is not None and shutil.which(self.tool) is None
+
+
+def nextest(*select: str) -> Step:
+    """The selected tests under cargo-nextest, many processes at once; without
+    nextest, the same tests under `cargo test`, one binary after another."""
+    flags = ["--locked", "--no-fail-fast", *select]
+    return Step(
+        ["cargo", "nextest", "run", *flags], tool="cargo-nextest", fallback=["cargo", "test", *flags]
+    )
+
+
+def rust_tests(*select: str) -> list[Step]:
+    """`nextest`, then the doc tests, which nextest does not run."""
+    return [nextest(*select), Step(["cargo", "test", "--doc", "--locked", *select])]
 
 
 def count_tests(log: str) -> str | None:
-    """Sum libtest's per-binary result lines into one summary."""
+    """Sum libtest's per-binary result lines and nextest's summary into one."""
     passed = ignored = 0
     for m in re.finditer(r"(\d+) passed; (\d+) failed; (\d+) ignored", log):
         passed += int(m.group(1))
         ignored += int(m.group(3))
+    # Whole binaries are selected, so the only tests nextest skips are ignored ones.
+    for m in re.finditer(r"\d+ tests? run: (\d+) passed.*?, (\d+) skipped", log):
+        passed += int(m.group(1))
+        ignored += int(m.group(2))
     if not passed and not ignored:
         return None
     return f"{passed} passed, {ignored} ignored"
@@ -86,11 +116,9 @@ CHECKS: dict[str, Check] = {
         )
     ),
     "build": Check(Step(["cargo", "build", "--workspace", "--all-targets"])),
-    # Every test binary runs even after one fails, so a red run shows every
-    # failure at once rather than the first binary's.
-    "test": Check(
-        Step(["cargo", "test", "--workspace", "--no-fail-fast", "--locked"]), summary=count_tests
-    ),
+    # Every test runs even after one fails, so a red run shows every failure
+    # at once rather than the first one's.
+    "test": Check(*rust_tests("--workspace"), summary=count_tests),
     "bench": Check(Step(["cargo", "bench", "--workspace", "--no-run"])),
     # Both workspaces: needs no compiler, so CI runs it in its first job.
     "deny": Check(
@@ -166,9 +194,9 @@ CHECKS: dict[str, Check] = {
 DEFAULT = ["fmt", "clippy", "test", "web", "docs", "openapi", "api-types", "version", "docker"]
 
 
-def missing_tool(check: Check) -> str | None:
+def missing_tool(check: Check, *, required: bool) -> str | None:
     for step in check.steps:
-        if shutil.which(step.tool) is None:
+        if shutil.which(step.tool) is None and (required or step.fallback is None):
             return step.tool
     return None
 
@@ -177,10 +205,11 @@ def run(name: str, check: Check, *, stream: bool) -> tuple[bool, str]:
     """Runs every step of one check. Returns (passed, captured log)."""
     log = ""
     for step in check.steps:
-        shown = " ".join(step.argv)
+        command = step.fallback if step.falls_back() else step.argv
+        shown = " ".join(command)
         # On Windows `pnpm` may be a `pnpm.cmd` shim, which CreateProcess runs
         # only when it is given the full path.
-        argv = [shutil.which(step.argv[0]) or step.argv[0], *step.argv[1:]]
+        argv = [shutil.which(command[0]) or command[0], *command[1:]]
         if stream:
             print(f"$ {shown}", flush=True)
             done = subprocess.run(argv, cwd=step.cwd, check=False)
@@ -261,7 +290,7 @@ def main() -> int:
     try:
         for name in selected:
             check = CHECKS[name]
-            tool = missing_tool(check)
+            tool = missing_tool(check, required=args.require_tools)
             if tool and not args.require_tools:
                 print(f"SKIP {name} ({tool} not installed)")
                 continue
@@ -282,6 +311,11 @@ def main() -> int:
                     break
                 continue
             extra = check.summary(log) if check.summary else None
+            # A fallback passes, but nobody should mistake it for the real tool.
+            for step in check.steps:
+                if step.falls_back():
+                    note = f"{' '.join(step.fallback[:2])}: {step.tool} not installed"
+                    extra = f"{extra}; {note}" if extra else note
             took = f"{time.monotonic() - started:.0f}s"
             if bare:
                 print(f"PASS{f' ({extra})' if extra else ''}")

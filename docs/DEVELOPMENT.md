@@ -4,7 +4,7 @@
 
 - Rust, pinned to an exact release in `rust-toolchain.toml`, edition 2024, with the `rustfmt` and `clippy` components. A newer release is adopted in its own change, together with fixes for any new lints ([ADR 0046](DECISIONS/0046-ci-within-a-minutes-budget.md)).
 - Node 22 + pnpm 10 for `web/`.
-- Optional: [`just`](https://github.com/casey/just) (task runner; every recipe is also a plain `check.py`, cargo or pnpm command), `cargo-deny`.
+- Optional: [`just`](https://github.com/casey/just) (task runner; every recipe is also a plain `check.py`, cargo or pnpm command), `cargo-deny`, [`cargo-nextest`](https://nexte.st) (runs the tests many at once; without it `check.py test` runs the same tests under `cargo test`, one binary after another, and says so on its `PASS` line).
 - Docker is only needed for the image (`docker build -t uguisu .`) and `scripts/docker_smoke.py`.
 
 ## Commands
