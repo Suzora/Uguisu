@@ -597,7 +597,7 @@ impl Resolver {
         url: &Url,
         input: &str,
     ) -> Result<ResolvedFeed, ResolveError> {
-        match self.fetch(s, url).await? {
+        match self.fetch(s, url, true).await? {
             Fetched::Feed(probe, final_url) => self.finish(s, *probe, final_url, input).await,
             Fetched::Html(body, page_url) => self.resolve_html(s, &page_url, &body, input).await,
         }
@@ -609,7 +609,7 @@ impl Resolver {
         url: &Url,
         input: &str,
     ) -> Result<ResolvedFeed, ResolveError> {
-        match self.fetch(s, url).await? {
+        match self.fetch(s, url, true).await? {
             Fetched::Feed(probe, final_url) => self.finish(s, *probe, final_url, input).await,
             Fetched::Html(body, page_url) => {
                 s.step(
@@ -662,7 +662,7 @@ impl Resolver {
                 });
             }
             s.tried.push(url.clone());
-            match self.fetch(s, &url).await {
+            match self.fetch(s, &url, true).await {
                 Ok(Fetched::Feed(probe, final_url)) => {
                     if probe.looks_like_podcast() {
                         s.step(kind, Some(&url), true, "candidate is a podcast feed");
@@ -697,7 +697,12 @@ impl Resolver {
     }
 
     /// Fetches a URL (counting against the budget) and sniffs the body.
-    async fn fetch(&self, s: &mut Session, url: &Url) -> Result<Fetched, ResolveError> {
+    async fn fetch(
+        &self,
+        s: &mut Session,
+        url: &Url,
+        retry: bool,
+    ) -> Result<Fetched, ResolveError> {
         if s.cancel.is_cancelled() {
             return Err(ResolveError::Cancelled);
         }
@@ -715,6 +720,7 @@ impl Resolver {
                     "application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.9, text/html;q=0.8, */*;q=0.1",
                 ),
             )],
+            retry: Some(retry),
             ..GetOptions::default()
         };
         let resp: Response = match self.client.get_with(url, &opts).await {
@@ -823,7 +829,9 @@ impl Resolver {
         if self.config.https_upgrade && feed_url.scheme() == "http" {
             let mut https = feed_url.clone();
             if https.set_scheme("https").is_ok() && s.requests < self.config.max_requests {
-                match self.fetch(s, &https).await {
+                // Tried once: a failure only keeps http, and retrying it
+                // cost 1.5 s on every host that serves no https.
+                match self.fetch(s, &https, false).await {
                     Ok(Fetched::Feed(p2, final_https))
                         if p2.looks_like_podcast() && p2.title == probe.title =>
                     {
@@ -862,7 +870,7 @@ impl Resolver {
                     "self link on another host",
                 );
             } else if self.config.confirm_self_link && s.requests < self.config.max_requests {
-                match self.fetch(s, self_link).await {
+                match self.fetch(s, self_link, true).await {
                     Ok(Fetched::Feed(p2, _))
                         if p2.looks_like_podcast() && p2.title == probe.title =>
                     {
