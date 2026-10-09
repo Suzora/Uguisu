@@ -14,8 +14,8 @@
 //! **The download's completion transaction is not touched.** Registration
 //! happens *after* it, in its own transaction, and hashing and filesystem
 //! work happen outside any transaction. A crash between the two leaves a
-//! completed job without an archive record, which is exactly what
-//! [`Engine::reconcile_archive`] looks for on the next start.
+//! completed job without an archive record, which is exactly what the
+//! next start registers.
 
 use uguisu_archive::collision::{self, Holder, Occupancy};
 use uguisu_archive::path::RelativePath;
@@ -790,10 +790,8 @@ impl Engine {
     /// Repairs the archive record after an unclean stop, and reports files
     /// that are not where it says, as after a change of media root.
     ///
-    /// Shallow (the default, run at startup): registers completed
-    /// downloads that have no record, then confirms that recorded files
-    /// exist. It never hashes — a start must not take minutes because the
-    /// archive is large.
+    /// Shallow (the default): the start's repair, then confirms that
+    /// recorded files exist. It never hashes.
     ///
     /// Deep: the same, followed by a light verification of every artifact.
     /// Hashing stays an explicit `archive verify --full`.
@@ -802,19 +800,7 @@ impl Engine {
         deep: bool,
     ) -> Result<ArchiveReconcileReport, UguisuError> {
         let mut report = ArchiveReconcileReport::default();
-        self.register_unarchived(&mut report).await?;
-
-        // Tag writes a crash interrupted. The query behind this is a
-        // partial index that is empty whenever nothing was in flight, so
-        // on a healthy archive it costs one lookup and hashes nothing.
-        match self.recover_interrupted_tagging().await {
-            Ok(0) => {}
-            Ok(settled) => {
-                report.tagging_settled = settled;
-                tracing::warn!(settled, "interrupted tag writes were resolved");
-            }
-            Err(e) => tracing::warn!(error = %e, "interrupted tag writes could not be resolved"),
-        }
+        self.repair(&mut report).await?;
 
         let depth = if deep {
             VerifyDepth::Light
@@ -835,6 +821,39 @@ impl Engine {
             );
         }
         Ok(report)
+    }
+
+    /// What every start runs: registers the completed downloads an unclean
+    /// stop left without a record, and settles interrupted tag writes. Both
+    /// are queries that find nothing on a healthy archive; no file is
+    /// looked at, so a start does not grow with the archive (ADR 0021).
+    pub(crate) async fn repair_archive(&self) -> Result<(), UguisuError> {
+        let mut report = ArchiveReconcileReport::default();
+        self.repair(&mut report).await?;
+        if report.registered > 0 || report.unregisterable > 0 {
+            tracing::warn!(
+                registered = report.registered,
+                unregisterable = report.unregisterable,
+                "unrecorded downloads were archived at start"
+            );
+        }
+        Ok(())
+    }
+
+    async fn repair(&self, report: &mut ArchiveReconcileReport) -> Result<(), UguisuError> {
+        self.register_unarchived(report).await?;
+        // Tag writes a crash interrupted. The query behind this is a
+        // partial index that is empty whenever nothing was in flight, so
+        // on a healthy archive it costs one lookup and hashes nothing.
+        match self.recover_interrupted_tagging().await {
+            Ok(0) => {}
+            Ok(settled) => {
+                report.tagging_settled = settled;
+                tracing::warn!(settled, "interrupted tag writes were resolved");
+            }
+            Err(e) => tracing::warn!(error = %e, "interrupted tag writes could not be resolved"),
+        }
+        Ok(())
     }
 
     /// Registers every completed download that has no archive record yet.
@@ -1039,8 +1058,8 @@ impl Engine {
     /// worker, so the completion transaction keeps its exact
     /// shape and the archive work — a `stat`, possibly a hash — happens
     /// outside it. If the process dies before the watcher gets to an
-    /// event, [`reconcile_archive`](Self::reconcile_archive) picks the job
-    /// up on the next start; nothing is lost, it is only late. If the
+    /// event, the next start registers the job; nothing is lost, it is
+    /// only late. If the
     /// watcher falls behind the bounded bus and skips events, it registers
     /// every unarchived download itself once the bus is quiet.
     pub fn start_archive_watcher(&self) {
@@ -1115,6 +1134,59 @@ impl Engine {
             }
             tracing::debug!("archive watcher stopped");
         }));
+    }
+}
+
+impl Engine {
+    /// Starts confirming that every recorded file still exists, as a server
+    /// does once it is up (idempotent).
+    ///
+    /// A `stat` per file: about 12 s for 100 000 files on NTFS, which a
+    /// start must not wait for (ADR 0021). It finds what a changed media
+    /// root or a deleted file did while nothing was running; a file that
+    /// is there is not written to.
+    pub fn start_archive_check(&self) {
+        let mut slot = self
+            .inner
+            .archive_check
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot.is_some() {
+            return;
+        }
+        let engine = self.clone();
+        let cancel = self.inner.shutdown.clone();
+        *slot = Some(tokio::spawn(async move {
+            let everything = ArchiveFilter::default();
+            // Dropping the pass at an await rolls back the write in flight.
+            let summary = tokio::select! {
+                () = cancel.cancelled() => return,
+                summary = engine.verify_all(&everything, VerifyDepth::Existence) => summary,
+            };
+            match summary {
+                Ok(s) if s.has_problems() => tracing::warn!(
+                    missing = s.missing,
+                    invalid = s.invalid,
+                    "the archive check found files that are not where their records say"
+                ),
+                Ok(_) => {}
+                Err(e) => tracing::warn!(error = %e, "the archive check could not finish"),
+            }
+        }));
+    }
+
+    /// Stops waiting for the archive check, bounded by `grace`.
+    pub(crate) async fn stop_archive_check(&self, grace: std::time::Duration) {
+        let task = self
+            .inner
+            .archive_check
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        let Some(task) = task else { return };
+        if tokio::time::timeout(grace, task).await.is_err() {
+            tracing::warn!("archive check did not stop in time");
+        }
     }
 }
 

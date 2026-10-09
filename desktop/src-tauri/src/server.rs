@@ -187,6 +187,7 @@ async fn bring_up(engine: &Engine, web: PathBuf) -> Result<BroughtUp, Startup> {
     engine.start_downloads();
     engine.start_refresh_scheduler();
     engine.start_search_index();
+    engine.start_archive_check();
     let (stop, halt) = oneshot::channel();
     let serving = tokio::spawn(async move {
         let shutdown = async {

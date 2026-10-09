@@ -548,11 +548,28 @@ async fn a_crash_before_registration_is_repaired() {
     );
     std::fs::write(&path, &bytes).unwrap();
 
-    // A file that is gone is reported by a restart, and nothing is deleted.
+    // A start looks at no file; the check a server starts finds the one
+    // that is gone, and nothing is deleted.
     std::fs::remove_file(media.join(&paths[0])).unwrap();
     h.restart(None).await;
-    let missing = h.engine.archive_file(episodes[0]).await.unwrap().unwrap();
-    assert_eq!(missing.verification_state, VerificationState::Missing);
+    let state = || async {
+        h.engine
+            .archive_file(episodes[0])
+            .await
+            .unwrap()
+            .unwrap()
+            .verification_state
+    };
+    assert_eq!(
+        state().await,
+        VerificationState::Verified,
+        "open stats nothing"
+    );
+    h.engine.start_archive_check();
+    wait_for("the check to find the missing file", || async {
+        state().await == VerificationState::Missing
+    })
+    .await;
     assert!(
         h.engine.archive_file(episodes[0]).await.unwrap().is_some(),
         "a missing file never removes its record"

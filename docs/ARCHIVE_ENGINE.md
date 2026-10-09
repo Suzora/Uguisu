@@ -67,7 +67,7 @@ The hash is the **download's** hash, computed while the bytes streamed in, until
 
 | Depth | Reads | Used by |
 |---|---|---|
-| `existence` | one `symlink_metadata` | startup reconciliation |
+| `existence` | one `symlink_metadata` | a server's check once it is up; `archive reconcile` |
 | `light` | type, size, and mtime when one was recorded | the default `verify`, completion |
 | `full` | the whole file through SHA-256, 1 MiB at a time | `verify --full` |
 
@@ -178,12 +178,12 @@ The move never replaces a file (a hard link, then removing the old name; [ADR 00
 
 ## 8. Reconciliation
 
-`Engine::open` runs a shallow archive reconciliation after the download queue's:
+`Engine::open` runs the first step after the download queue's recovery; `serve` and the desktop run the second in the background once they are up, and `archive reconcile` runs both:
 
 1. Register every completed download that has no record, **where its file lies** — the path is not recomputed, so reconciliation never moves anything.
 2. Confirm that every recorded file exists (one `stat` each).
 
-Startup never hashes: opening a large archive must stay fast, and a full check is an explicit `archive verify --full`. A deep reconciliation (`--deep`, or the API's `?deep=true`) adds a light pass. A completed download whose file cannot be found is reported and left alone; the job stays completed and the file, wherever it is, stays, until somebody repairs it (§22).
+A start reads only the database: one `stat` per file took 12.6 s for 100 000 files on NTFS, and every command would wait for it ([ADR 0021](DECISIONS/0021-archive-file-and-verification.md), amended). Nothing at a start hashes; a full check is an explicit `archive verify --full`. A deep reconciliation (`--deep`, or the API's `?deep=true`) adds a light pass. A completed download whose file cannot be found is reported and left alone; the job stays completed and the file, wherever it is, stays, until somebody repairs it (§22).
 
 **A changed source is reported, never acted on.** When a refresh changes an archived episode's primary enclosure — another URL or another declared length — the record gets `source_changed_at` and an `archive.source_changed` event names the old and new values. The file is kept and nothing is downloaded: the episode has one archived file, and replacing it would discard what was received. `archive list --source-changed` (`GET /api/v1/archive?source_changed=true`) lists these files for a person to look at. Nothing downloads such an episode again while its file is in place: a new download would have to replace a file Uguisu keeps. A re-registration of the file clears the flag. Hosts that rotate tracking prefixes or insert ads dynamically will trip it; that is a reason to look, not a fault.
 

@@ -24,7 +24,7 @@ Decisions that shape Uguisu, in the MADR-light format: context, decision, conseq
 | [0018](0018-download-state-machine-and-queue.md) | Download state machine and persistent queue | accepted, amends 0002, amended by 0060 |
 | [0019](0019-resume-and-finalization.md) | Validated resume and atomic finalization | accepted, amended 2026-10-04 |
 | [0020](0020-id-based-media-paths.md) | Identifier-based media paths for Phase 4 | accepted (interim), layout superseded by 0022 |
-| [0021](0021-archive-file-and-verification.md) | The archive record and what verification may do | accepted |
+| [0021](0021-archive-file-and-verification.md) | The archive record and what verification may do | accepted, amended 2026-10-10 |
 | [0022](0022-template-grammar-and-path-safety.md) | Template grammar, sanitization and path safety | accepted, amended 2026-10-04, amends 0009, supersedes 0020's interim layout |
 | [0023](0023-archive-policy.md) | The automatic archive policy | accepted |
 | [0024](0024-sidecars-and-manifests.md) | Sidecars, manifests and where they live | accepted, amended by 0051 |

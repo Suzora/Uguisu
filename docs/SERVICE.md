@@ -83,7 +83,7 @@ Once a day (`UGUISU_MAINTENANCE_INTERVAL_SECS`), in the scheduler's own task:
 - delete discovery-cache rows whose time has passed;
 - delete sessions that can no longer authenticate — revoked, or past either deadline — and report `sessions_pruned`. A revoked **token** is kept, so a listing can still say it was revoked ([ADR 0035](DECISIONS/0035-credentials-sessions-and-tokens.md)).
 
-Housekeeping never verifies or reconciles the archive. A shallow reconcile runs at every start; `archive verify` (light, or `--full`) and `archive reconcile --deep` run when asked. Both are expensive, and neither has a failure mode that waiting makes worse.
+Housekeeping never verifies or reconciles the archive. Every start registers what a crash left unrecorded, and a server confirms in the background that recorded files exist ([`ARCHIVE_ENGINE.md`](ARCHIVE_ENGINE.md) §8); `archive verify` (light, or `--full`) and `archive reconcile --deep` run when asked. Both are expensive, and neither has a failure mode that waiting makes worse.
 
 Both event limits treat `0` as **no limit**, never as "delete everything". Only derived data is touched: no media, no episode, no podcast, and not the episode change log, which is kept (ADR 0015). `last_maintenance_at` is recorded in the same transaction, so a restart works out when the next pass is due instead of running one on every boot. `uguisu scheduler maintenance` runs it now.
 

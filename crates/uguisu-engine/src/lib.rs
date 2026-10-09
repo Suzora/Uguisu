@@ -142,6 +142,8 @@ struct Inner {
     scheduler: scheduler::SchedulerState,
     /// The background search-index build, once started (ADR 0029).
     search_build: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// The background check that recorded files exist, once started.
+    archive_check: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// Stops the engine's own background tasks on close.
     shutdown: CancellationToken,
     // Released when the last handle drops.
@@ -265,16 +267,16 @@ impl Engine {
                 archive_watch: std::sync::Mutex::new(None),
                 scheduler: scheduler::SchedulerState::default(),
                 search_build: std::sync::Mutex::new(None),
+                archive_check: std::sync::Mutex::new(None),
                 shutdown: CancellationToken::new(),
                 _lock: lock,
             }),
         };
         engine.install_settings(effective).await?;
-        // Repair the archive record: register completed downloads that an
-        // unclean stop left without one, and confirm that recorded files
-        // exist, which a changed media root also fails. Shallow on purpose —
-        // a start must not hash the archive (ADR 0021). It logs what it found.
-        engine.reconcile_archive(false).await?;
+        // Repair the archive record from the database alone. Whether the
+        // files are still there is the server's background check: a `stat`
+        // per file would make every command wait on the archive's size.
+        engine.repair_archive().await?;
         Ok(engine)
     }
 
@@ -376,6 +378,7 @@ impl Engine {
         // A half-built index is not a loss: the state row says it is not
         // ready and the next start builds it again.
         self.stop_search_index(grace).await;
+        self.stop_archive_check(grace).await;
         let task = self
             .inner
             .archive_watch

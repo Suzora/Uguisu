@@ -1,6 +1,6 @@
 # ADR 0021 — The archive record and what verification may do
 
-**Status:** accepted · **Date:** 2026-09-18 · relates to [ADR 0007](0007-integrity-hashing.md), [ADR 0018](0018-download-state-machine-and-queue.md)
+**Status:** accepted, amended 2026-10-10 · **Date:** 2026-09-18 · relates to [ADR 0007](0007-integrity-hashing.md), [ADR 0018](0018-download-state-machine-and-queue.md)
 
 ## Context
 
@@ -33,7 +33,7 @@ A pass may read the file and write the database. It may not write, truncate, ren
 
 ### Three depths
 
-`existence` (one `stat`), `light` (type, size, mtime), `full` (SHA-256 over the whole file in 1 MiB chunks). Startup uses `existence`; the default `verify` uses `light`; hashing is always an explicit `--full`.
+`existence` (one `stat`), `light` (type, size, mtime), `full` (SHA-256 over the whole file in 1 MiB chunks). Startup uses `existence`; the default `verify` uses `light`; hashing is always an explicit `--full`. *(Amended 2026-10-10: a start registers what a crash left unrecorded from the database alone, and only a running server, `serve` or the desktop, runs the `existence` pass, in the background. With 100 000 files on NTFS it took 12.6 s, which every command waited for.)*
 
 ### A separate state, projected onto the episode
 

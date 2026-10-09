@@ -1121,6 +1121,7 @@ async fn run_serve(cli: &Cli, args: &ServeArgs) -> Exit {
     engine.start_downloads();
     engine.start_refresh_scheduler();
     engine.start_search_index();
+    engine.start_archive_check();
     let result =
         uguisu_server::serve_with_shutdown(args.bind, state, download::shutdown_signal()).await;
     engine.close().await;
