@@ -122,6 +122,17 @@ print_stdout = "warn"
 print_stderr = "warn"
 disallowed_methods = "deny"
 
+# Tests hash passwords at production cost and sha2 hashes every downloaded
+# file; unoptimised, one argon2 hash takes about 2 s instead of about 0.1 s.
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3
+
+[profile.dev.package.sha2]
+opt-level = 3
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
