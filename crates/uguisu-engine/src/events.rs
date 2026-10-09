@@ -39,6 +39,7 @@ impl EventBus {
     pub fn subscribe(&self) -> Subscription {
         Subscription {
             rx: self.tx.subscribe(),
+            skipped: 0,
         }
     }
 
@@ -73,6 +74,7 @@ impl EventSink for EventBus {
 #[derive(Debug)]
 pub struct Subscription {
     rx: broadcast::Receiver<Event>,
+    skipped: u64,
 }
 
 impl Subscription {
@@ -83,11 +85,17 @@ impl Subscription {
             match self.rx.recv().await {
                 Ok(event) => return Some(event),
                 Err(broadcast::error::RecvError::Lagged(n)) => {
+                    self.skipped += n;
                     tracing::warn!(lost = n, "event subscriber lagged; events skipped");
                 }
                 Err(broadcast::error::RecvError::Closed) => return None,
             }
         }
+    }
+
+    /// How many events were skipped since the last call; resets the count.
+    pub fn take_skipped(&mut self) -> u64 {
+        std::mem::take(&mut self.skipped)
     }
 
     /// Non-blocking variant: the next buffered event, if any.
@@ -96,6 +104,7 @@ impl Subscription {
             match self.rx.try_recv() {
                 Ok(event) => return Some(event),
                 Err(broadcast::error::TryRecvError::Lagged(n)) => {
+                    self.skipped += n;
                     tracing::warn!(lost = n, "event subscriber lagged; events skipped");
                 }
                 Err(_) => return None,
@@ -144,6 +153,8 @@ mod tests {
         // Capacity 2: the two newest survive, the rest are reported as lost.
         assert_eq!(sub.recv().await.unwrap(), events[3]);
         assert_eq!(sub.recv().await.unwrap(), events[4]);
+        assert_eq!(sub.take_skipped(), 3);
+        assert_eq!(sub.take_skipped(), 0, "taking resets the count");
         drop(bus);
         assert!(sub.recv().await.is_none());
     }

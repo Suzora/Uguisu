@@ -13,6 +13,7 @@ use std::time::Duration;
 use common::{Harness, synthetic_feed_with_media};
 use uguisu_core::archive::{VerificationState, VerifyDepth};
 use uguisu_core::download::Priority;
+use uguisu_core::events::{Event, EventKind};
 use uguisu_core::ids::EpisodeId;
 use uguisu_download::deps::{FailInjector, FailPoint};
 use uguisu_engine::archive::ArchiveFilter;
@@ -165,6 +166,48 @@ fn walk_parts(media_dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     let mut out = Vec::new();
     visit(media_dir, &mut out);
     out
+}
+
+/// A watcher that falls behind the bounded bus misses the completions it
+/// skipped; it must archive them once the bus is quiet, not at the next
+/// start, which a long-running server may not see for weeks.
+#[tokio::test]
+async fn a_lagging_watcher_catches_up() {
+    let h = Harness::new().await;
+    let podcast = add_media_podcast(&h, 3).await;
+    download_all(&h, podcast.id, 3).await;
+
+    // What a skipped completion leaves: the download committed, no record.
+    {
+        let mut tx = h.engine.storage().begin().await.unwrap();
+        let mut reader = h.engine.storage().reader().await.unwrap();
+        for file in archive_files::list(&mut reader, &ArchiveFilter::default(), None, 100)
+            .await
+            .unwrap()
+        {
+            archive_files::delete_for_episode(&mut tx, file.episode_id)
+                .await
+                .unwrap();
+        }
+        tx.commit().await.unwrap();
+    }
+    assert_eq!(archived_count(&h).await, 0);
+
+    // More events than a subscriber buffers, published without yielding, so
+    // the watcher cannot keep up and is told it skipped some.
+    let filler = Event::now(
+        None,
+        None,
+        EventKind::PodcastMetadataUpdated { fields: Vec::new() },
+    );
+    for _ in 0..=uguisu_engine::events::DEFAULT_CAPACITY {
+        h.engine.bus().publish(std::slice::from_ref(&filler));
+    }
+
+    wait_for("the skipped completions to be archived", || async {
+        archived_count(&h).await == 3
+    })
+    .await;
 }
 
 /// A crash between the completion transaction and the registration is the

@@ -802,31 +802,7 @@ impl Engine {
         deep: bool,
     ) -> Result<ArchiveReconcileReport, UguisuError> {
         let mut report = ArchiveReconcileReport::default();
-        loop {
-            let mut reader = self.storage().reader().await?;
-            let pending = archive_files::completed_unregistered(&mut reader, SCAN_BATCH).await?;
-            drop(reader);
-            if pending.is_empty() {
-                break;
-            }
-            let count = pending.len();
-            let before = report.registered;
-            for episode_id in pending {
-                match self.register_archive_file(episode_id).await {
-                    Ok(_) => report.registered += 1,
-                    Err(e) => {
-                        report.unregisterable += 1;
-                        // Not fatal and never destructive: the job stays
-                        // completed and the file, wherever it is, stays.
-                        tracing::warn!(episode = %episode_id, error = %e, "completed download could not be registered");
-                    }
-                }
-            }
-            // A batch that registered nothing would come back unchanged.
-            if count < SCAN_BATCH as usize || report.registered == before {
-                break;
-            }
-        }
+        self.register_unarchived(&mut report).await?;
 
         // Tag writes a crash interrupted. The query behind this is a
         // partial index that is empty whenever nothing was in flight, so
@@ -859,6 +835,38 @@ impl Engine {
             );
         }
         Ok(report)
+    }
+
+    /// Registers every completed download that has no archive record yet.
+    async fn register_unarchived(
+        &self,
+        report: &mut ArchiveReconcileReport,
+    ) -> Result<(), UguisuError> {
+        loop {
+            let mut reader = self.storage().reader().await?;
+            let pending = archive_files::completed_unregistered(&mut reader, SCAN_BATCH).await?;
+            drop(reader);
+            if pending.is_empty() {
+                return Ok(());
+            }
+            let count = pending.len();
+            let before = report.registered;
+            for episode_id in pending {
+                match self.register_archive_file(episode_id).await {
+                    Ok(_) => report.registered += 1,
+                    Err(e) => {
+                        report.unregisterable += 1;
+                        // Not fatal and never destructive: the job stays
+                        // completed and the file, wherever it is, stays.
+                        tracing::warn!(episode = %episode_id, error = %e, "completed download could not be registered");
+                    }
+                }
+            }
+            // A batch that registered nothing would come back unchanged.
+            if count < SCAN_BATCH as usize || report.registered == before {
+                return Ok(());
+            }
+        }
     }
 
     /// The podcast, episode and current record an archive command works on.
@@ -1032,7 +1040,9 @@ impl Engine {
     /// shape and the archive work — a `stat`, possibly a hash — happens
     /// outside it. If the process dies before the watcher gets to an
     /// event, [`reconcile_archive`](Self::reconcile_archive) picks the job
-    /// up on the next start; nothing is lost, it is only late.
+    /// up on the next start; nothing is lost, it is only late. If the
+    /// watcher falls behind the bounded bus and skips events, it registers
+    /// every unarchived download itself once the bus is quiet.
     pub fn start_archive_watcher(&self) {
         let mut slot = self
             .inner
@@ -1052,6 +1062,9 @@ impl Engine {
             // idle process idle - with nothing to flush, the loop blocks on
             // the bus instead of waking on a timer.
             let mut dirty = false;
+            // A skipped event may have been a completion, so a lag is
+            // answered with the same sweep a start runs, once it is quiet.
+            let mut skipped = false;
             loop {
                 let received = if dirty {
                     tokio::select! {
@@ -1064,9 +1077,24 @@ impl Engine {
                         event = subscription.recv() => Ok(event),
                     }
                 };
+                if subscription.take_skipped() > 0 {
+                    skipped = true;
+                    dirty = true;
+                }
                 let Ok(event) = received else {
                     // Nothing has happened for a while: the queue has gone
                     // quiet, so this is the cheap moment to write.
+                    if std::mem::take(&mut skipped) {
+                        let mut report = ArchiveReconcileReport::default();
+                        if let Err(e) = engine.register_unarchived(&mut report).await {
+                            tracing::warn!(error = %e, "skipped downloads could not be archived");
+                        } else {
+                            tracing::info!(
+                                registered = report.registered,
+                                "archived what the watcher skipped"
+                            );
+                        }
+                    }
                     engine.flush_archive_metadata().await;
                     dirty = false;
                     continue;

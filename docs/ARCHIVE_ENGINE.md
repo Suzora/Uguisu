@@ -36,7 +36,7 @@ feed refresh commits
    → announce                archive.policy_queued / archive.policy_skipped
 ```
 
-Registration deliberately happens **after** the completion transaction rather than inside it: hashing a multi-gigabyte artifact inside the single writer transaction would block every other command for as long as the hash takes. The cost of that choice is a crash window — a completed job with no record — which §8 repairs on the next start.
+Registration deliberately happens **after** the completion transaction rather than inside it: hashing a multi-gigabyte artifact inside the single writer transaction would block every other command for as long as the hash takes. The cost of that choice is a crash window — a completed job with no record — which §8 repairs on the next start. The step is driven by the `download.completed` event on the bounded bus; when the watcher falls behind and skips events, it runs §8's first step itself once the bus is quiet, so a long-running server does not wait for a restart.
 
 ## 2. The record
 
