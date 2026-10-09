@@ -1,8 +1,8 @@
 name: CI
 
 # Every job starts at once, and `ci` is the one check a pull request needs
-# before it merges. A pull request run takes at most five minutes, cold cache
-# included (ADR 0063). Every check's command lives in scripts/check.py, so CI
+# before it merges. How long each job may take, and how long they took, is
+# ADR 0063. Every check's command lives in scripts/check.py, so CI
 # and a developer run the same thing; --stream keeps the full output in the
 # Actions log, and --require-tools turns a missing tool into a failure rather
 # than a skip.
@@ -29,16 +29,15 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
   # No debug info: linking is faster (Windows writes no PDBs) and the caches
-  # smaller. A panic still names its file and line; a backtrace names
-  # functions only.
+  # smaller. A panic still names its file and line.
   CARGO_PROFILE_DEV_DEBUG: "0"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Caches are saved only from branch runs (main, the schedule, a manual run).
-# A pull request restores main's and saves nothing, so it never evicts them.
+# Rust caches are saved only from branch runs (main, the schedule, a manual
+# run). A pull request restores main's and saves none, so it never evicts them.
 jobs:
   quick:
     name: Quick checks

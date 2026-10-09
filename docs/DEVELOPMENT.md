@@ -77,7 +77,7 @@ Live fixtures are recorded with `cargo run -p record-fixtures -- provider apple 
 
 - Conventional prefixes: `docs:`, `feat(<crate>):`, `fix(<crate>):`, `chore:`, `ci:`, `test:`, `refactor:`, `perf:`.
 - One logical change per commit; the repository must build at every commit.
-- Feature branches → draft PR → ready for review → `ci` green on a head that contains the current `main` → squash or rebase per the PR's size (keep logical commits when they tell a story). Every push runs all of `ci.yml`; Windows runs a reduced set on a pull request and the whole suite on `main` after the merge ([ADR 0063](DECISIONS/0063-ci-within-five-minutes.md)).
+- Feature branches → draft PR → ready for review → `ci` green on a head that contains the current `main` → squash or rebase per the PR's size (keep logical commits when they tell a story). Every push runs `ci.yml`, where Windows runs a reduced set on a pull request and the whole suite on `main` after the merge ([ADR 0063](DECISIONS/0063-ci-within-five-minutes.md)).
 
 ## Tagging a pre-release
 

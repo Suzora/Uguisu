@@ -15,8 +15,8 @@ skip, a job missing from `needs` — fails. Packaging is reported done only
 from a run where this job passed.
 
 `ci` is the one check a pull request needs before it merges (ADR 0063). It
-needs every job in ci.yml except `win-test-full`, which runs only after the
-merge, and likewise passes only when every one of them succeeded.
+needs every job in ci.yml except `win-test-full`, which never runs on a pull
+request, and likewise passes only when every one of them succeeded.
 
 `--workflow` fails when `.github/workflows/desktop.yml` stops matching this:
 a format or the upgrade dropped from `needs`, a `package-*` job added or
