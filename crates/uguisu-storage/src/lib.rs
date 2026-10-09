@@ -284,8 +284,8 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            applied, 8,
-            "0001_phase3 through 0008_phase10_source_changed, all of them applied once"
+            applied, 9,
+            "0001_phase3 through 0009_phase11_episode_count, all of them applied once"
         );
         let journal: String = sqlx::query_scalar("PRAGMA journal_mode")
             .fetch_one(&mut *w)

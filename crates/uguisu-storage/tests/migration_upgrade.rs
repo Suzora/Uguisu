@@ -113,7 +113,7 @@ async fn phase3_database_upgrades_keeping_rows() {
         .iter()
         .map(|row| row.get::<i64, _>(0))
         .collect();
-    assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
 
     let tables: Vec<String> = sqlx::query(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'download_%' ORDER BY name",
@@ -147,6 +147,14 @@ async fn phase3_database_upgrades_keeping_rows() {
         .await
         .unwrap();
     assert_eq!(podcasts, 1);
+    // Migration 0009 counted the episodes that were already there.
+    let (counted, episodes): (i64, i64) =
+        sqlx::query_as("SELECT episode_count, (SELECT count(*) FROM episodes) FROM podcasts")
+            .fetch_one(&mut *r)
+            .await
+            .unwrap();
+    assert!(episodes > 0);
+    assert_eq!(counted, episodes);
     let episode_state: String =
         sqlx::query_scalar("SELECT archive_state FROM episodes WHERE id = ?1")
             .bind(E)
@@ -332,7 +340,7 @@ async fn phase4_database_upgrades_keeping_downloads() {
         .iter()
         .map(|row| row.get::<i64, _>(0))
         .collect();
-    assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
 
     // The Phase-4 rows are untouched: Phase 5 only adds tables.
     let job = uguisu_storage::downloads::get_job(&mut r, J.parse().unwrap())
@@ -453,7 +461,7 @@ async fn phase5_upgrade_backfills_provenance() {
         .iter()
         .map(|row| row.get::<i64, _>(0))
         .collect();
-    assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
 
     // The Phase-5 finding survives: an upgrade is not a verification, and
     // it must never quietly turn a checked record into an unchecked one.
@@ -598,7 +606,7 @@ async fn phase6_upgrade_starts_index_stale() {
         .iter()
         .map(|row| row.get::<i64, _>(0))
         .collect();
-    assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
 
     // Everything Phase 6 wrote is still there and still says what it said.
     let f = uguisu_storage::archive_files::get(&mut r, F.parse().unwrap())
@@ -726,7 +734,7 @@ async fn phase7_upgrade_keeps_the_service_state() {
         .iter()
         .map(|row| row.get::<i64, _>(0))
         .collect();
-    assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(versions, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
 
     let stored: String =
         sqlx::query_scalar("SELECT value FROM settings WHERE key = 'UGUISU_ARCHIVE_MAX_AGE_DAYS'")

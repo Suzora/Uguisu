@@ -50,9 +50,10 @@ The show as the user sees it. Never contains provider-specific fields.
 | next_refresh_at, last_refresh_at | TEXT NULL | scheduler |
 | last_error | TEXT NULL | |
 | directory_name | TEXT NULL | never computed, always NULL (§5) |
+| episode_count | INTEGER | every episode row of the podcast; kept by triggers on `episodes` (migration 0009), so the library sorts by it from an index |
 | created_at, updated_at | TEXT | |
 
-Indexes: `sort_title`, `status, next_refresh_at`, `podcast_guid`.
+Indexes: `sort_title`, `status, next_refresh_at`, `podcast_guid`, `episode_count DESC, id`.
 
 ### Podcast source (`podcast_sources`)
 

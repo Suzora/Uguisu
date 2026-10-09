@@ -205,9 +205,9 @@ pub enum PodcastOrder {
 /// is time order, and `''` puts a podcast never refreshed after every other.
 const REFRESHED: &str = "coalesce(last_refresh_at, '')";
 
-/// What `Episodes` sorts on, counted the way `episodes::counts_many` counts
-/// `episodes_total`.
-const EPISODES: &str = "(SELECT count(*) FROM episodes e WHERE e.podcast_id = podcasts.id)";
+/// What `Episodes` sorts on: every episode row, as `episodes::counts_many`
+/// counts `episodes_total`, kept by triggers (migration 0009).
+const EPISODES: &str = "episode_count";
 
 /// The statement for one page; its placeholders are bound in the order
 /// [`page`] binds them.
@@ -233,7 +233,7 @@ fn page_sql(status: bool, title: bool, order: PodcastOrder, after: bool) -> Stri
             PodcastOrder::Added => "id < ?".to_owned(),
             PodcastOrder::Refreshed => format!("({REFRESHED} < ? OR ({REFRESHED} = ? AND id > ?))"),
             PodcastOrder::Episodes => {
-                let cursor = "(SELECT count(*) FROM episodes WHERE podcast_id = ?)";
+                let cursor = "(SELECT episode_count FROM podcasts WHERE id = ?)";
                 format!("({EPISODES} < {cursor} OR ({EPISODES} = {cursor} AND id > ?))")
             }
         });
@@ -758,6 +758,53 @@ mod tests {
         }
         tx.commit().await.unwrap();
         (s, ids)
+    }
+
+    /// The count the library sorts by follows every insert and delete, and
+    /// does not stand in the way of removing the podcast.
+    #[tokio::test]
+    async fn episode_count_follows_episodes() {
+        let (s, ids) = library().await;
+        let alpha = ids[0];
+        let mut tx = s.begin().await.unwrap();
+        let count = async |tx: &mut sqlx::SqliteConnection| -> i64 {
+            sqlx::query_scalar("SELECT episode_count FROM podcasts WHERE id = ?1")
+                .bind(alpha.to_string())
+                .fetch_one(tx)
+                .await
+                .unwrap()
+        };
+        assert_eq!(count(&mut tx).await, 3);
+
+        // A refresh that finds a known episode updates it; nothing is added.
+        let mut again =
+            crate::episodes::sample(alpha, "Alpha0", "renamed", OffsetDateTime::UNIX_EPOCH);
+        let known: String =
+            sqlx::query_scalar("SELECT id FROM episodes WHERE podcast_id = ?1 AND guid = 'Alpha0'")
+                .bind(alpha.to_string())
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        again.id = known.parse().unwrap();
+        crate::episodes::upsert_all(&mut tx, &[again])
+            .await
+            .unwrap();
+        assert_eq!(count(&mut tx).await, 3);
+
+        sqlx::query("DELETE FROM episodes WHERE id = (SELECT id FROM episodes WHERE podcast_id = ?1 LIMIT 1)")
+            .bind(alpha.to_string())
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(count(&mut tx).await, 2);
+
+        let gone = sqlx::query("DELETE FROM podcasts WHERE id = ?1")
+            .bind(alpha.to_string())
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(gone.rows_affected(), 1);
+        tx.commit().await.unwrap();
     }
 
     #[tokio::test]
