@@ -20,7 +20,7 @@ python3 scripts/check.py --list       # every check and the command it runs
 python3 scripts/check.py --stream …   # inherit stdio instead of capturing
 ```
 
-Every check command lives in `scripts/check.py`, and the `justfile` and CI both call it, so there is exactly one definition of each. A failure prints the command, the log path (`target/check/<name>.log`) and the full output. `just` is optional. CI runs neither `build` nor the benchmarks: `clippy --all-targets` type-checks them, and `check.py build`, `check.py bench` and `cargo bench` are run locally. Which CI job runs which check, and when, is [ADR 0046](DECISIONS/0046-ci-within-a-minutes-budget.md). Every step runs with `TMPDIR`, `TEMP` and `TMP` pointing at `target/check/tmp-<pid>`, which a passing run removes and a failing one keeps; a bare `cargo test` leaves its test databases in the system's temporary directory.
+Every check command lives in `scripts/check.py`, and the `justfile` and CI both call it, so there is exactly one definition of each. A failure prints the command, the log path (`target/check/<name>.log`) and the full output. `just` is optional. CI runs neither `build` nor the benchmarks: `clippy --all-targets` type-checks them, and `check.py build`, `check.py bench` and `cargo bench` are run locally. Which CI job runs which check, and when, is [ADR 0063](DECISIONS/0063-ci-within-five-minutes.md); `test-engine`, `test-rest`, `test-windows`, `desktop-lint` and `desktop-test` are its slices of `test` and `desktop`, and `all` leaves them out. Every step runs with `TMPDIR`, `TEMP` and `TMP` pointing at `target/check/tmp-<pid>`, which a passing run removes and a failing one keeps; a bare `cargo test` leaves its test databases in the system's temporary directory.
 
 Not owned by the runner, because they write rather than check:
 
@@ -77,7 +77,7 @@ Live fixtures are recorded with `cargo run -p record-fixtures -- provider apple 
 
 - Conventional prefixes: `docs:`, `feat(<crate>):`, `fix(<crate>):`, `chore:`, `ci:`, `test:`, `refactor:`, `perf:`.
 - One logical change per commit; the repository must build at every commit.
-- Feature branches → draft PR (Linux checks) → ready for review (Windows checks) → CI green on a head that contains the current `main` → squash or rebase per the PR's size (keep logical commits when they tell a story). Nothing runs on `main` itself ([ADR 0046](DECISIONS/0046-ci-within-a-minutes-budget.md)).
+- Feature branches → draft PR → ready for review → `ci` green on a head that contains the current `main` → squash or rebase per the PR's size (keep logical commits when they tell a story). Every push runs all of `ci.yml`; Windows runs a reduced set on a pull request and the whole suite on `main` after the merge ([ADR 0063](DECISIONS/0063-ci-within-five-minutes.md)).
 
 ## Tagging a pre-release
 

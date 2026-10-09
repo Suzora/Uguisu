@@ -49,7 +49,7 @@ Decisions that shape Uguisu, in the MADR-light format: context, decision, conseq
 | [0043](0043-desktop-packaging.md) | Packaging: six formats, one version, and a gate that installs them | accepted, amended by 0046 |
 | [0044](0044-archive-folder-and-flatpak.md) | The archive folder is the desktop's setting, and the Flatpak stays narrow | accepted |
 | [0045](0045-uguisu-part-of-suzora.md) | Uguisu, part of Suzora | accepted |
-| [0046](0046-ci-within-a-minutes-budget.md) | CI within a minutes budget | accepted, amends 0043, amended by 0061 |
+| [0046](0046-ci-within-a-minutes-budget.md) | CI within a minutes budget | accepted, amends 0043, amended by 0061, superseded in part by 0063 |
 | [0047](0047-artwork-on-refresh-when-asked.md) | Artwork on refresh, when asked | accepted, amends 0026 |
 | [0048](0048-agpl-licence.md) | Licence: AGPL-3.0-or-later | accepted |
 | [0049](0049-opml-import-and-export.md) | OPML import and export | accepted |
@@ -66,5 +66,6 @@ Decisions that shape Uguisu, in the MADR-light format: context, decision, conseq
 | [0060](0060-repairing-a-missing-file.md) | Repairing a missing file: the exact bytes, or a new download | accepted, amends 0018 |
 | [0061](0061-the-docker-image.md) | The Docker image | accepted, amends 0013, 0031, 0037, 0046 |
 | [0062](0062-trusted-proxies.md) | Trusted proxies name the client, and nothing else | accepted, amends 0013, 0035 |
+| [0063](0063-ci-within-five-minutes.md) | Every pull request's CI within five minutes | accepted, supersedes in part 0046 |
 
 Template: copy `0001` and keep the four sections. Number sequentially; never reuse a number.

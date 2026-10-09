@@ -135,8 +135,8 @@ def workflow() -> int:
     # data, so it must not disappear either.
     if UPGRADE not in jobs:
         problems.append(f"the {UPGRADE} job is missing")
-    # Packaging costs about 170 billed minutes a run; it runs before a release,
-    # not on every change (ADR 0046).
+    # Packaging takes far longer than a pull request's five minutes; it runs
+    # before a release, not on every change (ADR 0046, ADR 0063).
     on = re.search(r"^on:\s*\n((?:[ #].*\n|\s*\n)*)", text, re.MULTILINE)
     triggers = on.group(1) if on else ""
     if not on or re.search(r"pull_request|branches", triggers):
