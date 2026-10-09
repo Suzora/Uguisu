@@ -42,7 +42,8 @@ def main() -> int:
             cwd=ROOT,
             check=True,
         )
-        binary = str(ROOT / "target" / "debug" / "uguisu")
+        # Where cargo just built it; a relative CARGO_TARGET_DIR is relative to ROOT.
+        binary = str(ROOT / os.environ.get("CARGO_TARGET_DIR", "target") / "debug" / "uguisu")
     base = [binary]
     data_dir = Path(tempfile.mkdtemp(prefix="uguisu-smoke-"))
     env = dict(os.environ, UGUISU_DATA_DIR=str(data_dir))

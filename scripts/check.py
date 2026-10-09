@@ -56,22 +56,30 @@ class Step:
         return self.fallback is not None and shutil.which(self.tool) is None
 
 
-def nextest(*select: str) -> Step:
+def nextest(*select: str, fallback: tuple[str, ...] = ()) -> Step:
     """The selected tests under cargo-nextest, many processes at once; without
     nextest, the same tests under `cargo test`, one binary after another."""
     flags = ["--locked", "--no-fail-fast", *select]
     return Step(
-        ["cargo", "nextest", "run", *flags], tool="cargo-nextest", fallback=["cargo", "test", *flags]
+        ["cargo", "nextest", "run", *flags],
+        tool="cargo-nextest",
+        fallback=["cargo", "test", *flags, *fallback],
     )
 
 
 def rust_tests(*select: str) -> list[Step]:
     """`nextest`, then the doc tests, which nextest does not run."""
-    return [nextest(*select), Step(["cargo", "test", "--doc", "--locked", *select])]
+    # `--tests` keeps the fallback from running the doc tests the next step runs.
+    return [
+        nextest(*select, fallback=("--tests",)),
+        Step(["cargo", "test", "--doc", "--locked", *select]),
+    ]
 
 
 def count_tests(log: str) -> str | None:
     """Sum libtest's per-binary result lines and nextest's summary into one."""
+    # nextest colours its summary when CARGO_TERM_COLOR=always, captured or not.
+    log = re.sub(r"\x1b\[[0-9;]*m", "", log)
     passed = ignored = 0
     for m in re.finditer(r"(\d+) passed; (\d+) failed; (\d+) ignored", log):
         passed += int(m.group(1))
@@ -144,7 +152,7 @@ CHECKS: dict[str, Check] = {
         summary=count_tests,
     ),
     "bench": Check(Step(["cargo", "bench", "--workspace", "--no-run"])),
-    # Both workspaces: needs no compiler, so CI runs it in its first job.
+    # Both workspaces: needs no compiler, so CI runs it in `quick`.
     "deny": Check(
         Step(
             ["cargo", "deny", "check", "advisories", "bans", "licenses", "sources"],
@@ -191,7 +199,7 @@ CHECKS: dict[str, Check] = {
     # the build needs, so only on request; skipped where Docker is missing.
     "docker-smoke": Check(Step([PY, "scripts/docker_smoke.py"], tool="docker"), summary=count_smoke),
     # The desktop harnesses and the workflows' shape: Python only, so CI runs
-    # it in its first job, before anything is compiled.
+    # it in `quick`, the job that compiles nothing.
     "desktop-meta": Check(
         # First, so a smoke harness that could not fail never gets to pass.
         Step([PY, "scripts/desktop_smoke.py", "--self-test"]),
@@ -211,8 +219,11 @@ SLICES = {"test-engine", "test-rest", "test-windows", "desktop-lint", "desktop-t
 
 def missing_tool(check: Check, *, required: bool) -> str | None:
     for step in check.steps:
-        if shutil.which(step.tool) is None and (required or step.fallback is None):
-            return step.tool
+        if shutil.which(step.tool) is None:
+            if required or step.fallback is None:
+                return step.tool
+            if shutil.which(step.fallback[0]) is None:
+                return step.fallback[0]
     return None
 
 
@@ -260,7 +271,7 @@ def main() -> int:
     sys.stdout.reconfigure(errors="replace")
     parser = argparse.ArgumentParser(
         description="Run Uguisu's checks with compact output.",
-        epilog="checks: " + " ".join(CHECKS) + "; 'all' runs every one",
+        epilog="checks: " + " ".join(CHECKS) + "; 'all' runs every one but the CI slices " + " ".join(sorted(SLICES)),
     )
     parser.add_argument("checks", nargs="*", metavar="CHECK")
     parser.add_argument(
