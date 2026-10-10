@@ -231,7 +231,7 @@ Moves archived files to the paths the current template produces. Changing the te
 
 ## `uguisu archive reconcile [--deep] [--rebuild] [--apply] [--podcast <id>]`
 
-Registers finished downloads that have no archive record — **where their files lie**, so reconciliation never moves anything — and then confirms that recorded files exist. `--deep` adds a light verification of every artifact. Neither hashes; that stays `verify --full`.
+Registers finished downloads that have no archive record — **where their files lie**, so reconciliation never moves anything — and then confirms that recorded files exist. `--deep` adds a light verification of every artifact. Neither hashes the archive, only a file whose tag write an interrupted run left unsettled; hashing stays `verify --full`.
 
 `--rebuild` is a different operation: it reads the sidecars on disk and puts back records the database has lost. A rebuilt record is always `unchecked` with reason `rebuilt` — a sidecar says what Uguisu knew, not what the bytes are, so only `verify` may write `verified`, and a record that already carries a checked finding is reported as a conflict rather than overwritten. Nothing is written without `--apply`; the dry run prints the same report. Documents whose media file is gone, that do not parse, or that name an episode this library does not have are counted and the first hundred named.
 
@@ -341,7 +341,7 @@ Directory providers require attribution when their data is shown: the JSON `attr
 
 ## Service commands (Phase 7)
 
-`uguisu serve` is the only command that starts anything long-lived: the API, the download workers, the feed-refresh scheduler and the search-index build. It **refuses to bind a network address when no password is set** (ADR 0037) — loopback is the default and needs none. Everything below acts on the same data directory and exits. See [`SERVICE.md`](SERVICE.md), and [`DEPLOYMENT.md`](DEPLOYMENT.md) for the refusal, the override and a reverse proxy.
+`uguisu serve` is the only command that starts anything long-lived: the API, the download workers, the feed-refresh scheduler, the search-index build and the archive check. It **refuses to bind a network address when no password is set** (ADR 0037) — loopback is the default and needs none. Everything below acts on the same data directory and exits. See [`SERVICE.md`](SERVICE.md), and [`DEPLOYMENT.md`](DEPLOYMENT.md) for the refusal, the override and a reverse proxy.
 
 `uguisu health [--bind <addr>]` asks a running server whether it is up, for a container's health check or a script: exit 0 when `GET /api/v1/health` answers `ok`, 1 otherwise. It asks `--server` when given, else the address `serve` binds (`--bind`, `UGUISU_BIND`), on loopback when that address is unspecified (`0.0.0.0`, `::`). It needs no credential and no data directory. Prints `Healthy: Uguisu <version> at <url>`; JSON `{ schema, status, version }`.
 

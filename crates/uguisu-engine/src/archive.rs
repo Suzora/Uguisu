@@ -1037,17 +1037,13 @@ fn move_file(
 /// `EXDEV`: the rename crossed a filesystem boundary.
 const CROSS_DEVICE: i32 = 18;
 
-/// The episode state a verification outcome implies.
-///
-/// A file that could not be checked leaves the episode alone: saying
-/// nothing is better than saying something wrong.
 /// Whether a pass at `depth` that found `found` must leave a record that
 /// says `recorded` as it is.
 ///
 /// An existence pass that finds the file learned only that the path is
 /// occupied; its job is to find files that vanished. And only a full pass
-/// clears an `invalid` finding: a light pass reads a size and an mtime,
-/// which the hash that failed already looked past.
+/// clears an `invalid` finding: only a hash vouches for the bytes, while a
+/// light pass compares a size and an mtime that may not have moved.
 const fn inconclusive(
     depth: VerifyDepth,
     recorded: VerificationState,
@@ -1061,6 +1057,10 @@ const fn inconclusive(
     }
 }
 
+/// The episode state a verification outcome implies.
+///
+/// A file that could not be checked leaves the episode alone: saying
+/// nothing is better than saying something wrong.
 const fn projected_state(state: VerificationState) -> Option<ArchiveState> {
     match state {
         VerificationState::Verified => Some(ArchiveState::Archived),
