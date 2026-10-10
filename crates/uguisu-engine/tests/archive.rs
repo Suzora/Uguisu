@@ -102,6 +102,48 @@ where
     }
 }
 
+/// A hash finding about a file whose size and mtime did not change stays
+/// until a full pass says otherwise: a light pass reads only those two.
+#[tokio::test]
+async fn light_pass_keeps_a_hash_finding() {
+    let h = Harness::new().await;
+    let (_podcast, episodes) = archived_podcast(&h, 1).await;
+    let file = h.engine.archive_file(episodes[0]).await.unwrap().unwrap();
+    let path = h.media_dir().join(&file.relative_path);
+    let bytes = std::fs::read(&path).unwrap();
+    let mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
+    let rewrite = |data: &[u8]| {
+        std::fs::write(&path, data).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(mtime)
+            .unwrap();
+    };
+    let (engine, episode) = (&h.engine, episodes[0]);
+    let state = |depth| async move { engine.verify_episode(episode, depth).await.unwrap().state };
+
+    let mut rotted = bytes.clone();
+    *rotted.last_mut().unwrap() ^= 0xFF;
+    rewrite(&rotted);
+    assert_eq!(
+        state(VerifyDepth::Light).await,
+        VerificationState::Verified,
+        "a light pass cannot see it"
+    );
+    assert_eq!(state(VerifyDepth::Full).await, VerificationState::Invalid);
+    assert_eq!(
+        state(VerifyDepth::Light).await,
+        VerificationState::Invalid,
+        "nor clear it"
+    );
+
+    rewrite(&bytes);
+    assert_eq!(state(VerifyDepth::Light).await, VerificationState::Invalid);
+    assert_eq!(state(VerifyDepth::Full).await, VerificationState::Verified);
+}
+
 /// Only a change of state is announced: a file found intact again is not
 /// news, while a finding and its repair both are.
 #[tokio::test]

@@ -538,15 +538,7 @@ impl Engine {
         let outcome = archive_verify::verify(&root, &expect, depth);
         let now = OffsetDateTime::now_utc();
 
-        // An existence pass that found the file writes nothing: it learned
-        // only that the path is occupied, which is not enough to change
-        // what the record says. Its job is to find files that vanished.
-        // Neither may an inconclusive light pass clear a finding: a file
-        // that failed its hash and was touched since is still unexplained.
-        let inconclusive = outcome.state == VerificationState::Unchecked
-            && (depth == VerifyDepth::Existence
-                || file.verification_state == VerificationState::Invalid);
-        if inconclusive {
+        if inconclusive(depth, file.verification_state, outcome.state) {
             return Ok(VerifiedFile {
                 file: file.clone(),
                 state: file.verification_state,
@@ -1025,6 +1017,26 @@ const CROSS_DEVICE: i32 = 18;
 ///
 /// A file that could not be checked leaves the episode alone: saying
 /// nothing is better than saying something wrong.
+/// Whether a pass at `depth` that found `found` must leave a record that
+/// says `recorded` as it is.
+///
+/// An existence pass that finds the file learned only that the path is
+/// occupied; its job is to find files that vanished. And only a full pass
+/// clears an `invalid` finding: a light pass reads a size and an mtime,
+/// which the hash that failed already looked past.
+const fn inconclusive(
+    depth: VerifyDepth,
+    recorded: VerificationState,
+    found: VerificationState,
+) -> bool {
+    let invalid = matches!(recorded, VerificationState::Invalid);
+    match found {
+        VerificationState::Unchecked => matches!(depth, VerifyDepth::Existence) || invalid,
+        VerificationState::Verified => !matches!(depth, VerifyDepth::Full) && invalid,
+        VerificationState::Missing | VerificationState::Invalid => false,
+    }
+}
+
 const fn projected_state(state: VerificationState) -> Option<ArchiveState> {
     match state {
         VerificationState::Verified => Some(ArchiveState::Archived),

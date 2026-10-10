@@ -71,7 +71,7 @@ The hash is the **download's** hash, computed while the bytes streamed in, until
 | `light` | type, size, and mtime when one was recorded | the default `verify`, completion |
 | `full` | the whole file through SHA-256, 1 MiB at a time | `verify --full` |
 
-A light pass cannot see an edit that preserved the length and the mtime; that is the price of not reading gigabytes, and `--full` is the answer. When the size matches but the mtime moved, a light pass says `unchecked` (`mtime_changed`) rather than `verified`, and leaves an `invalid` record as it was. Only a pass that comes back `verified` records the mtime it found, so asking again does not make a light pass trust the size. A file larger than memory costs 1 MiB regardless of its size.
+A light pass cannot see an edit that preserved the length and the mtime; that is the price of not reading gigabytes, and `--full` is the answer. When the size matches but the mtime moved, a light pass says `unchecked` (`mtime_changed`) rather than `verified`. It never clears an `invalid` record either way: only a full pass does, since the size and mtime are what the failed hash already looked past. Only a pass that comes back `verified` records the mtime it found, so asking again does not make a light pass trust the size. A file larger than memory costs 1 MiB regardless of its size.
 
 Reasons come from a closed vocabulary (`registered`, `present`, `size_match`, `mtime_changed`, `hash_match`, `not_found`, `not_a_file`, `size_mismatch`, `hash_mismatch`, `empty`, `permission_denied`, `io_error`, `outside_root`, `relocated`, `rebuilt`, `imported`, `tagged`, `retag_recovered`), so a client can translate them rather than parse prose.
 
