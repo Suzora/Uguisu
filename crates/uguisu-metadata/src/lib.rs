@@ -22,15 +22,25 @@
 //! [`read_identity`] reads what a foreign file says it is, for an import to
 //! match it to an episode (ADR 0050). It is the only reader that parses
 //! the audio properties.
+//!
+//! A file `lofty` cannot get through, because it panics or because it runs
+//! past [`DEADLINE`], is an error of that file, never a crash or a hang
+//! (ADR 0065).
 
 pub mod capability;
 pub mod field;
 
 use std::collections::BTreeMap;
+use std::fs::File;
+use std::io::{BufReader, Read, Seek, SeekFrom, Write};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use lofty::config::{ParseOptions, WriteOptions};
+use lofty::error::FileParseError;
 use lofty::file::{AudioFile, FileType, TaggedFileExt};
+use lofty::io::{Length, Truncate};
 use lofty::picture::{Picture, PictureType};
 use lofty::probe::Probe;
 use lofty::tag::{Tag, TagExt, TagType};
@@ -184,24 +194,134 @@ fn tags_only() -> ParseOptions {
     ParseOptions::new().read_properties(false)
 }
 
+/// How long reading or writing one file may take.
+///
+/// `lofty` has loops a hostile file keeps from ending: fuzzing found its
+/// ADTS reader seeking for ever over 30 bytes. The loops it found read or
+/// seek, so a handle that fails once this has passed ends them (ADR 0065).
+/// A legitimate three-hour AAC file, the slowest kind to read, took 2.5 s.
+pub const DEADLINE: Duration = Duration::from_secs(30);
+
+/// A file whose every read, write and seek fails once `until` has passed.
+struct Bounded {
+    file: File,
+    until: Instant,
+}
+
+impl Bounded {
+    fn check(&self) -> std::io::Result<()> {
+        if Instant::now() > self.until {
+            return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, overdue()));
+        }
+        Ok(())
+    }
+}
+
+impl Read for Bounded {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.check()?;
+        self.file.read(buf)
+    }
+}
+
+impl Write for Bounded {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.check()?;
+        self.file.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.file.flush()
+    }
+}
+
+impl Seek for Bounded {
+    fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
+        self.check()?;
+        self.file.seek(pos)
+    }
+}
+
+impl Truncate for Bounded {
+    fn truncate(&mut self, new_len: u64) -> std::io::Result<()> {
+        self.check()?;
+        self.file.set_len(new_len)
+    }
+}
+
+impl Length for Bounded {
+    fn len(&self) -> std::io::Result<u64> {
+        self.file.metadata().map(|m| m.len())
+    }
+}
+
+fn overdue() -> String {
+    format!("not done after {} seconds", DEADLINE.as_secs())
+}
+
+/// Runs `lofty` on `path`. A panic, which some of its readers raise on
+/// hostile files (fuzzing found two overflows), and a run past `until` are
+/// both `failed`, whatever `lofty` returned: it swallows some failed reads
+/// and returns what it had read by then.
+fn guarded<T>(
+    path: &Path,
+    until: Instant,
+    failed: fn(PathBuf, String) -> MetadataError,
+    work: impl FnOnce() -> Result<T, MetadataError>,
+) -> Result<T, MetadataError> {
+    let done = catch_unwind(AssertUnwindSafe(work));
+    if Instant::now() > until {
+        return Err(failed(path.to_path_buf(), overdue()));
+    }
+    done.unwrap_or_else(|panic| {
+        let why = panic
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_owned())
+            .or_else(|| panic.downcast_ref::<String>().cloned())
+            .unwrap_or_default();
+        Err(failed(
+            path.to_path_buf(),
+            format!("the parser failed: {why}"),
+        ))
+    })
+}
+
+fn unreadable(path: PathBuf, detail: String) -> MetadataError {
+    MetadataError::Unreadable { path, detail }
+}
+
+fn not_written(path: PathBuf, detail: String) -> MetadataError {
+    MetadataError::NotWritten { path, detail }
+}
+
+/// Opens a file and identifies the container from its contents, giving up
+/// at `until`.
+fn open_until(
+    path: &Path,
+    options: ParseOptions,
+    until: Instant,
+) -> Result<lofty::file::TaggedFile, MetadataError> {
+    let file = File::open(path)
+        .map_err(|e| unreadable(path.to_path_buf(), FileParseError::from(e).to_string()))?;
+    let mut probe = Probe::new(BufReader::new(Bounded { file, until }));
+    // What `Probe::open` would guess; the contents decide when they can.
+    if let Some(by_name) = FileType::from_path(path) {
+        probe = probe.set_file_type(by_name);
+    }
+    guarded(path, until, unreadable, || {
+        let failed = |e: &dyn std::fmt::Display| unreadable(path.to_path_buf(), e.to_string());
+        probe
+            .options(options)
+            .guess_file_type()
+            .map_err(|e| failed(&e))?
+            .read()
+            .map_err(|e| failed(&e))
+    })
+}
+
 /// Opens a file and identifies the container from its contents.
 fn open(path: &Path, options: ParseOptions) -> Result<lofty::file::TaggedFile, MetadataError> {
-    Probe::open(path)
-        .map_err(|e| MetadataError::Unreadable {
-            path: path.to_path_buf(),
-            detail: e.to_string(),
-        })?
-        .options(options)
-        .guess_file_type()
-        .map_err(|e| MetadataError::Unreadable {
-            path: path.to_path_buf(),
-            detail: e.to_string(),
-        })?
-        .read()
-        .map_err(|e| MetadataError::Unreadable {
-            path: path.to_path_buf(),
-            detail: e.to_string(),
-        })
+    open_until(path, options, Instant::now() + DEADLINE)
 }
 
 /// Reads the managed fields out of a file.
@@ -393,20 +513,7 @@ pub fn write_tags(
         });
     }
 
-    // `save_to` takes a handle the caller opened, which is what makes it
-    // possible to write to a copy. `save_to_path` would open the real
-    // artifact; `clippy.toml` forbids it.
-    let mut file = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(path)
-        .map_err(io(path))?;
-    tag.save_to(&mut file, WriteOptions::default())
-        .map_err(|e| MetadataError::NotWritten {
-            path: path.to_path_buf(),
-            detail: e.to_string(),
-        })?;
-    file.sync_all().map_err(io(path))?;
+    save(path, &tag)?;
     Ok(TagOutcome {
         state: OutcomeState::Written,
         format: Some(name),
@@ -415,4 +522,60 @@ pub fn write_tags(
         cover_written,
         detail: None,
     })
+}
+
+/// Writes `tag` into the file at `path` and syncs it, giving up after
+/// [`DEADLINE`].
+fn save(path: &Path, tag: &Tag) -> Result<(), MetadataError> {
+    // `save_to` takes a handle the caller opened, which is what makes it
+    // possible to write to a copy. `save_to_path` would open the real
+    // artifact; `clippy.toml` forbids it.
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .map_err(io(path))?;
+    let until = Instant::now() + DEADLINE;
+    let mut file = Bounded { file, until };
+    guarded(path, until, not_written, || {
+        tag.save_to(&mut file, WriteOptions::default())
+            .map_err(|e| not_written(path.to_path_buf(), e.to_string()))
+    })?;
+    file.file.sync_all().map_err(io(path))
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    /// ADTS frame headers that send the reader back to where it started.
+    /// Found by fuzzing (ADR 0065), minimized; without a deadline it never
+    /// returns.
+    const ADTS_SPIN: [u8; 30] = [
+        0xff, 0xf8, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0xff, 0xf8, 0xc4, 0x00, 0x00, 0xf2,
+        0x00, 0xff, 0xf8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xf8, 0x00, 0x00, 0x43,
+    ];
+
+    #[test]
+    fn spinning_parse_stops_at_deadline() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("spin");
+        std::fs::write(&path, ADTS_SPIN).unwrap();
+        let started = Instant::now();
+        let options = ParseOptions::new().read_properties(true);
+        let Err(err) = open_until(&path, options, started + Duration::from_millis(200)) else {
+            panic!("a file that never ends parsed");
+        };
+        assert!(
+            matches!(&err, MetadataError::Unreadable { detail, .. } if detail.contains("not done after")),
+            "{err}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "{:?}",
+            started.elapsed()
+        );
+    }
 }
