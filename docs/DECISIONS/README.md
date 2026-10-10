@@ -60,7 +60,7 @@ Decisions that shape Uguisu, in the MADR-light format: context, decision, conseq
 | [0054](0054-upgrade-fixtures.md) | Upgrade fixtures: what a tagged build left, opened by every later one | accepted |
 | [0055](0055-archiving-and-removing-a-podcast.md) | Archiving and removing a podcast | accepted, amends 0015 |
 | [0056](0056-database-maintenance.md) | Database maintenance: migrate, back up, check, vacuum | accepted, amends 0002 |
-| [0057](0057-library-paged-by-the-server.md) | The library list is filtered, sorted and paged by the server | accepted, amends 0040 |
+| [0057](0057-library-paged-by-the-server.md) | The library list is filtered, sorted and paged by the server | accepted, amends 0040, amended 2026-10-10 |
 | [0058](0058-refusing-cross-site-changes.md) | A change sent from another site is refused | accepted, amended 2026-10-09, amends 0037 |
 | [0059](0059-archive-import-in-the-web-ui.md) | Importing an archive from the web UI: a server path, typed | accepted, amends 0050 |
 | [0060](0060-repairing-a-missing-file.md) | Repairing a missing file: the exact bytes, or a new download | accepted, amends 0018 |

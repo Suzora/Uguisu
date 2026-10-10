@@ -10,7 +10,7 @@ Decisions: [ADR 0027](DECISIONS/0027-service-and-refresh-scheduler.md) (service 
 uguisu serve [--bind 127.0.0.1:8484]
 ```
 
-It starts four things:
+It starts five things:
 
 | | |
 |---|---|
@@ -18,12 +18,13 @@ It starts four things:
 | the download workers | the queue, resumable and crash-safe |
 | the feed-refresh scheduler | this document |
 | the search-index build | in the background, if the index is not ready |
+| the archive check | in the background, one `stat` per recorded file ([`ARCHIVE_ENGINE.md`](ARCHIVE_ENGINE.md) §8) |
 
-The desktop shell's embedded server starts the same four ([`DESKTOP.md`](DESKTOP.md)), and `download run` or `download --wait` runs the download workers in the foreground until it is done. Every other command does what it was asked and exits. Nothing long-lived hides in `podcast add`, in a refresh, in a download or in an HTTP request.
+The desktop shell's embedded server starts the same five ([`DESKTOP.md`](DESKTOP.md)), and `download run` or `download --wait` runs the download workers in the foreground until it is done. Every other command does what it was asked and exits. Nothing long-lived hides in `podcast add`, in a refresh, in a download or in an HTTP request.
 
 **One process owns a data directory.** A second `uguisu` on the same directory fails, naming the holder's pid from `uguisu.pid`, and a one-shot command run while `serve` holds the lock says so and suggests `--server http://127.0.0.1:8484`.
 
-**Stopping.** SIGTERM, Ctrl-C or, on Windows, Ctrl-Break cancels one token. The HTTP server stops accepting connections and gives open requests 2 s; an open web UI's event stream is one, and it ends with the engine rather than before it. The queue parks running jobs as `queued(shutdown)`, the scheduler stops starting refreshes and the ones it has abort their fetch and are waited for as they unwind (a pool closed under an open transaction turns a clean cancellation into a storage error), the index build stops where it is, manifests are flushed, the pools close. Everything is bounded by `UGUISU_DOWNLOAD_SHUTDOWN_GRACE_MS` (15 s). What did not finish is picked up by the next start: a parked job is queued, a half-built index is rebuilt, an unfinished refresh simply happens again.
+**Stopping.** SIGTERM, Ctrl-C or, on Windows, Ctrl-Break cancels one token. The HTTP server stops accepting connections and gives open requests 2 s; an open web UI's event stream is one, and it ends with the engine rather than before it. The queue parks running jobs as `queued(shutdown)`, the scheduler stops starting refreshes and the ones it has abort their fetch and are waited for as they unwind (a pool closed under an open transaction turns a clean cancellation into a storage error), the index build and the archive check stop where they are, manifests are flushed, the pools close. Everything is bounded by `UGUISU_DOWNLOAD_SHUTDOWN_GRACE_MS` (15 s). What did not finish is picked up by the next start: a parked job is queued, a half-built index is rebuilt, an unfinished refresh simply happens again, and so does the archive check.
 
 ## 2. The refresh scheduler
 

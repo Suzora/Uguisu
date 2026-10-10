@@ -5445,7 +5445,7 @@
       },
       "ArchiveReconcileReport": {
         "type": "object",
-        "description": "What startup reconciliation repaired.",
+        "description": "What an archive reconciliation repaired and found.",
         "required": [
           "registered",
           "unregisterable",

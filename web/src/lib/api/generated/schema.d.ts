@@ -1687,7 +1687,7 @@ export interface components {
              */
             updated_at: string;
         };
-        /** @description What startup reconciliation repaired. */
+        /** @description What an archive reconciliation repaired and found. */
         ArchiveReconcileReport: {
             /**
              * Format: int64

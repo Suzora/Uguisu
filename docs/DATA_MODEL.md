@@ -477,6 +477,10 @@ Migrations `0007_phase10.sql` and `0008_phase10_source_changed.sql` add two colu
 | `original_tags` | JSON: the managed tags the file carried before Uguisu's first tag write (field name → value) and its embedded cover as mime, size and SHA-256, never the image. NULL until a write captures it, NULL for good on a file Uguisu tagged before the column existed, and reset by a re-download ([ADR 0012](DECISIONS/0012-metadata-tagging.md)). |
 | `source_changed_at` | when a refresh last found the feed pointing at different audio for this download (the primary enclosure's URL or declared length changed). The file is kept; NULL means unchanged since the download, and a re-download clears it ([ADR 0015](DECISIONS/0015-change-log-instead-of-versioning.md)). |
 
+## 14. Phase 11 deltas (as migrated)
+
+Migration `0009_phase11_episode_count.sql` adds `podcasts.episode_count` (§2), fills it once from the stored episodes and indexes it as `idx_podcasts_episode_count (episode_count DESC, id)`. The triggers `episodes_count_ai` and `episodes_count_ad` keep it current; no statement moves an episode to another podcast.
+
 ---
 
-*Status: Phase 10, migrations 0001–0008. Tables of §7–§13 are normative as migrated; the remaining sketches are finalized by the phases that create them.*
+*Status: Phase 11, migrations 0001–0009. Tables of §7–§14 are normative as migrated; the remaining sketches are finalized by the phases that create them.*

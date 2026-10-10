@@ -144,7 +144,7 @@ pub struct Relocation {
     pub moved: bool,
 }
 
-/// What startup reconciliation repaired.
+/// What an archive reconciliation repaired and found.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ArchiveReconcileReport {
     /// Tag writes that were in flight when the process stopped.
@@ -831,10 +831,9 @@ impl Engine {
         Ok(report)
     }
 
-    /// What every start runs: registers the completed downloads an unclean
-    /// stop left without a record, and settles interrupted tag writes. Both
-    /// are queries that find nothing on a healthy archive; no file is
-    /// looked at, so a start does not grow with the archive (ADR 0021).
+    /// What every start runs: registers the downloads a crash left without a
+    /// record and settles interrupted tag writes; on a healthy archive it
+    /// touches no file (ADR 0021).
     pub(crate) async fn repair_archive(&self) -> Result<(), UguisuError> {
         let mut report = ArchiveReconcileReport::default();
         self.repair(&mut report).await?;
@@ -1166,13 +1165,8 @@ impl Engine {
 }
 
 impl Engine {
-    /// Starts confirming that every recorded file still exists, as a server
-    /// does once it is up (idempotent).
-    ///
-    /// A `stat` per file: about 12 s for 100 000 files on NTFS, which a
-    /// start must not wait for (ADR 0021). It finds what a changed media
-    /// root or a deleted file did while nothing was running; a file that
-    /// is there is not written to.
+    /// Starts, once, the background pass that confirms every recorded file
+    /// still exists; a file that is there is not written to (ADR 0021).
     pub fn start_archive_check(&self) {
         let mut slot = self
             .inner

@@ -143,7 +143,7 @@ pub mod reason {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum VerifyDepth {
-    /// Only that something is at the path (startup reconciliation).
+    /// Only that something is at the path (a server's check, `archive reconcile`).
     Existence,
     /// Existence, type and size, plus mtime when it was recorded.
     #[default]
