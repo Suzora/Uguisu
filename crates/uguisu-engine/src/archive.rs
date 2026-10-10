@@ -447,13 +447,25 @@ impl Engine {
         episode_id: EpisodeId,
         depth: VerifyDepth,
     ) -> Result<VerifiedFile, UguisuError> {
-        let file = self.archive_file(episode_id).await?.ok_or_else(|| {
-            archive_error(
-                ArchiveErrorKind::ArchiveNotFound,
-                format!("episode {episode_id} has no archive file"),
-            )
-        })?;
-        self.verify_archive_file(&file, depth).await
+        // A writer that changed the record between the read and the verdict
+        // leaves the verdict unwritten; what was asked about is the record as
+        // it is now, so it is read and checked again.
+        let mut retries = 3;
+        loop {
+            let file = self.archive_file(episode_id).await?.ok_or_else(|| {
+                archive_error(
+                    ArchiveErrorKind::ArchiveNotFound,
+                    format!("episode {episode_id} has no archive file"),
+                )
+            })?;
+            match self.verify_archive_file(&file, depth).await {
+                Err(UguisuError::Archive {
+                    kind: ArchiveErrorKind::ArchiveNotFound,
+                    ..
+                }) if retries > 0 => retries -= 1,
+                verdict => return verdict,
+            }
+        }
     }
 
     /// Verifies every artifact a filter selects, in batches.
@@ -573,7 +585,7 @@ impl Engine {
         let mut tx = self.storage().begin().await?;
         let still_there = archive_files::set_verification(
             &mut tx,
-            file.id,
+            file,
             &VerificationUpdate {
                 state: outcome.state,
                 reason: Some(outcome.reason.to_owned()),
@@ -586,14 +598,15 @@ impl Engine {
         )
         .await?;
         if !still_there {
-            // The record was removed while the file was being hashed; there
-            // is nothing to update and nothing to announce.
+            // The record was removed, moved or rewritten while the file was
+            // being checked: the verdict is about a record that is no more,
+            // and the next pass checks the one that is.
             tx.rollback()
                 .await
                 .map_err(uguisu_storage::StorageError::from)?;
             return Err(archive_error(
                 ArchiveErrorKind::ArchiveNotFound,
-                format!("archive record {} disappeared while checking", file.id),
+                format!("archive record {} changed while it was checked", file.id),
             ));
         }
         if let Some(state) = projected_state(outcome.state) {

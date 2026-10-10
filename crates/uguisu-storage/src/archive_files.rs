@@ -356,22 +356,28 @@ pub struct VerificationUpdate {
     pub mtime_unix: Option<i64>,
 }
 
-/// Records the outcome of a verification pass. Returns whether the row
-/// still existed; a verification never creates or deletes a record.
+/// Records the outcome of a verification of `checked`, the record as the
+/// check read it. Returns `false`, writing nothing, when the record is gone
+/// or no longer has that path and state: a relocation or a new download
+/// changed it meanwhile, and a verdict about the old one would be false.
+/// A verification never creates or deletes a record.
 pub async fn set_verification(
     conn: &mut SqliteConnection,
-    id: ArchiveFileId,
+    checked: &ArchiveFile,
     update: &VerificationUpdate,
 ) -> Result<bool> {
     let affected = sqlx::query(&format!(
         "UPDATE {TABLE} SET verification_state = ?1, verification_reason = ?2, verified_at = ?3, \
-         mtime_unix = COALESCE(?4, mtime_unix), updated_at = ?3 WHERE id = ?5"
+         mtime_unix = COALESCE(?4, mtime_unix), updated_at = ?3 \
+         WHERE id = ?5 AND relative_path = ?6 AND verification_state = ?7"
     ))
     .bind(update.state.as_str())
     .bind(&update.reason)
     .bind(to_db_ts(update.at))
     .bind(update.mtime_unix)
-    .bind(id.to_string())
+    .bind(checked.id.to_string())
+    .bind(&checked.relative_path)
+    .bind(checked.verification_state.as_str())
     .execute(conn)
     .await?
     .rows_affected();
@@ -779,7 +785,7 @@ mod tests {
         assert!(
             set_verification(
                 &mut w,
-                f.id,
+                &f,
                 &VerificationUpdate {
                     state: VerificationState::Missing,
                     reason: Some(reason::NOT_FOUND.to_owned()),
@@ -801,21 +807,24 @@ mod tests {
         );
         assert_eq!(stored.hash_value, "abc", "the artifact facts do not change");
 
-        // An unknown record reports that it is gone, it does not appear.
-        assert!(
-            !set_verification(
-                &mut w,
-                ArchiveFileId::new(),
-                &VerificationUpdate {
-                    state: VerificationState::Verified,
-                    reason: None,
-                    at,
-                    mtime_unix: None,
-                },
-            )
+        // A verdict about the record as it was is not written over the
+        // record as it is: here it has moved since it was read.
+        set_path(&mut w, f.id, "Show/b.mp3", None, at)
             .await
-            .unwrap()
-        );
+            .unwrap();
+        let verified = VerificationUpdate {
+            state: VerificationState::Verified,
+            reason: None,
+            at,
+            mtime_unix: None,
+        };
+        assert!(!set_verification(&mut w, &stored, &verified).await.unwrap());
+        let moved = get(&mut w, f.id).await.unwrap().unwrap();
+        assert_eq!(moved.verification_state, VerificationState::Missing);
+
+        // An unknown record reports that it is gone, it does not appear.
+        let unknown = file(p, eps[1], "Show/c.mp3");
+        assert!(!set_verification(&mut w, &unknown, &verified).await.unwrap());
         drop(w);
         s.close().await;
     }
