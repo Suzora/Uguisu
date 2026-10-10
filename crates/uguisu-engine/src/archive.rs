@@ -468,15 +468,33 @@ impl Engine {
     /// three times more. `None` when the episode has no record any more.
     async fn verify_current(
         &self,
+        file: ArchiveFile,
+        depth: VerifyDepth,
+    ) -> Result<Option<VerifiedFile>, UguisuError> {
+        let _gate = self.tag_gate().await;
+        self.verify_current_held(file, depth).await
+    }
+
+    /// [`Self::verify_current`] for a caller that holds the tag gate. A
+    /// tag write found interrupted is settled before the check.
+    pub(crate) async fn verify_current_held(
+        &self,
         mut file: ArchiveFile,
         depth: VerifyDepth,
     ) -> Result<Option<VerifiedFile>, UguisuError> {
-        for _ in 0..3 {
+        let mut attempts = 4;
+        loop {
+            if file.tag_state.is_in_flight()
+                && let Some(settled) = self.settle_tag_write(&file).await?
+            {
+                file = settled;
+            }
+            attempts -= 1;
             match self.verify_archive_file(&file, depth).await {
                 Err(UguisuError::Archive {
                     kind: ArchiveErrorKind::ArchiveNotFound,
                     ..
-                }) => {
+                }) if attempts > 0 => {
                     // By episode, not by id: a registration that raced
                     // an import keeps the stored row's id, not the one it
                     // was handed.
@@ -489,7 +507,6 @@ impl Engine {
                 verdict => return verdict.map(Some),
             }
         }
-        self.verify_archive_file(&file, depth).await.map(Some)
     }
 
     /// Verifies every artifact a filter selects, in batches.
@@ -1035,11 +1052,10 @@ const CROSS_DEVICE: i32 = 18;
 /// The reply that leaves the record as it is, or `None` when the verdict of
 /// a pass at `depth` may be written.
 ///
-/// While a tag write is in flight, the bytes may already be Uguisu's new
-/// ones and the record not yet: only the write, or recovery at the next
-/// start or reconcile, settles which is true (STATE_MACHINES.md §4.3). Its
-/// rename replaces a file with a file, so a path that is gone or holds no
-/// file is a finding all the same. An existence
+/// A record still `pending` here is a write that was interrupted and whose
+/// bytes could not be read to settle it: they may be Uguisu's new ones, so
+/// only a finding about the path itself is written (STATE_MACHINES.md
+/// §4.3), as a rename replaces a file with a file. An existence
 /// pass that finds the file learned only that the path is occupied; its job
 /// is to find files that vanished. And only a full pass clears an `invalid`
 /// finding: only a hash vouches for the bytes, while a light pass compares a
@@ -1053,7 +1069,7 @@ fn held_back(
     let about_the_path = outcome.state == VerificationState::Missing
         || matches!(outcome.reason, reason::NOT_A_FILE | reason::OUTSIDE_ROOT);
     let detail = if file.tag_state.is_in_flight() && !about_the_path {
-        Some("a tag write has not settled; `uguisu archive reconcile` settles it".to_owned())
+        Some("an interrupted tag write could not be settled from its bytes".to_owned())
     } else {
         let undecided = match outcome.state {
             VerificationState::Unchecked => depth == VerifyDepth::Existence || invalid,

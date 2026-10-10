@@ -77,31 +77,25 @@ impl Engine {
         episode_id: EpisodeId,
         mode: TagMode,
     ) -> Result<TagResult, UguisuError> {
+        let _gate = self.tag_gate().await;
         let (podcast, episode, file) = self.archive_subject(episode_id).await?;
-        let file = file.ok_or_else(|| {
+        let missing = || {
             archive_error(
                 ArchiveErrorKind::ArchiveNotFound,
                 format!("episode {episode_id} has no archive file"),
             )
-        })?;
-
-        // An unsettled write may already have put new bytes in place. A
-        // second one would clear the marker with the old hash still recorded,
-        // and nothing could adopt those bytes any more.
-        if file.tag_state.is_in_flight() {
-            return Err(archive_error(
-                ArchiveErrorKind::TagsFailed,
-                format!(
-                    "{} has a tag write that has not settled; `uguisu archive reconcile` settles it",
-                    file.relative_path
-                ),
-            ));
-        }
+        };
+        let file = file.ok_or_else(missing)?;
 
         // The file must be what the record says before it is rewritten.
         // Tagging a file that is already wrong would replace a detectable
-        // problem with an undetectable one.
-        let verified = self.verify_episode(episode_id, VerifyDepth::Full).await?;
+        // problem with an undetectable one. The check settles a write that
+        // was interrupted first, so the record it hands on is the current one.
+        let verified = self
+            .verify_current_held(file, VerifyDepth::Full)
+            .await?
+            .ok_or_else(missing)?;
+        let file = verified.file;
         if verified.state != VerificationState::Verified {
             return Err(archive_error(
                 ArchiveErrorKind::TagsFailed,
@@ -466,7 +460,7 @@ impl Engine {
         })
     }
 
-    /// Finishes tag writes a crash interrupted.
+    /// Finishes tag writes a crash or a failure after the rename interrupted.
     ///
     /// Backed by a partial index that is empty whenever nothing is in
     /// flight, so asking costs nothing on a large archive. Returns how
@@ -475,48 +469,66 @@ impl Engine {
         let mut reader = self.storage().reader().await?;
         let pending = archive_files::tagging_interrupted(&mut reader, RECOVERY_BATCH).await?;
         drop(reader);
-        if pending.is_empty() {
-            return Ok(0);
-        }
-        let root = self.media_root()?;
         let mut settled = 0;
         for id in pending {
+            let _gate = self.tag_gate().await;
             let mut reader = self.storage().reader().await?;
             let file = archive_files::get(&mut reader, id).await?;
             drop(reader);
-            let Some(file) = file else { continue };
-            let Ok(relative) = RelativePath::parse(&file.relative_path) else {
+            // A write that finished while this waited for the gate left
+            // nothing to settle.
+            let Some(file) = file.filter(|f| f.tag_state.is_in_flight()) else {
                 continue;
             };
-            let Ok(full) = resolve_checked(&root, &relative) else {
-                continue;
-            };
-            let hash = match hash_file(&full) {
-                Ok(hash) => hash,
-                Err(e) => {
-                    tracing::warn!(
-                        episode_id = %file.episode_id,
-                        path = %file.relative_path,
-                        error = %e,
-                        "an interrupted tag write could not be settled"
-                    );
-                    continue;
-                }
-            };
-            let now = OffsetDateTime::now_utc();
-            let mut tx = self.storage().begin().await?;
-            if hash == file.hash_value {
-                // The replacement never landed. The artifact is exactly
-                // what the record says, so there is nothing to adopt. Only a
-                // completed write sets `tagged_at`, so it says whether these
-                // bytes were already Uguisu's tags.
-                let before = if file.tagged_at.is_some() {
-                    TagState::Written
-                } else {
-                    TagState::Untagged
-                };
-                archive_files::set_tag_state(&mut tx, id, before, now).await?;
-            } else {
+            if self.settle_tag_write(&file).await?.is_some() {
+                settled += 1;
+            }
+        }
+        Ok(settled)
+    }
+
+    /// Settles the interrupted tag write `file` records, from the bytes at
+    /// its path, and returns the record as it is afterwards; `None` when
+    /// those bytes could not be read. The caller holds the tag gate.
+    pub(crate) async fn settle_tag_write(
+        &self,
+        file: &ArchiveFile,
+    ) -> Result<Option<ArchiveFile>, UguisuError> {
+        let root = self.media_root()?;
+        let Ok(relative) = RelativePath::parse(&file.relative_path) else {
+            return Ok(None);
+        };
+        let Ok(full) = resolve_checked(&root, &relative) else {
+            return Ok(None);
+        };
+        // A file that is gone holds no bytes to adopt: the record stays
+        // what it says, and a verification reports the file missing.
+        let hash = match hash_file(&full) {
+            Ok(hash) => Some(hash),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => {
+                tracing::warn!(
+                    episode_id = %file.episode_id,
+                    path = %file.relative_path,
+                    error = %e,
+                    "an interrupted tag write could not be settled"
+                );
+                return Ok(None);
+            }
+        };
+        let id = file.id;
+        let now = OffsetDateTime::now_utc();
+        let mut tx = self.storage().begin().await?;
+        match hash {
+            None => {
+                archive_files::set_tag_state(&mut tx, id, untouched(file), now).await?;
+            }
+            // The replacement never landed. The artifact is exactly what the
+            // record says, so there is nothing to adopt.
+            Some(hash) if hash == file.hash_value => {
+                archive_files::set_tag_state(&mut tx, id, untouched(file), now).await?;
+            }
+            Some(hash) => {
                 // The replacement did land and the record had not caught
                 // up. The marker was committed before the first byte
                 // moved, so this cannot be someone else's edit - and it is
@@ -546,12 +558,23 @@ impl Engine {
                 )
                 .await?;
             }
-            tx.commit()
-                .await
-                .map_err(uguisu_storage::StorageError::from)?;
-            settled += 1;
         }
-        Ok(settled)
+        tx.commit()
+            .await
+            .map_err(uguisu_storage::StorageError::from)?;
+        let mut reader = self.storage().reader().await?;
+        Ok(archive_files::get(&mut reader, id).await?)
+    }
+}
+
+/// The tag state of a file whose interrupted write did not change it. Only
+/// a completed write sets `tagged_at`, so it says whether these bytes were
+/// already Uguisu's tags.
+fn untouched(file: &ArchiveFile) -> TagState {
+    if file.tagged_at.is_some() {
+        TagState::Written
+    } else {
+        TagState::Untagged
     }
 }
 

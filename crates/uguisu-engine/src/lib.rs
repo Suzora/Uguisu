@@ -144,6 +144,10 @@ struct Inner {
     search_build: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// The background check that recorded files exist, once started.
     archive_check: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// Held by a tag write for its whole length, and by a verification or
+    /// a recovery of one file. A `pending` marker read while holding it is
+    /// a write that was interrupted, never one that is running.
+    tag_gate: tokio::sync::Mutex<()>,
     /// Stops the engine's own background tasks on close.
     shutdown: CancellationToken,
     // Released when the last handle drops.
@@ -268,6 +272,7 @@ impl Engine {
                 scheduler: scheduler::SchedulerState::default(),
                 search_build: std::sync::Mutex::new(None),
                 archive_check: std::sync::Mutex::new(None),
+                tag_gate: tokio::sync::Mutex::new(()),
                 shutdown: CancellationToken::new(),
                 _lock: lock,
             }),
@@ -278,6 +283,12 @@ impl Engine {
         // per file would make every command wait on the archive's size.
         engine.repair_archive().await?;
         Ok(engine)
+    }
+
+    /// Taken before a tag write, a verification or a tag recovery touches
+    /// one file's bytes or record.
+    pub(crate) async fn tag_gate(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.inner.tag_gate.lock().await
     }
 
     /// The configuration in force.

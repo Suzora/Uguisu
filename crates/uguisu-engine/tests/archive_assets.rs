@@ -13,13 +13,13 @@ use std::time::Duration;
 
 use common::Harness;
 use sha2::Digest;
-use uguisu_core::UguisuError;
 use uguisu_core::archive::{
     ArtworkFormat, TagMode, TagState, VerificationState, VerifyDepth, reason,
 };
 use uguisu_core::download::Priority;
 use uguisu_core::ids::EpisodeId;
 use uguisu_core::model::{ArchiveState, Podcast};
+use uguisu_core::{EventKind, UguisuError};
 use uguisu_engine::artwork::ArtworkOutcome;
 use uguisu_engine::restore::{RestoreAction, RestoreOptions};
 use uguisu_http::CancellationToken;
@@ -571,20 +571,6 @@ async fn post_rename_failure_stays_pending() {
         let mut w = h.engine.storage().writer().await.unwrap();
         archive_files::allow_tag_records(&mut w).await.unwrap();
     }
-    // A second write would clear the marker with the record's hash still
-    // the old one, and nothing could adopt the new bytes any more.
-    let retry = h
-        .engine
-        .write_episode_tags(episodes[0], TagMode::Sync)
-        .await
-        .unwrap_err();
-    assert!(retry.to_string().contains("has not settled"), "{retry}");
-    let still = h.engine.archive_file(episodes[0]).await.unwrap().unwrap();
-    assert_eq!(
-        (still.tag_state, still.hash_value),
-        (TagState::Pending, file.hash_value.clone())
-    );
-
     assert_eq!(h.engine.recover_interrupted_tagging().await.unwrap(), 1);
     let recovered = h.engine.archive_file(episodes[0]).await.unwrap().unwrap();
     assert_eq!(recovered.tag_state, TagState::Written);
@@ -596,34 +582,38 @@ async fn post_rename_failure_stays_pending() {
     h.engine.close().await;
 }
 
-/// The bytes a tag write already put in place are not a finding while the
-/// record has not caught up with them.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn unsettled_tag_write_defers_verdicts() {
-    let h = Harness::new().await;
-    let (_, episodes) = setup(&h).await;
-    let before = h.engine.episode(episodes[0]).await.unwrap();
-    let recorded = before.archive.clone().unwrap();
+/// Leaves a tag write failed after its rename: Uguisu's bytes in place and
+/// the record still `pending` on the old ones. Returns their hash.
+async fn interrupt_after_rename(h: &Harness, episode: EpisodeId) -> String {
+    let file = h.engine.archive_file(episode).await.unwrap().unwrap();
     {
         let mut w = h.engine.storage().writer().await.unwrap();
         archive_files::refuse_tag_records(&mut w).await.unwrap();
     }
     h.engine
-        .write_episode_tags(episodes[0], TagMode::Sync)
+        .write_episode_tags(episode, TagMode::Sync)
         .await
         .unwrap_err();
+    {
+        let mut w = h.engine.storage().writer().await.unwrap();
+        archive_files::allow_tag_records(&mut w).await.unwrap();
+    }
+    let media = h.media_dir().join(&file.relative_path);
+    hex::encode(sha2::Sha256::digest(std::fs::read(media).unwrap()))
+}
+
+/// Uguisu's own bytes, left by an interrupted write, are adopted before a
+/// verification judges them, never called a mismatch.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn interrupted_write_settles_before_verdict() {
+    let h = Harness::new().await;
+    let (_, episodes) = setup(&h).await;
+    let on_disk = interrupt_after_rename(&h, episodes[0]).await;
 
     let mut sub = h.engine.subscribe();
     for depth in [VerifyDepth::Light, VerifyDepth::Full] {
         let verified = h.engine.verify_episode(episodes[0], depth).await.unwrap();
-        assert_eq!(
-            (verified.state, verified.detail.as_deref()),
-            (
-                recorded.verification_state,
-                Some("a tag write has not settled; `uguisu archive reconcile` settles it")
-            ),
-            "{depth}"
-        );
+        assert_eq!(verified.state, VerificationState::Verified, "{depth}");
     }
     let summary = h
         .engine
@@ -634,38 +624,61 @@ async fn unsettled_tag_write_defers_verdicts() {
 
     let after = h.engine.episode(episodes[0]).await.unwrap();
     let record = after.archive.unwrap();
-    assert_eq!(record.tag_state, TagState::Pending);
-    assert_eq!(record.verification_state, recorded.verification_state);
-    assert_eq!(record.hash_value, recorded.hash_value);
-    assert_eq!(after.episode.archive_state, before.episode.archive_state);
-    let mut announced = Vec::new();
+    assert_eq!(
+        (
+            record.tag_state,
+            record.hash_value,
+            record.verification_state
+        ),
+        (TagState::Written, on_disk, VerificationState::Verified)
+    );
+    assert_eq!(after.episode.archive_state, ArchiveState::Archived);
     while let Some(event) = sub.try_recv() {
-        announced.push(event.kind.name());
+        assert!(
+            !matches!(event.kind, EventKind::ArchiveInvalid { .. }),
+            "{event:?}"
+        );
     }
-    assert!(announced.is_empty(), "{announced:?}");
     h.engine.close().await;
 }
 
-/// A rename replaces a file with a file, so a file gone from its path is a
-/// finding even while a tag write has not settled.
+/// A retry of an interrupted write settles the first one from its bytes and
+/// goes on from there.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn unsettled_write_still_reports_missing() {
+async fn retry_settles_interrupted_write() {
     let h = Harness::new().await;
     let (_, episodes) = setup(&h).await;
-    let file = h.engine.archive_file(episodes[0]).await.unwrap().unwrap();
-    {
-        let mut w = h.engine.storage().writer().await.unwrap();
-        archive_files::refuse_tag_records(&mut w).await.unwrap();
-    }
+    interrupt_after_rename(&h, episodes[0]).await;
+
     h.engine
         .write_episode_tags(episodes[0], TagMode::Sync)
         .await
-        .unwrap_err();
+        .unwrap();
+    let record = h.engine.archive_file(episodes[0]).await.unwrap().unwrap();
+    let media = h.media_dir().join(&record.relative_path);
+    let on_disk = hex::encode(sha2::Sha256::digest(std::fs::read(media).unwrap()));
+    assert_eq!(
+        (record.tag_state, record.hash_value),
+        (TagState::Written, on_disk)
+    );
+    assert_eq!(h.engine.recover_interrupted_tagging().await.unwrap(), 0);
+    h.engine.close().await;
+}
+
+/// A file gone from its path is missing, whether or not a tag write to it
+/// was interrupted.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn interrupted_write_still_reports_missing() {
+    let h = Harness::new().await;
+    let (_, episodes) = setup(&h).await;
+    let file = h.engine.archive_file(episodes[0]).await.unwrap().unwrap();
+    interrupt_after_rename(&h, episodes[0]).await;
     std::fs::remove_file(h.media_dir().join(&file.relative_path)).unwrap();
 
     for depth in VerifyDepth::ALL {
         let verified = h.engine.verify_episode(episodes[0], depth).await.unwrap();
         assert_eq!(verified.state, VerificationState::Missing, "{depth}");
+        assert_ne!(verified.file.tag_state, TagState::Pending, "{depth}");
     }
     let summary = h
         .engine
