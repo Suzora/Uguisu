@@ -357,10 +357,10 @@ pub struct VerificationUpdate {
 }
 
 /// Records the outcome of a verification of `checked`, the record as the
-/// check read it. Returns `false`, writing nothing, when the record is gone
-/// or no longer has the path, state, size and hash the check compared
-/// against: a relocation, a new download or a tag write changed it
-/// meanwhile, and a verdict about the old one would be false. A
+/// check read it. Returns `false`, writing nothing, when the record is gone,
+/// no longer has the path, state, size and hash the check compared against,
+/// or has a tag write in flight: a relocation, a new download or a tag write
+/// changed it meanwhile, and a verdict about the old one would be false. A
 /// verification never creates or deletes a record.
 pub async fn set_verification(
     conn: &mut SqliteConnection,
@@ -371,7 +371,7 @@ pub async fn set_verification(
         "UPDATE {TABLE} SET verification_state = ?1, verification_reason = ?2, verified_at = ?3, \
          mtime_unix = COALESCE(?4, mtime_unix), updated_at = ?3 \
          WHERE id = ?5 AND relative_path = ?6 AND verification_state = ?7 \
-         AND size_bytes = ?8 AND hash_value = ?9"
+         AND size_bytes = ?8 AND hash_value = ?9 AND tag_state <> 'pending'"
     ))
     .bind(update.state.as_str())
     .bind(&update.reason)
@@ -853,6 +853,13 @@ mod tests {
         );
         let now = get(&mut w, f.id).await.unwrap().unwrap();
         assert_eq!(now.verification_state, VerificationState::Verified);
+
+        // Nor while a tag write is in flight: its rename may already have
+        // landed, and only the write or its recovery settles the record.
+        set_tag_state(&mut w, f.id, TagState::Pending, at)
+            .await
+            .unwrap();
+        assert!(!set_verification(&mut w, &now, &invalid).await.unwrap());
 
         // An unknown record reports that it is gone, it does not appear.
         let unknown = file(p, eps[1], "Show/c.mp3");

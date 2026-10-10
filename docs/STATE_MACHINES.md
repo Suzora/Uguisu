@@ -168,7 +168,7 @@ stateDiagram-v2
 
 `Unsupported` is a **result, not an error**: one WAV file in a batch must not fail the batch, and `not_embeddable` fields are reported so they stay in the sidecar instead of being lost.
 
-Recovery (`recover_interrupted_tagging`, run at startup over the partial index, so it costs what is pending rather than what the archive holds) hashes each `pending` file once and needs no other evidence: hash equals the record → the replacement never landed, nothing was touched, back to `written` if a write had completed before (`tagged_at` is set) and `untagged` otherwise; hash differs → the rename did land and the record had not caught up, so it is adopted as `written` with reason `retag_recovered`. It is never recorded as a verification, because nothing here proves the *content* is right — only that Uguisu is what changed it.
+Recovery (`recover_interrupted_tagging`, run at startup over the partial index, so it costs what is pending rather than what the archive holds) hashes each `pending` file once and needs no other evidence: hash equals the record → the replacement never landed, nothing was touched, back to `written` if a write had completed before (`tagged_at` is set) and `untagged` otherwise; hash differs → the rename did land and the record had not caught up, so it is adopted as `written` with reason `retag_recovered`. It is never recorded as a verification, because nothing here proves the *content* is right — only that Uguisu is what changed it. For the same reason a verification leaves a `pending` record's verdict as it is: the bytes may already be the write's.
 
 ### 4.4 Manifest freshness (Phase 6)
 

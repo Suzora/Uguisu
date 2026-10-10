@@ -217,7 +217,7 @@ Runs the download workers in this process (embedded only): every queued job is d
 
 ## `uguisu archive verify [<episode-id>] [--all] [--podcast <id>] [--full]`
 
-Checks that archived files are still there and still correct. Without `--full` it compares type, size and modification time; with `--full` it hashes the whole file (1 MiB at a time, so the memory cost does not grow with the file). Name an episode, or pass `--all` or `--podcast`; naming nothing is a usage error rather than a whole-archive scan by accident. Only `--full` clears an `invalid` finding: a light check of a file found invalid reports it as it was, with `only a full pass clears this finding`.
+Checks that archived files are still there and still correct. Without `--full` it compares type, size and modification time; with `--full` it hashes the whole file (1 MiB at a time, so the memory cost does not grow with the file). Name an episode, or pass `--all` or `--podcast`; naming nothing is a usage error rather than a whole-archive scan by accident. Only `--full` clears an `invalid` finding: a light check of a file found invalid still reports it `invalid`, with the check's own detail (`mtime_changed`, an I/O error), or `only a full pass clears this finding` when size and modification time both still match. A file whose tag write has not settled keeps its verdict, with `a tag write has not settled; check again after it`.
 
 Verification **never changes a file and never deletes a record**. A tampered file is reported and left exactly as it is; a deleted file leaves its record, hash included, so it can be recovered. The exit code is **1** when anything is missing or invalid: a finding is a result to act on, not a crash.
 

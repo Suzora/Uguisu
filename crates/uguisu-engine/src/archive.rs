@@ -464,8 +464,8 @@ impl Engine {
     }
 
     /// Verifies `file`, and when another writer changed the record before
-    /// the verdict was written, the record as it now is, up to three times
-    /// more. `None` when the record is gone.
+    /// the verdict was written, the episode's record as it now is, up to
+    /// three times more. `None` when the episode has no record any more.
     async fn verify_current(
         &self,
         mut file: ArchiveFile,
@@ -477,8 +477,11 @@ impl Engine {
                     kind: ArchiveErrorKind::ArchiveNotFound,
                     ..
                 }) => {
+                    // By episode, not by id: a registration that raced
+                    // an import keeps the stored row's id, not the one it
+                    // was handed.
                     let mut reader = self.storage().reader().await?;
-                    match archive_files::get(&mut reader, file.id).await? {
+                    match archive_files::get_by_episode(&mut reader, file.episode_id).await? {
                         Some(now) => file = now,
                         None => return Ok(None),
                     }
@@ -561,16 +564,8 @@ impl Engine {
         let outcome = archive_verify::verify(&root, &expect, depth);
         let now = OffsetDateTime::now_utc();
 
-        if inconclusive(depth, file.verification_state, outcome.state) {
-            let kept = (file.verification_state == VerificationState::Invalid)
-                .then(|| "only a full pass clears this finding".to_owned());
-            return Ok(VerifiedFile {
-                file: file.clone(),
-                state: file.verification_state,
-                reason: outcome.reason.to_owned(),
-                depth: outcome.depth,
-                detail: outcome.detail.or(kept),
-            });
+        if let Some(kept) = held_back(file, depth, &outcome) {
+            return Ok(kept);
         }
 
         let event = match outcome.state {
@@ -1037,24 +1032,45 @@ fn move_file(
 /// `EXDEV`: the rename crossed a filesystem boundary.
 const CROSS_DEVICE: i32 = 18;
 
-/// Whether a pass at `depth` that found `found` must leave a record that
-/// says `recorded` as it is.
+/// The reply that leaves the record as it is, or `None` when the verdict of
+/// a pass at `depth` may be written.
 ///
-/// An existence pass that finds the file learned only that the path is
-/// occupied; its job is to find files that vanished. And only a full pass
-/// clears an `invalid` finding: only a hash vouches for the bytes, while a
-/// light pass compares a size and an mtime that may not have moved.
-const fn inconclusive(
+/// While a tag write is in flight, the bytes may already be Uguisu's new
+/// ones and the record not yet: only the write, or the next start's
+/// recovery, settles which is true (STATE_MACHINES.md §4.3). An existence
+/// pass that finds the file learned only that the path is occupied; its job
+/// is to find files that vanished. And only a full pass clears an `invalid`
+/// finding: only a hash vouches for the bytes, while a light pass compares a
+/// size and an mtime that may not have moved.
+fn held_back(
+    file: &ArchiveFile,
     depth: VerifyDepth,
-    recorded: VerificationState,
-    found: VerificationState,
-) -> bool {
-    let invalid = matches!(recorded, VerificationState::Invalid);
-    match found {
-        VerificationState::Unchecked => matches!(depth, VerifyDepth::Existence) || invalid,
-        VerificationState::Verified => !matches!(depth, VerifyDepth::Full) && invalid,
-        VerificationState::Missing | VerificationState::Invalid => false,
-    }
+    outcome: &archive_verify::Outcome,
+) -> Option<VerifiedFile> {
+    let invalid = file.verification_state == VerificationState::Invalid;
+    let detail = if file.tag_state.is_in_flight() {
+        Some("a tag write has not settled; check again after it".to_owned())
+    } else {
+        let undecided = match outcome.state {
+            VerificationState::Unchecked => depth == VerifyDepth::Existence || invalid,
+            VerificationState::Verified => depth != VerifyDepth::Full && invalid,
+            VerificationState::Missing | VerificationState::Invalid => false,
+        };
+        if !undecided {
+            return None;
+        }
+        outcome
+            .detail
+            .clone()
+            .or_else(|| invalid.then(|| "only a full pass clears this finding".to_owned()))
+    };
+    Some(VerifiedFile {
+        file: file.clone(),
+        state: file.verification_state,
+        reason: outcome.reason.to_owned(),
+        depth: outcome.depth,
+        detail,
+    })
 }
 
 /// The episode state a verification outcome implies.

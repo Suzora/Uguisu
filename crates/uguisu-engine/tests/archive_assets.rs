@@ -582,6 +582,56 @@ async fn post_rename_failure_stays_pending() {
     h.engine.close().await;
 }
 
+/// The bytes a tag write already put in place are not a finding while the
+/// record has not caught up with them.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn unsettled_tag_write_defers_verdicts() {
+    let h = Harness::new().await;
+    let (_, episodes) = setup(&h).await;
+    let before = h.engine.episode(episodes[0]).await.unwrap();
+    let recorded = before.archive.clone().unwrap();
+    {
+        let mut w = h.engine.storage().writer().await.unwrap();
+        archive_files::refuse_tag_records(&mut w).await.unwrap();
+    }
+    h.engine
+        .write_episode_tags(episodes[0], TagMode::Sync)
+        .await
+        .unwrap_err();
+
+    let mut sub = h.engine.subscribe();
+    for depth in [VerifyDepth::Light, VerifyDepth::Full] {
+        let verified = h.engine.verify_episode(episodes[0], depth).await.unwrap();
+        assert_eq!(
+            (verified.state, verified.detail.as_deref()),
+            (
+                recorded.verification_state,
+                Some("a tag write has not settled; check again after it")
+            ),
+            "{depth}"
+        );
+    }
+    let summary = h
+        .engine
+        .verify_all(&ArchiveFilter::default(), VerifyDepth::Full)
+        .await
+        .unwrap();
+    assert_eq!(summary.invalid, 0);
+
+    let after = h.engine.episode(episodes[0]).await.unwrap();
+    let record = after.archive.unwrap();
+    assert_eq!(record.tag_state, TagState::Pending);
+    assert_eq!(record.verification_state, recorded.verification_state);
+    assert_eq!(record.hash_value, recorded.hash_value);
+    assert_eq!(after.episode.archive_state, before.episode.archive_state);
+    let mut announced = Vec::new();
+    while let Some(event) = sub.try_recv() {
+        announced.push(event.kind.name());
+    }
+    assert!(announced.is_empty(), "{announced:?}");
+    h.engine.close().await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_interrupted_tag_write_is_resolved_from_the_marker() {
     let h = Harness::new().await;
