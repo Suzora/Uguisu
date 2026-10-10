@@ -801,3 +801,20 @@ fn write_must_read_back() {
         "{err}"
     );
 }
+
+/// An MP4 of nested `moov` headers, each claiming the rest of the file:
+/// `lofty`'s writer recurses once per level, and the stack overflow that
+/// ends would take the whole process with it.
+#[test]
+fn nested_mp4_atoms_are_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let levels: u32 = 100_000;
+    let mut bytes = atom(*b"ftyp", b"M4A \0\0\0\0M4A isom");
+    for level in 0..levels {
+        bytes.extend_from_slice(&(8 * (levels - level)).to_be_bytes());
+        bytes.extend_from_slice(b"moov");
+    }
+    let path = write_fixture(dir.path(), "nested.m4a", &bytes);
+    let err = write_tags(&path, &episode_tags(), TagMode::Sync).unwrap_err();
+    assert!(err.to_string().contains("nest deeper than"), "{err}");
+}

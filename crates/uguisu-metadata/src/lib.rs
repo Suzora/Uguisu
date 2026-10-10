@@ -194,24 +194,64 @@ fn tags_only() -> ParseOptions {
     ParseOptions::new().read_properties(false)
 }
 
-/// How long reading or writing one file may take.
+/// How long reading or writing a small file may take; a larger one gets
+/// a second more for every [`BYTES_PER_SECOND`].
 ///
 /// `lofty` has loops a hostile file keeps from ending: fuzzing found its
 /// ADTS reader seeking for ever over 30 bytes. The loops it found read or
-/// seek, so a handle that fails once this has passed ends them (ADR 0065).
-/// A legitimate three-hour AAC file, the slowest kind to read, took 2.5 s.
+/// seek, so a handle that fails once its deadline has passed ends them
+/// (ADR 0065). A legitimate three-hour AAC file, the slowest kind to read,
+/// took 2.5 s.
 pub const DEADLINE: Duration = Duration::from_secs(30);
 
-/// A file whose every read, write and seek fails once `until` has passed.
+/// The slowest storage a read or write of a large file is allowed for:
+/// `lofty` reads a whole MP4 or Ogg file and writes it back, and shifts the
+/// tail of an MPEG or FLAC one.
+pub const BYTES_PER_SECOND: u64 = 4 * 1024 * 1024;
+
+/// When the work on one file has to be done.
+#[derive(Clone, Copy)]
+struct Deadline {
+    until: Instant,
+    allowed: Duration,
+}
+
+impl Deadline {
+    fn for_file(file: &File) -> Self {
+        let len = file.metadata().map_or(0, |m| m.len());
+        Self::after(DEADLINE + Duration::from_secs(len / BYTES_PER_SECOND))
+    }
+
+    fn after(allowed: Duration) -> Self {
+        Self {
+            until: Instant::now() + allowed,
+            allowed,
+        }
+    }
+
+    fn passed(self) -> bool {
+        Instant::now() > self.until
+    }
+
+    fn overdue(self) -> String {
+        format!("not done after {} seconds", self.allowed.as_secs())
+    }
+}
+
+/// A file whose every read, write and seek fails once its deadline has
+/// passed.
 struct Bounded {
     file: File,
-    until: Instant,
+    deadline: Deadline,
 }
 
 impl Bounded {
     fn check(&self) -> std::io::Result<()> {
-        if Instant::now() > self.until {
-            return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, overdue()));
+        if self.deadline.passed() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                self.deadline.overdue(),
+            ));
         }
         Ok(())
     }
@@ -255,23 +295,19 @@ impl Length for Bounded {
     }
 }
 
-fn overdue() -> String {
-    format!("not done after {} seconds", DEADLINE.as_secs())
-}
-
 /// Runs `lofty` on `path`. A panic, which some of its readers raise on
-/// hostile files (fuzzing found two overflows), and a run past `until` are
-/// both `failed`, whatever `lofty` returned: it swallows some failed reads
-/// and returns what it had read by then.
+/// hostile files (fuzzing found two overflows), and a run past `deadline`
+/// are both `failed`, whatever `lofty` returned: it swallows some failed
+/// reads and returns what it had read by then.
 fn guarded<T>(
     path: &Path,
-    until: Instant,
+    deadline: Deadline,
     failed: fn(PathBuf, String) -> MetadataError,
     work: impl FnOnce() -> Result<T, MetadataError>,
 ) -> Result<T, MetadataError> {
     let done = catch_unwind(AssertUnwindSafe(work));
-    if Instant::now() > until {
-        return Err(failed(path.to_path_buf(), overdue()));
+    if deadline.passed() {
+        return Err(failed(path.to_path_buf(), deadline.overdue()));
     }
     done.unwrap_or_else(|panic| {
         let why = panic
@@ -294,21 +330,20 @@ fn not_written(path: PathBuf, detail: String) -> MetadataError {
     MetadataError::NotWritten { path, detail }
 }
 
-/// Opens a file and identifies the container from its contents, giving up
-/// at `until`.
-fn open_until(
+/// Identifies the container of `file` from its contents and parses it,
+/// giving up at `deadline`.
+fn parse(
     path: &Path,
+    file: File,
     options: ParseOptions,
-    until: Instant,
+    deadline: Deadline,
 ) -> Result<lofty::file::TaggedFile, MetadataError> {
-    let file = File::open(path)
-        .map_err(|e| unreadable(path.to_path_buf(), FileParseError::from(e).to_string()))?;
-    let mut probe = Probe::new(BufReader::new(Bounded { file, until }));
+    let mut probe = Probe::new(BufReader::new(Bounded { file, deadline }));
     // What `Probe::open` would guess; the contents decide when they can.
     if let Some(by_name) = FileType::from_path(path) {
         probe = probe.set_file_type(by_name);
     }
-    guarded(path, until, unreadable, || {
+    guarded(path, deadline, unreadable, || {
         let failed = |e: &dyn std::fmt::Display| unreadable(path.to_path_buf(), e.to_string());
         probe
             .options(options)
@@ -321,7 +356,10 @@ fn open_until(
 
 /// Opens a file and identifies the container from its contents.
 fn open(path: &Path, options: ParseOptions) -> Result<lofty::file::TaggedFile, MetadataError> {
-    open_until(path, options, Instant::now() + DEADLINE)
+    let file = File::open(path)
+        .map_err(|e| unreadable(path.to_path_buf(), FileParseError::from(e).to_string()))?;
+    let deadline = Deadline::for_file(&file);
+    parse(path, file, options, deadline)
 }
 
 /// Reads the managed fields out of a file.
@@ -517,6 +555,9 @@ pub fn write_tags(
         });
     }
 
+    if file_type == FileType::Mp4 {
+        mp4_depth(path)?;
+    }
     save(path, &tag)?;
     read_back(path, file_type, desired, &written)?;
     Ok(TagOutcome {
@@ -530,7 +571,7 @@ pub fn write_tags(
 }
 
 /// Writes `tag` into the file at `path` and syncs it, giving up after
-/// [`DEADLINE`].
+/// [`DEADLINE`] and a second for every [`BYTES_PER_SECOND`].
 fn save(path: &Path, tag: &Tag) -> Result<(), MetadataError> {
     // `save_to` takes a handle the caller opened, which is what makes it
     // possible to write to a copy. `save_to_path` would open the real
@@ -540,13 +581,70 @@ fn save(path: &Path, tag: &Tag) -> Result<(), MetadataError> {
         .write(true)
         .open(path)
         .map_err(io(path))?;
-    let until = Instant::now() + DEADLINE;
-    let mut file = Bounded { file, until };
-    guarded(path, until, not_written, || {
+    let deadline = Deadline::for_file(&file);
+    let mut file = Bounded { file, deadline };
+    guarded(path, deadline, not_written, || {
         tag.save_to(&mut file, WriteOptions::default())
             .map_err(|e| not_written(path.to_path_buf(), e.to_string()))
     })?;
     file.file.sync_all().map_err(io(path))
+}
+
+/// Deepest nesting of the MP4 containers `lofty`'s writer descends into.
+/// It recurses once per level, and a stack overflow is no panic: nothing
+/// catches it. Real files nest five deep (`moov/trak/mdia/minf/stbl`).
+const MP4_MAX_DEPTH: usize = 16;
+
+/// Refuses an MP4 whose containers nest deeper than [`MP4_MAX_DEPTH`],
+/// walking its atom headers the way `lofty`'s writer does, without
+/// recursion. A malformed header ends the walk: `lofty` refuses it itself.
+fn mp4_depth(path: &Path) -> Result<(), MetadataError> {
+    const CONTAINERS: [&[u8; 4]; 7] = [
+        b"moov", b"udta", b"moof", b"trak", b"mdia", b"minf", b"stbl",
+    ];
+    let mut file = File::open(path).map_err(io(path))?;
+    let len = file.metadata().map_err(io(path))?.len();
+    // Where each open container ends, the file itself first.
+    let mut ends = vec![len];
+    let mut pos = 0;
+    loop {
+        while ends.len() > 1 && ends.last() == Some(&pos) {
+            ends.pop();
+        }
+        let end = ends.last().copied().unwrap_or(len);
+        if end.saturating_sub(pos) < 8 {
+            return Ok(());
+        }
+        let mut header = [0; 16];
+        file.seek(SeekFrom::Start(pos)).map_err(io(path))?;
+        let long = end - pos >= 16;
+        file.read_exact(&mut header[..if long { 16 } else { 8 }])
+            .map_err(io(path))?;
+        let (size, header_len) =
+            match u32::from_be_bytes([header[0], header[1], header[2], header[3]]) {
+                0 => (end - pos, 8),
+                1 if long => (
+                    u64::from_be_bytes(header[8..16].try_into().unwrap_or_default()),
+                    16,
+                ),
+                n => (u64::from(n), 8),
+            };
+        if size < header_len || size > end - pos {
+            return Ok(());
+        }
+        if CONTAINERS.iter().any(|c| header[4..8] == c[..]) {
+            if ends.len() > MP4_MAX_DEPTH {
+                return Err(not_written(
+                    path.to_path_buf(),
+                    format!("its MP4 atoms nest deeper than {MP4_MAX_DEPTH} levels"),
+                ));
+            }
+            ends.push(pos + size);
+            pos += header_len;
+        } else {
+            pos += size;
+        }
+    }
 }
 
 /// Refuses a write unless the file at `path` reads back as the same
@@ -608,7 +706,9 @@ mod tests {
         std::fs::write(&path, ADTS_SPIN).unwrap();
         let started = Instant::now();
         let options = ParseOptions::new().read_properties(true);
-        let Err(err) = open_until(&path, options, started + Duration::from_millis(200)) else {
+        let file = File::open(&path).unwrap();
+        let deadline = Deadline::after(Duration::from_millis(200));
+        let Err(err) = parse(&path, file, options, deadline) else {
             panic!("a file that never ends parsed");
         };
         assert!(
