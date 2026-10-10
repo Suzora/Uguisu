@@ -36,8 +36,6 @@ From an audit of every phase against its code, tests and CI on 2026-10-01. **Pen
 
 | From | Item | Goes to |
 |---|---|---|
-| 3, 8 | The 500k-episode, 10k-podcast benchmark (ADR 0002) | 11 |
-| 5 | Verifying an archive of 100k files | 11 |
 | 2 | Live latency of a multi-provider search | 11 |
 | 8 | `TROUBLESHOOTING.md` | 11 |
 | 1, 2 | Refreshing `research/COMPETITIVE_ANALYSIS.md`; re-reading the providers' terms | 11 |
@@ -46,11 +44,10 @@ From an audit of every phase against its code, tests and CI on 2026-10-01. **Pen
 | 9a | Whether a folder granted through the Flatpak portal persists | 11 |
 | 8 | A screen-reader pass | 11 |
 | — | A first tagged pre-release, which the upgrade gates need | 11 |
-| 3, 4 | The Phase 3 and 4 benchmarks re-run against their baselines | 11 |
 
 ### Not planned for v1
 
-- **Post-v1:** the fyyd provider (ADR 0005); downloading episode artwork, chapters and transcripts, writing chapters into files, and showing chapters, transcripts and an episode's timeline (`PRODUCT.md` v1 #16); a configuration file, since an environment file is one (ADR 0028); scheduled archive verification and reconciliation; bandwidth limiting and parallel ranges; commercial providers, cloud storage, transcription, metrics; Playwright, Lighthouse and visual regression in CI (they would not fit CI's five minutes, ADR 0063); per-route rate limits; one walker for the probe and the parser; multi-row inserts unless the 500k benchmark needs them; modelling Media RSS, `liveItem` and `podcast:images`; per-podcast include and exclude rules; virtualized lists unless the benchmark needs them; a template preview and per-provider settings editors; web pages for archive maintenance, which the CLI and the API do (`PRODUCT.md` v1 #24); release binaries with an SBOM; an arm64 Docker image and a registry; the tray in the Flatpak; the two limits in Tauri's installer templates (F7, F15).
+- **Post-v1:** the fyyd provider (ADR 0005); downloading episode artwork, chapters and transcripts, writing chapters into files, and showing chapters, transcripts and an episode's timeline (`PRODUCT.md` v1 #16); a configuration file, since an environment file is one (ADR 0028); scheduled archive verification and reconciliation; bandwidth limiting and parallel ranges; commercial providers, cloud storage, transcription, metrics; Playwright, Lighthouse and visual regression in CI (they would not fit CI's five minutes, ADR 0063); per-route rate limits; one walker for the probe and the parser; multi-row inserts, which the 500k benchmark showed are not needed ([report](benchmarks/2026-10-10-phase11.md)); modelling Media RSS, `liveItem` and `podcast:images`; per-podcast include and exclude rules; virtualized lists, which the same benchmark showed are not needed; a template preview and per-provider settings editors; web pages for archive maintenance, which the CLI and the API do (`PRODUCT.md` v1 #24); release binaries with an SBOM; an arm64 Docker image and a registry; the tray in the Flatpak; the two limits in Tauri's installer templates (F7, F15).
 - **Struck by design:** anything that deletes media (retention, garbage collection, "orphan cleanup"); the `overwrite` and `custom` tag policies; automatic tagging after a download; `.bak` copies; Swagger UI; automatic path migration; `insta` snapshots; Spotify and YouTube as feed sources; a per-podcast tag mode (ADR 0012); pruning the episode change log (ADR 0015); multiple users, roles and OAuth.
 
 ---
@@ -112,7 +109,7 @@ From an audit of every phase against its code, tests and CI on 2026-10-01. **Pen
 
 **Tests (as built):** 30 feed unit tests, 14 parser corpus tests, feed-rs differential, 9 property tests; storage and core unit tests; engine: library, refresh (incl. every failure kind), migration, coalescing, removal and large-feed suites; server and CLI end-to-end tests with temp data directories and wiremock. Benchmarks: parse/normalize/identity for 10–10 000 items; refresh cold import, fingerprint hit, forced full parse, +1/updated for 1 000 and 10 000 items.
 
-**Acceptance (met):** add podcast by RSS → refresh → episodes stored with identity keys and warnings; second refresh with 304 or an identical body does no parsing; the corpus, the probe fixtures and the recorded live feeds ingest without panics and idempotently; a 10 000-item feed imports in ≈ 3 s and a forced identical refresh takes ≈ 0.7 s; paging 10 000 episodes in pages of 500 is instantaneous. Not measured: 500k-episode listings (no such fixture yet; Phase 11).
+**Acceptance (met):** add podcast by RSS → refresh → episodes stored with identity keys and warnings; second refresh with 304 or an identical body does no parsing; the corpus, the probe fixtures and the recorded live feeds ingest without panics and idempotently; a 10 000-item feed imports in ≈ 3 s and a forced identical refresh takes ≈ 0.7 s; paging 10 000 episodes in pages of 500 is instantaneous. 500k-episode listings were measured in Phase 11 ([report](benchmarks/2026-10-10-phase11.md)).
 
 ---
 
@@ -413,6 +410,14 @@ Found while fixing them, and fixed: a tag write that failed after its rename cle
 - the second of two similar shows in a search named the first by its folded key ("the daily").
 
 Scripted since: the discovery scenarios (`tests/fixtures/discovery/README.md`), hostile names on NTFS and ext4, case-only collisions, a newer database refused unchanged, no `Authorization` from the browser in three layers, a real process killed mid-download and mid-import ([`docs/benchmarks/2026-10-04-phase11-verification.md`](benchmarks/2026-10-04-phase11-verification.md)), and the Docker image ([ADR 0061](DECISIONS/0061-the-docker-image.md), [`DOCKER.md`](../DOCKER.md)): 22.8 MB compressed, `scripts/docker_smoke.py` green in nine checks, SIGTERM mid-download parking the job and a restart resuming it with a range request; trusted reverse proxies ([ADR 0062](DECISIONS/0062-trusted-proxies.md)); every format's update but the AppImage's, the Linux floor in an `ubuntu:22.04` container, and a simulated Windows logoff ([ADR 0064](DECISIONS/0064-linux-floor-in-a-container-and-every-update-tested.md)), all passing in Desktop run 37992951708, where autostart came back after an NSIS upgrade (F12); `e2e.py` and `desktop_upgrade.py` on Windows 11. The threat model review is done, with seven gaps fixed in code and `pnpm audit` clean (`docs/SECURITY.md` §3.10).
+
+**Found by the scale benchmark and fixed**, 2026-10-10 ([report](benchmarks/2026-10-10-phase11.md)), at 10 000 podcasts, 500 000 episodes and 100 000 archived files:
+- a watcher that fell behind the bounded event bus left completed downloads without an archive record until the next start; it archives them once the bus is quiet;
+- every start stat'ed every archived file, 12.6 s for each command at 100 000 files; a start reads the database only, and `serve` and the desktop check the files in the background ([ADR 0021](DECISIONS/0021-archive-file-and-verification.md), amended);
+- a verification pass announced every intact file, 100 000 events that pushed the rest of the history out of the event log; only a change of state is announced (ADR 0021, amended);
+- sorting the library by episodes took 78 ms a page; a counted column (migration 0009) makes it 3 ms.
+
+Every list and filter the web UI asks for stays under 50 ms; a search for a word in every one of 500 000 episodes takes 94 ms and is accepted.
 
 Settled rather than fixed: RUSTSEC-2024-0436 (`paste` through lofty) stays accepted, since lofty 0.25.4 still uses it and upstream declined a replacement (`docs/SECURITY.md` §3.10).
 
