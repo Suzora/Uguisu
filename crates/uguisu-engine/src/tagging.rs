@@ -85,6 +85,19 @@ impl Engine {
             )
         })?;
 
+        // An unsettled write may already have put new bytes in place. A
+        // second one would clear the marker with the old hash still recorded,
+        // and nothing could adopt those bytes any more.
+        if file.tag_state.is_in_flight() {
+            return Err(archive_error(
+                ArchiveErrorKind::TagsFailed,
+                format!(
+                    "{} has a tag write that has not settled; `uguisu archive reconcile` settles it",
+                    file.relative_path
+                ),
+            ));
+        }
+
         // The file must be what the record says before it is rewritten.
         // Tagging a file that is already wrong would replace a detectable
         // problem with an undetectable one.
@@ -478,7 +491,18 @@ impl Engine {
             let Ok(full) = resolve_checked(&root, &relative) else {
                 continue;
             };
-            let Ok(hash) = hash_file(&full) else { continue };
+            let hash = match hash_file(&full) {
+                Ok(hash) => hash,
+                Err(e) => {
+                    tracing::warn!(
+                        episode_id = %file.episode_id,
+                        path = %file.relative_path,
+                        error = %e,
+                        "an interrupted tag write could not be settled"
+                    );
+                    continue;
+                }
+            };
             let now = OffsetDateTime::now_utc();
             let mut tx = self.storage().begin().await?;
             if hash == file.hash_value {

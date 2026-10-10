@@ -1036,8 +1036,10 @@ const CROSS_DEVICE: i32 = 18;
 /// a pass at `depth` may be written.
 ///
 /// While a tag write is in flight, the bytes may already be Uguisu's new
-/// ones and the record not yet: only the write, or the next start's
-/// recovery, settles which is true (STATE_MACHINES.md §4.3). An existence
+/// ones and the record not yet: only the write, or recovery at the next
+/// start or reconcile, settles which is true (STATE_MACHINES.md §4.3). Its
+/// rename replaces a file with a file, so a path that is gone or holds no
+/// file is a finding all the same. An existence
 /// pass that finds the file learned only that the path is occupied; its job
 /// is to find files that vanished. And only a full pass clears an `invalid`
 /// finding: only a hash vouches for the bytes, while a light pass compares a
@@ -1048,8 +1050,10 @@ fn held_back(
     outcome: &archive_verify::Outcome,
 ) -> Option<VerifiedFile> {
     let invalid = file.verification_state == VerificationState::Invalid;
-    let detail = if file.tag_state.is_in_flight() {
-        Some("a tag write has not settled; check again after it".to_owned())
+    let about_the_path = outcome.state == VerificationState::Missing
+        || matches!(outcome.reason, reason::NOT_A_FILE | reason::OUTSIDE_ROOT);
+    let detail = if file.tag_state.is_in_flight() && !about_the_path {
+        Some("a tag write has not settled; `uguisu archive reconcile` settles it".to_owned())
     } else {
         let undecided = match outcome.state {
             VerificationState::Unchecked => depth == VerifyDepth::Existence || invalid,

@@ -19,7 +19,7 @@ use uguisu_core::archive::{
 };
 use uguisu_core::download::Priority;
 use uguisu_core::ids::EpisodeId;
-use uguisu_core::model::Podcast;
+use uguisu_core::model::{ArchiveState, Podcast};
 use uguisu_engine::artwork::ArtworkOutcome;
 use uguisu_engine::restore::{RestoreAction, RestoreOptions};
 use uguisu_http::CancellationToken;
@@ -571,6 +571,20 @@ async fn post_rename_failure_stays_pending() {
         let mut w = h.engine.storage().writer().await.unwrap();
         archive_files::allow_tag_records(&mut w).await.unwrap();
     }
+    // A second write would clear the marker with the record's hash still
+    // the old one, and nothing could adopt the new bytes any more.
+    let retry = h
+        .engine
+        .write_episode_tags(episodes[0], TagMode::Sync)
+        .await
+        .unwrap_err();
+    assert!(retry.to_string().contains("has not settled"), "{retry}");
+    let still = h.engine.archive_file(episodes[0]).await.unwrap().unwrap();
+    assert_eq!(
+        (still.tag_state, still.hash_value),
+        (TagState::Pending, file.hash_value.clone())
+    );
+
     assert_eq!(h.engine.recover_interrupted_tagging().await.unwrap(), 1);
     let recovered = h.engine.archive_file(episodes[0]).await.unwrap().unwrap();
     assert_eq!(recovered.tag_state, TagState::Written);
@@ -606,7 +620,7 @@ async fn unsettled_tag_write_defers_verdicts() {
             (verified.state, verified.detail.as_deref()),
             (
                 recorded.verification_state,
-                Some("a tag write has not settled; check again after it")
+                Some("a tag write has not settled; `uguisu archive reconcile` settles it")
             ),
             "{depth}"
         );
@@ -629,6 +643,38 @@ async fn unsettled_tag_write_defers_verdicts() {
         announced.push(event.kind.name());
     }
     assert!(announced.is_empty(), "{announced:?}");
+    h.engine.close().await;
+}
+
+/// A rename replaces a file with a file, so a file gone from its path is a
+/// finding even while a tag write has not settled.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn unsettled_write_still_reports_missing() {
+    let h = Harness::new().await;
+    let (_, episodes) = setup(&h).await;
+    let file = h.engine.archive_file(episodes[0]).await.unwrap().unwrap();
+    {
+        let mut w = h.engine.storage().writer().await.unwrap();
+        archive_files::refuse_tag_records(&mut w).await.unwrap();
+    }
+    h.engine
+        .write_episode_tags(episodes[0], TagMode::Sync)
+        .await
+        .unwrap_err();
+    std::fs::remove_file(h.media_dir().join(&file.relative_path)).unwrap();
+
+    for depth in VerifyDepth::ALL {
+        let verified = h.engine.verify_episode(episodes[0], depth).await.unwrap();
+        assert_eq!(verified.state, VerificationState::Missing, "{depth}");
+    }
+    let summary = h
+        .engine
+        .verify_all(&ArchiveFilter::default(), VerifyDepth::Existence)
+        .await
+        .unwrap();
+    assert_eq!(summary.missing, 1);
+    let after = h.engine.episode(episodes[0]).await.unwrap();
+    assert_eq!(after.episode.archive_state, ArchiveState::Missing);
     h.engine.close().await;
 }
 

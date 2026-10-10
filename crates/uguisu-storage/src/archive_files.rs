@@ -361,7 +361,9 @@ pub struct VerificationUpdate {
 /// no longer has the path, state, size and hash the check compared against,
 /// or has a tag write in flight: a relocation, a new download or a tag write
 /// changed it meanwhile, and a verdict about the old one would be false. A
-/// verification never creates or deletes a record.
+/// finding about the path itself (`missing`, `not_a_file`, `outside_root`)
+/// is written over a tag write in flight, whose rename replaces a file with
+/// a file. A verification never creates or deletes a record.
 pub async fn set_verification(
     conn: &mut SqliteConnection,
     checked: &ArchiveFile,
@@ -371,7 +373,8 @@ pub async fn set_verification(
         "UPDATE {TABLE} SET verification_state = ?1, verification_reason = ?2, verified_at = ?3, \
          mtime_unix = COALESCE(?4, mtime_unix), updated_at = ?3 \
          WHERE id = ?5 AND relative_path = ?6 AND verification_state = ?7 \
-         AND size_bytes = ?8 AND hash_value = ?9 AND tag_state <> 'pending'"
+         AND size_bytes = ?8 AND hash_value = ?9 \
+         AND (tag_state <> 'pending' OR ?1 = 'missing' OR ?2 IN ('not_a_file', 'outside_root'))"
     ))
     .bind(update.state.as_str())
     .bind(&update.reason)
@@ -860,6 +863,14 @@ mod tests {
             .await
             .unwrap();
         assert!(!set_verification(&mut w, &now, &invalid).await.unwrap());
+        // Except a finding about the path, which no rename causes.
+        let gone = VerificationUpdate {
+            state: VerificationState::Missing,
+            reason: Some(reason::NOT_FOUND.to_owned()),
+            at,
+            mtime_unix: None,
+        };
+        assert!(set_verification(&mut w, &now, &gone).await.unwrap());
 
         // An unknown record reports that it is gone, it does not appear.
         let unknown = file(p, eps[1], "Show/c.mp3");
