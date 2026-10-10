@@ -383,7 +383,12 @@ impl Engine {
             // one stat and catches a finalization that did not land.
             VerifyDepth::Existence
         };
-        let verified = self.verify_archive_file(&file, depth).await?;
+        let verified = self.verify_current(file, depth).await?.ok_or_else(|| {
+            archive_error(
+                ArchiveErrorKind::ArchiveNotFound,
+                format!("episode {episode_id} has no archive file"),
+            )
+        })?;
         // The sidecar is written last and from the record, so it describes
         // bytes that have already been registered and checked. A sidecar
         // that could not be written is a degraded rebuild source, never a
@@ -447,25 +452,40 @@ impl Engine {
         episode_id: EpisodeId,
         depth: VerifyDepth,
     ) -> Result<VerifiedFile, UguisuError> {
-        // A writer that changed the record between the read and the verdict
-        // leaves the verdict unwritten; what was asked about is the record as
-        // it is now, so it is read and checked again.
-        let mut retries = 3;
-        loop {
-            let file = self.archive_file(episode_id).await?.ok_or_else(|| {
-                archive_error(
-                    ArchiveErrorKind::ArchiveNotFound,
-                    format!("episode {episode_id} has no archive file"),
-                )
-            })?;
+        let missing = || {
+            archive_error(
+                ArchiveErrorKind::ArchiveNotFound,
+                format!("episode {episode_id} has no archive file"),
+            )
+        };
+        let file = self.archive_file(episode_id).await?.ok_or_else(missing)?;
+        self.verify_current(file, depth).await?.ok_or_else(missing)
+    }
+
+    /// Verifies `file`, and when another writer changed the record before
+    /// the verdict was written, the record as it now is, up to three times
+    /// more. `None` when the record is gone.
+    async fn verify_current(
+        &self,
+        mut file: ArchiveFile,
+        depth: VerifyDepth,
+    ) -> Result<Option<VerifiedFile>, UguisuError> {
+        for _ in 0..3 {
             match self.verify_archive_file(&file, depth).await {
                 Err(UguisuError::Archive {
                     kind: ArchiveErrorKind::ArchiveNotFound,
                     ..
-                }) if retries > 0 => retries -= 1,
-                verdict => return verdict,
+                }) => {
+                    let mut reader = self.storage().reader().await?;
+                    match archive_files::get(&mut reader, file.id).await? {
+                        Some(now) => file = now,
+                        None => return Ok(None),
+                    }
+                }
+                verdict => return verdict.map(Some),
             }
         }
+        self.verify_archive_file(&file, depth).await.map(Some)
     }
 
     /// Verifies every artifact a filter selects, in batches.
@@ -493,13 +513,15 @@ impl Engine {
             }
             after = batch.last().map(|f| (f.created_at, f.id));
             let full = batch.len() >= SCAN_BATCH as usize;
-            for file in &batch {
-                // A record that vanished mid-scan is not a failure of the
-                // scan: it is one fewer artifact, and the next batch
-                // continues from the same cursor.
-                match self.verify_archive_file(file, depth).await {
-                    Ok(verified) => summary.record(verified.state),
-                    Err(UguisuError::Archive {
+            for file in batch.iter().cloned() {
+                // A record removed mid-scan is one fewer artifact, and one
+                // that kept changing under four checks is left to the next
+                // pass; neither fails the scan, which continues from the
+                // same cursor.
+                match self.verify_current(file, depth).await {
+                    Ok(Some(verified)) => summary.record(verified.state),
+                    Ok(None)
+                    | Err(UguisuError::Archive {
                         kind: ArchiveErrorKind::ArchiveNotFound,
                         ..
                     }) => {}

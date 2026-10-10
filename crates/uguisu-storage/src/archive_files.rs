@@ -358,9 +358,10 @@ pub struct VerificationUpdate {
 
 /// Records the outcome of a verification of `checked`, the record as the
 /// check read it. Returns `false`, writing nothing, when the record is gone
-/// or no longer has that path and state: a relocation or a new download
-/// changed it meanwhile, and a verdict about the old one would be false.
-/// A verification never creates or deletes a record.
+/// or no longer has the path, state, size and hash the check compared
+/// against: a relocation, a new download or a tag write changed it
+/// meanwhile, and a verdict about the old one would be false. A
+/// verification never creates or deletes a record.
 pub async fn set_verification(
     conn: &mut SqliteConnection,
     checked: &ArchiveFile,
@@ -369,7 +370,8 @@ pub async fn set_verification(
     let affected = sqlx::query(&format!(
         "UPDATE {TABLE} SET verification_state = ?1, verification_reason = ?2, verified_at = ?3, \
          mtime_unix = COALESCE(?4, mtime_unix), updated_at = ?3 \
-         WHERE id = ?5 AND relative_path = ?6 AND verification_state = ?7"
+         WHERE id = ?5 AND relative_path = ?6 AND verification_state = ?7 \
+         AND size_bytes = ?8 AND hash_value = ?9"
     ))
     .bind(update.state.as_str())
     .bind(&update.reason)
@@ -378,6 +380,8 @@ pub async fn set_verification(
     .bind(checked.id.to_string())
     .bind(&checked.relative_path)
     .bind(checked.verification_state.as_str())
+    .bind(i64_from_u64(checked.size_bytes))
+    .bind(&checked.hash_value)
     .execute(conn)
     .await?
     .rows_affected();
@@ -821,6 +825,34 @@ mod tests {
         assert!(!set_verification(&mut w, &stored, &verified).await.unwrap());
         let moved = get(&mut w, f.id).await.unwrap().unwrap();
         assert_eq!(moved.verification_state, VerificationState::Missing);
+
+        // Nor over new bytes at the same path, as a tag write leaves them.
+        let tagged = TagWrite {
+            mode: TagMode::Sync,
+            size_bytes: moved.size_bytes + 10,
+            hash_value: "def".to_owned(),
+            mtime_unix: None,
+            verification_state: VerificationState::Verified,
+            reason: None,
+            at,
+        };
+        assert!(set_tagged(&mut w, f.id, &tagged).await.unwrap());
+        let invalid = VerificationUpdate {
+            state: VerificationState::Invalid,
+            reason: Some(reason::SIZE_MISMATCH.to_owned()),
+            at,
+            mtime_unix: None,
+        };
+        let mut before_tagging = get(&mut w, f.id).await.unwrap().unwrap();
+        before_tagging.size_bytes = moved.size_bytes;
+        before_tagging.hash_value.clone_from(&moved.hash_value);
+        assert!(
+            !set_verification(&mut w, &before_tagging, &invalid)
+                .await
+                .unwrap()
+        );
+        let now = get(&mut w, f.id).await.unwrap().unwrap();
+        assert_eq!(now.verification_state, VerificationState::Verified);
 
         // An unknown record reports that it is gone, it does not appear.
         let unknown = file(p, eps[1], "Show/c.mp3");
