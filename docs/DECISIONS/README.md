@@ -15,7 +15,7 @@ Decisions that shape Uguisu, in the MADR-light format: context, decision, conseq
 | [0009](0009-path-templates.md) | Custom deterministic path template language | accepted, amended by 0022 |
 | [0010](0010-event-system.md) | In-process event bus with persisted event log | accepted, amended (Phases 3, 4), amended by 0016 |
 | [0011](0011-http-client-policy.md) | Single HTTP client crate with SSRF policy | accepted, amended (Phases 2, 4) |
-| [0012](0012-metadata-tagging.md) | Metadata tagging via lofty with format capabilities and policies | accepted, amended (Phase 10), amended by 0026 |
+| [0012](0012-metadata-tagging.md) | Metadata tagging via lofty with format capabilities and policies | accepted, amended (Phase 10), amended by 0026, 0065 |
 | [0013](0013-auth-and-network-binding.md) | Authentication and network binding model | superseded in part by 0035, 0036, 0037, amended by 0061, 0062 |
 | [0014](0014-identity-fallback-and-guid-changes.md) | Identity fallback and GUID changes | accepted, amends 0006, amended by 0051 |
 | [0015](0015-change-log-instead-of-versioning.md) | Episode change log instead of row versioning | accepted, amended (Phase 10), amended by 0055 |
@@ -68,5 +68,6 @@ Decisions that shape Uguisu, in the MADR-light format: context, decision, conseq
 | [0062](0062-trusted-proxies.md) | Trusted proxies name the client, and nothing else | accepted, amends 0013, 0035 |
 | [0063](0063-ci-within-five-minutes.md) | Every pull request's CI within five minutes | accepted, supersedes in part 0046 |
 | [0064](0064-linux-floor-in-a-container-and-every-update-tested.md) | Packaging: the Linux floor is a container, and every update is tested | accepted, amends 0043, 0046 |
+| [0065](0065-fuzzing-outside-the-workspace.md) | Fuzzing: its own workspace, run by hand | accepted, amends 0012 |
 
 Template: copy `0001` and keep the four sections. Number sequentially; never reuse a number.

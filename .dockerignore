@@ -1,11 +1,12 @@
 # The build context is the repository minus what the image never needs:
-# build output, dependencies the build installs itself, the desktop shell and
-# anything that may hold a secret.
+# build output, dependencies the build installs itself, the desktop shell, the
+# fuzz targets and anything that may hold a secret.
 .git
 target
 **/node_modules
 web/dist
 desktop
+fuzz
 flatpak-vendor
 .flatpak-builder
 docs

@@ -1,6 +1,6 @@
 # ADR 0012 — Metadata tagging via lofty with format capabilities and policies
 
-**Status:** accepted, amended 2026-10-03 (Phase 10), amended by [ADR 0026](0026-tagging-and-artwork.md) · **Date:** 2026-09-17
+**Status:** accepted, amended 2026-10-03 (Phase 10), amended by [ADR 0026](0026-tagging-and-artwork.md), [ADR 0065](0065-fuzzing-outside-the-workspace.md) · **Date:** 2026-09-17
 
 ## Context
 
@@ -17,7 +17,7 @@ Uguisu must write clean tags to MP3 (ID3v2), M4A/MP4 (iTunes atoms), Ogg Vorbis,
 ## Consequences
 
 - Memory-safe parsing of untrusted media; consistent field mapping across formats.
-- `lofty` limitations (e.g., chapter frames edge cases) become Uguisu limitations; tracked in the risk register (R5). Fuzzing the tag reader is not built yet.
+- `lofty` limitations (e.g., chapter frames edge cases) become Uguisu limitations; tracked in the risk register (R5). Fuzzing found three that stopped Uguisu; [ADR 0065](0065-fuzzing-outside-the-workspace.md) bounds every `lofty` call in time and catches its panics.
 
 ## Alternatives considered
 

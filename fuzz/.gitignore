@@ -1,0 +1,6 @@
+# What a run grows and finds stays on the machine that ran it; a finding
+# becomes a regression test in the crate it is about (ADR 0065).
+/target/
+/corpus/
+/artifacts/
+/coverage/

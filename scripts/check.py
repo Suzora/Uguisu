@@ -26,6 +26,7 @@ import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -38,6 +39,7 @@ class Step:
 
     `fallback` runs instead when `tool` is missing and tools are not required,
     so a machine without the tool still runs the step rather than skipping it.
+    `env` returns variables the step needs on top of this process's.
     """
 
     def __init__(
@@ -46,11 +48,13 @@ class Step:
         cwd: str | None = None,
         tool: str | None = None,
         fallback: list[str] | None = None,
+        env: Callable[[], dict[str, str]] | None = None,
     ) -> None:
         self.argv = argv
         self.cwd = ROOT / cwd if cwd else ROOT
         self.tool = tool or argv[0]
         self.fallback = fallback
+        self.env = env
 
     def falls_back(self) -> bool:
         return self.fallback is not None and shutil.which(self.tool) is None
@@ -122,6 +126,50 @@ DESKTOP_LINT = (
     Step(["cargo", "clippy", "--all-targets", "--locked", "--", "-D", "warnings"], cwd="desktop"),
 )
 DESKTOP_TEST = Step(["cargo", "test", "--locked"], cwd="desktop", tool="cargo")
+
+FUZZ_SECONDS = 60
+# What each target starts from beyond the corpus `seeds` writes; libFuzzer
+# reads these and adds what it finds to the first directory only.
+FUZZ_TARGETS = {
+    "feed_parse": ["../tests/fixtures/feeds/parser", "../tests/fixtures/feeds/probe"],
+    "feed_probe": ["../tests/fixtures/feeds/probe", "../tests/fixtures/feeds/parser"],
+    "opml_parse": [],
+    "tags_read": [],
+    "identity_read": [],
+    "tags_write": [],
+}
+# uguisu-metadata catches the panics of `lofty`, and on Windows the
+# AddressSanitizer runtime cannot unwind a Rust panic at all, so these run
+# on Linux only (ADR 0065).
+FUZZ_LINUX_ONLY = {"tags_read", "identity_read", "tags_write"}
+
+
+def asan_runtime() -> dict[str, str]:
+    """On Windows, PATH with MSVC's AddressSanitizer runtime, which a fuzz
+    target loads at start and only a developer prompt has on PATH. Without a
+    sanitizer the MSVC linker cannot link a target at all."""
+    if os.name != "nt":
+        return {}
+    installer = Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"))
+    vswhere = installer / "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
+    if not vswhere.exists():
+        return {}
+    dll = r"VC\Tools\MSVC\**\bin\Hostx64\x64\clang_rt.asan_dynamic-x86_64.dll"
+    found = subprocess.run(
+        [str(vswhere), "-latest", "-products", "*", "-find", dll],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.splitlines()
+    if not found:
+        return {}
+    return {"PATH": f"{Path(found[0]).parent}{os.pathsep}{os.environ.get('PATH', '')}"}
+
+
+def count_runs(log: str) -> str | None:
+    runs = [int(n) for n in re.findall(r"Done (\d+) runs", log)]
+    return f"{len(runs)} targets, {sum(runs)} runs" if runs else None
+
 
 # `-D warnings` after `--` denies rustc lints too, so `missing_docs` fails here
 # exactly as it does under CI's RUSTFLAGS. CI sets RUSTFLAGS and this does not,
@@ -210,6 +258,31 @@ CHECKS: dict[str, Check] = {
     # CI's halves of `desktop`, one per job (ADR 0063).
     "desktop-lint": Check(*DESKTOP_LINT),
     "desktop-test": Check(DESKTOP_TEST, summary=count_tests),
+    # Every fuzz target for a fixed time (ADR 0065): on request and in `all`,
+    # never in CI, and skipped where cargo-fuzz is not installed.
+    "fuzz": Check(
+        Step(
+            ["cargo", "run", "-q", "-p", "uguisu-fuzz-seeds", "--", "corpus"],
+            cwd="fuzz",
+            tool="cargo-fuzz",
+        ),
+        *(
+            Step(
+                [
+                    "cargo", "fuzz", "run", target, f"corpus/{target}", *extra,
+                    # Above uguisu-metadata's DEADLINE, so a file it gives up on
+                    # is an error and only a real hang a timeout.
+                    "--", f"-max_total_time={FUZZ_SECONDS}", "-timeout=60",
+                ],
+                cwd="fuzz",
+                tool="cargo-fuzz",
+                env=asan_runtime,
+            )
+            for target, extra in FUZZ_TARGETS.items()
+            if os.name != "nt" or target not in FUZZ_LINUX_ONLY
+        ),
+        summary=count_runs,
+    ),
 }
 
 DEFAULT = ["fmt", "clippy", "test", "web", "docs", "openapi", "api-types", "version", "docker"]
@@ -236,13 +309,15 @@ def run(name: str, check: Check, *, stream: bool) -> tuple[bool, str]:
         # On Windows `pnpm` may be a `pnpm.cmd` shim, which CreateProcess runs
         # only when it is given the full path.
         argv = [shutil.which(command[0]) or command[0], *command[1:]]
+        env = {**os.environ, **step.env()} if step.env else None
         if stream:
             print(f"$ {shown}", flush=True)
-            done = subprocess.run(argv, cwd=step.cwd, check=False)
+            done = subprocess.run(argv, cwd=step.cwd, env=env, check=False)
         else:
             done = subprocess.run(
                 argv,
                 cwd=step.cwd,
+                env=env,
                 check=False,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,

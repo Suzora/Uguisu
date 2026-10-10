@@ -1,0 +1,6 @@
+# libFuzzer's instrumentation needs nightly. A dated one, so a finding
+# replays on the compiler that found it.
+[toolchain]
+channel = "nightly-2026-10-09"
+profile = "minimal"
+components = ["clippy", "rustfmt"]

@@ -1,0 +1,13 @@
+[package]
+name = "uguisu-fuzz-seeds"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "AGPL-3.0-or-later"
+
+[dependencies]
+uguisu-core = { path = "../../crates/uguisu-core" }
+uguisu-metadata = { path = "../../crates/uguisu-metadata" }
+
+[lints]
+workspace = true

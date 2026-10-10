@@ -39,7 +39,6 @@ From an audit of every phase against its code, tests and CI on 2026-10-01. **Pen
 | 2 | Live latency of a multi-provider search | 11 |
 | 8 | `TROUBLESHOOTING.md` | 11 |
 | 1, 2 | Refreshing `research/COMPETITIVE_ANALYSIS.md`; re-reading the providers' terms | 11 |
-| 3, 6 | Fuzzing the feed parser and the tag reader with cargo-fuzz, run locally or by hand, never nightly | 11 |
 | 9a | A desktop journey with a native Linux package | 11 |
 | 9a | Whether a folder granted through the Flatpak portal persists | 11 |
 | 8 | A screen-reader pass | 11 |
@@ -175,7 +174,7 @@ From an audit of every phase against its code, tests and CI on 2026-10-01. **Pen
 
 **Dependencies:** Phases 4, 5.
 
-**Tests:** round-trip tests for MP3 and FLAC, and since Phase 10 for MP4, Ogg Vorbis and Opus; the matching matrix, artwork validation tests, crash boundaries for every Phase-6 write (the artwork's since Phase 10), concurrency, security and idempotency suites; benchmarks in `docs/benchmarks/2026-09-20-phase6.md`. Fuzz targets for tag reading: → 11.
+**Tests:** round-trip tests for MP3 and FLAC, and since Phase 10 for MP4, Ogg Vorbis and Opus; the matching matrix, artwork validation tests, crash boundaries for every Phase-6 write (the artwork's since Phase 10), concurrency, security and idempotency suites; benchmarks in `docs/benchmarks/2026-09-20-phase6.md`. Fuzz targets for tag reading and writing: Phase 11 ([ADR 0065](DECISIONS/0065-fuzzing-outside-the-workspace.md)).
 
 **Acceptance:** MP3 and FLAC fixtures are tagged and read back identically, and a second `sync` write is proven to be a no-op — which matters more than it sounds: a field that does not round-trip would move the archive's hash on every run. Four fields that failed that test were removed from the managed set rather than shipped (ADR 0026). No mode removes a tag Uguisu does not manage. The external-reference comparison on CI (`ffprobe`) is **not** built: the CI image has no ffmpeg, and adding one to assert what a second Rust parse already asserts was not worth the image.
 
@@ -419,6 +418,11 @@ Scripted since: the discovery scenarios (`tests/fixtures/discovery/README.md`), 
 - a light pass, the default `archive verify` and `reconcile --deep`, cleared an `invalid` finding whose size and mtime had not moved, such as a byte rotted in place; only a full pass clears one now.
 
 Every list and filter the benchmark measured stays under 50 ms; a search for one word in every one of 500 000 episodes takes 794 ms and is accepted, since keeping its order without the join that costs most of it needs a schema change.
+
+**Found by fuzzing and by review, and fixed**, 2026-10-10 ([report](benchmarks/2026-10-10-fuzzing.md), [ADR 0065](DECISIONS/0065-fuzzing-outside-the-workspace.md)):
+- a 30-byte AAC file made `lofty` read for ever, so an import that met one never finished; an Opus and a Musepack header overflowed it into a panic; every `lofty` call is bounded in time and its panics are caught;
+- a tag write could leave a file that reads back as another container or without its values, and every sync wrote it again; a write counts only when it reads back as written;
+- a verification that met a tag write between its rename and its record could call Uguisu's own bytes invalid; tag writes, verifications and tag recovery take turns, and an interrupted write is settled wherever it is met.
 
 Settled rather than fixed: RUSTSEC-2024-0436 (`paste` through lofty) stays accepted, since lofty 0.25.4 still uses it and upstream declined a replacement (`docs/SECURITY.md` §3.10).
 

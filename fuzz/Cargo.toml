@@ -1,0 +1,101 @@
+# Fuzz targets for the parsers that read what a stranger sent: feeds, OPML
+# and the tags of audio files (ADR 0065).
+#
+# Its own workspace, like desktop/: libFuzzer needs a nightly toolchain and
+# instruments every crate it builds, which must never reach the root
+# workspace's builds or its checks. Run from this directory:
+#
+#     cargo fuzz run feed_parse
+#
+# or through `python3 scripts/check.py fuzz`, which runs every target for a
+# fixed time on the corpus the `seeds` package writes.
+[package]
+name = "uguisu-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "AGPL-3.0-or-later"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+# `seeds` is an ordinary program: a binary of this package is linked with
+# libFuzzer, which brings its own `main`.
+members = [".", "seeds"]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tempfile = "3"
+time = { version = "0.3", features = ["macros"] }
+ulid = "3"
+url = "2"
+uguisu-core = { path = "../crates/uguisu-core" }
+uguisu-feed = { path = "../crates/uguisu-feed" }
+uguisu-metadata = { path = "../crates/uguisu-metadata" }
+
+[lints]
+workspace = true
+
+# Restated rather than inherited, as in desktop/, with two differences:
+# `fuzz_target!` expands to the unsafe entry point libFuzzer calls, so
+# `unsafe_code` is not forbidden, and a panic is how a target reports a
+# finding, so `expect` and `unwrap` are not warned about.
+[workspace.lints.rust]
+missing_docs = "warn"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+doc_markdown = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+dbg_macro = "warn"
+todo = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+disallowed_methods = "deny"
+
+[[bin]]
+name = "feed_parse"
+path = "fuzz_targets/feed_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "feed_probe"
+path = "fuzz_targets/feed_probe.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "opml_parse"
+path = "fuzz_targets/opml_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tags_read"
+path = "fuzz_targets/tags_read.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "identity_read"
+path = "fuzz_targets/identity_read.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tags_write"
+path = "fuzz_targets/tags_write.rs"
+test = false
+doc = false
+bench = false
