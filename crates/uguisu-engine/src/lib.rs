@@ -47,6 +47,7 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use uguisu_core::UguisuError;
 use uguisu_core::config::{Config, DataConfig};
+use uguisu_core::ids::EpisodeId;
 use uguisu_discovery::{Discovery, assemble_with_cache_store};
 use uguisu_download::{Deps, DownloadService, Fs4Probe};
 use uguisu_http::{ClientConfig, HostThrottles, HttpClient, Profile, RetryPolicy, ThrottleConfig};
@@ -144,14 +145,37 @@ struct Inner {
     search_build: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// The background check that recorded files exist, once started.
     archive_check: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
-    /// Held by a tag write for its whole length, and by a verification or
-    /// a recovery of one file. A `pending` marker read while holding it is
-    /// a write that was interrupted, never one that is running.
-    tag_gate: tokio::sync::Mutex<()>,
+    /// One gate per episode whose archive file is being tagged, verified or
+    /// settled; see [`TagGate`].
+    tag_gates: std::sync::Mutex<std::collections::HashMap<EpisodeId, Arc<tokio::sync::Mutex<()>>>>,
     /// Stops the engine's own background tasks on close.
     shutdown: CancellationToken,
     // Released when the last handle drops.
     _lock: LockFile,
+}
+
+/// Held by a tag write for its whole length, and by a verification or a
+/// tag recovery of one episode's file. A `pending` marker read while holding
+/// it is a write that was interrupted, never one that is running.
+pub(crate) struct TagGate {
+    guard: Option<tokio::sync::OwnedMutexGuard<()>>,
+    engine: Engine,
+    episode: EpisodeId,
+}
+
+impl Drop for TagGate {
+    fn drop(&mut self) {
+        drop(self.guard.take());
+        let mut gates = lock(&self.engine.inner.tag_gates);
+        // A task waiting for the gate holds a clone of it, so only the last
+        // one out removes it.
+        if gates
+            .get(&self.episode)
+            .is_some_and(|gate| Arc::strong_count(gate) == 1)
+        {
+            gates.remove(&self.episode);
+        }
+    }
 }
 
 /// A cheap-to-clone handle on the running engine.
@@ -272,7 +296,7 @@ impl Engine {
                 scheduler: scheduler::SchedulerState::default(),
                 search_build: std::sync::Mutex::new(None),
                 archive_check: std::sync::Mutex::new(None),
-                tag_gate: tokio::sync::Mutex::new(()),
+                tag_gates: std::sync::Mutex::default(),
                 shutdown: CancellationToken::new(),
                 _lock: lock,
             }),
@@ -285,10 +309,15 @@ impl Engine {
         Ok(engine)
     }
 
-    /// Taken before a tag write, a verification or a tag recovery touches
-    /// one file's bytes or record.
-    pub(crate) async fn tag_gate(&self) -> tokio::sync::MutexGuard<'_, ()> {
-        self.inner.tag_gate.lock().await
+    /// Taken before a tag write, a verification or a tag recovery touches an
+    /// episode's archive file or its record; other episodes go on meanwhile.
+    pub(crate) async fn tag_gate(&self, episode: EpisodeId) -> TagGate {
+        let gate = Arc::clone(lock(&self.inner.tag_gates).entry(episode).or_default());
+        TagGate {
+            guard: Some(gate.lock_owned().await),
+            engine: self.clone(),
+            episode,
+        }
     }
 
     /// The configuration in force.

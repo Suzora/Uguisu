@@ -673,12 +673,13 @@ async fn interrupted_write_still_reports_missing() {
     let (_, episodes) = setup(&h).await;
     let file = h.engine.archive_file(episodes[0]).await.unwrap().unwrap();
     interrupt_after_rename(&h, episodes[0]).await;
+    let tagged = std::fs::read(h.media_dir().join(&file.relative_path)).unwrap();
     std::fs::remove_file(h.media_dir().join(&file.relative_path)).unwrap();
 
     for depth in VerifyDepth::ALL {
         let verified = h.engine.verify_episode(episodes[0], depth).await.unwrap();
         assert_eq!(verified.state, VerificationState::Missing, "{depth}");
-        assert_ne!(verified.file.tag_state, TagState::Pending, "{depth}");
+        assert_eq!(verified.file.tag_state, TagState::Pending, "{depth}");
     }
     let summary = h
         .engine
@@ -688,6 +689,18 @@ async fn interrupted_write_still_reports_missing() {
     assert_eq!(summary.missing, 1);
     let after = h.engine.episode(episodes[0]).await.unwrap();
     assert_eq!(after.episode.archive_state, ArchiveState::Missing);
+
+    // The marker waited for the bytes, so they are adopted when they return.
+    std::fs::write(h.media_dir().join(&file.relative_path), &tagged).unwrap();
+    let back = h
+        .engine
+        .verify_episode(episodes[0], VerifyDepth::Full)
+        .await
+        .unwrap();
+    assert_eq!(
+        (back.state, back.file.tag_state),
+        (VerificationState::Verified, TagState::Written)
+    );
     h.engine.close().await;
 }
 

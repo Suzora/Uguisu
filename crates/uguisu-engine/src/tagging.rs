@@ -77,7 +77,7 @@ impl Engine {
         episode_id: EpisodeId,
         mode: TagMode,
     ) -> Result<TagResult, UguisuError> {
-        let _gate = self.tag_gate().await;
+        let _gate = self.tag_gate(episode_id).await;
         let (podcast, episode, file) = self.archive_subject(episode_id).await?;
         let missing = || {
             archive_error(
@@ -102,6 +102,17 @@ impl Engine {
                 format!(
                     "{} is {} ({}); tags are only written to a file that matches its record",
                     file.relative_path, verified.state, verified.reason
+                ),
+            ));
+        }
+        // The check could not settle an interrupted write: a new one would
+        // clear the marker, which is all that can still adopt its bytes.
+        if file.tag_state.is_in_flight() {
+            return Err(archive_error(
+                ArchiveErrorKind::TagsFailed,
+                format!(
+                    "{} has an interrupted tag write whose bytes could not be read; it is settled once they can be",
+                    file.relative_path
                 ),
             ));
         }
@@ -471,7 +482,15 @@ impl Engine {
         drop(reader);
         let mut settled = 0;
         for id in pending {
-            let _gate = self.tag_gate().await;
+            let mut reader = self.storage().reader().await?;
+            let Some(episode) = archive_files::get(&mut reader, id)
+                .await?
+                .map(|f| f.episode_id)
+            else {
+                continue;
+            };
+            drop(reader);
+            let _gate = self.tag_gate(episode).await;
             let mut reader = self.storage().reader().await?;
             let file = archive_files::get(&mut reader, id).await?;
             drop(reader);
@@ -501,11 +520,12 @@ impl Engine {
         let Ok(full) = resolve_checked(&root, &relative) else {
             return Ok(None);
         };
-        // A file that is gone holds no bytes to adopt: the record stays
-        // what it says, and a verification reports the file missing.
+        // A file that is not there, an unmounted media root's included,
+        // keeps its marker: its bytes may come back, and only the marker can
+        // adopt them. A verification reports it missing meanwhile.
         let hash = match hash_file(&full) {
-            Ok(hash) => Some(hash),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Ok(hash) => hash,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(e) => {
                 tracing::warn!(
                     episode_id = %file.episode_id,
@@ -520,15 +540,12 @@ impl Engine {
         let now = OffsetDateTime::now_utc();
         let mut tx = self.storage().begin().await?;
         match hash {
-            None => {
-                archive_files::set_tag_state(&mut tx, id, untouched(file), now).await?;
-            }
             // The replacement never landed. The artifact is exactly what the
             // record says, so there is nothing to adopt.
-            Some(hash) if hash == file.hash_value => {
+            hash if hash == file.hash_value => {
                 archive_files::set_tag_state(&mut tx, id, untouched(file), now).await?;
             }
-            Some(hash) => {
+            hash => {
                 // The replacement did land and the record had not caught
                 // up. The marker was committed before the first byte
                 // moved, so this cannot be someone else's edit - and it is

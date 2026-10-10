@@ -471,7 +471,7 @@ impl Engine {
         file: ArchiveFile,
         depth: VerifyDepth,
     ) -> Result<Option<VerifiedFile>, UguisuError> {
-        let _gate = self.tag_gate().await;
+        let _gate = self.tag_gate(file.episode_id).await;
         self.verify_current_held(file, depth).await
     }
 
@@ -484,10 +484,20 @@ impl Engine {
     ) -> Result<Option<VerifiedFile>, UguisuError> {
         let mut attempts = 4;
         loop {
-            if file.tag_state.is_in_flight()
-                && let Some(settled) = self.settle_tag_write(&file).await?
-            {
-                file = settled;
+            if file.tag_state.is_in_flight() {
+                // Read before the gate, the marker may be a write's that has
+                // finished since; only one still there was interrupted.
+                let mut reader = self.storage().reader().await?;
+                match archive_files::get_by_episode(&mut reader, file.episode_id).await? {
+                    Some(now) => file = now,
+                    None => return Ok(None),
+                }
+                drop(reader);
+                if file.tag_state.is_in_flight()
+                    && let Some(settled) = self.settle_tag_write(&file).await?
+                {
+                    file = settled;
+                }
             }
             attempts -= 1;
             match self.verify_archive_file(&file, depth).await {
