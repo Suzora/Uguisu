@@ -5859,13 +5859,16 @@ export interface components {
         VerifiedFile: {
             /** @description How deep the check looked. */
             depth: components["schemas"]["VerifyDepth"];
-            /** @description Detail when the check could not complete. */
+            /** @description Detail when the check could not complete or could not decide. */
             detail?: string | null;
             /** @description The record as it now stands. */
             file: components["schemas"]["ArchiveFile"];
             /** @description Why, from `uguisu_core::archive::reason`. */
             reason: string;
-            /** @description What the check found. */
+            /**
+             * @description The record's state after the check: what it found, or what the
+             *     record already said when the check could not decide.
+             */
             state: components["schemas"]["VerificationState"];
         };
         /** @description Body of the verification endpoints. */

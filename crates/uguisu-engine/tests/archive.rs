@@ -139,6 +139,15 @@ async fn light_pass_keeps_a_hash_finding() {
         "nor clear it"
     );
 
+    let held = engine
+        .verify_episode(episode, VerifyDepth::Light)
+        .await
+        .unwrap();
+    assert_eq!(
+        held.detail.as_deref(),
+        Some("only a full pass clears this finding")
+    );
+
     rewrite(&bytes);
     assert_eq!(state(VerifyDepth::Light).await, VerificationState::Invalid);
     assert_eq!(state(VerifyDepth::Full).await, VerificationState::Verified);

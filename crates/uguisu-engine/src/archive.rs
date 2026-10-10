@@ -101,13 +101,14 @@ impl VerifySummary {
 pub struct VerifiedFile {
     /// The record as it now stands.
     pub file: ArchiveFile,
-    /// What the check found.
+    /// The record's state after the check: what it found, or what the
+    /// record already said when the check could not decide.
     pub state: VerificationState,
     /// Why, from `uguisu_core::archive::reason`.
     pub reason: String,
     /// How deep the check looked.
     pub depth: VerifyDepth,
-    /// Detail when the check could not complete.
+    /// Detail when the check could not complete or could not decide.
     pub detail: Option<String>,
 }
 
@@ -561,12 +562,14 @@ impl Engine {
         let now = OffsetDateTime::now_utc();
 
         if inconclusive(depth, file.verification_state, outcome.state) {
+            let kept = (file.verification_state == VerificationState::Invalid)
+                .then(|| "only a full pass clears this finding".to_owned());
             return Ok(VerifiedFile {
                 file: file.clone(),
                 state: file.verification_state,
                 reason: outcome.reason.to_owned(),
                 depth: outcome.depth,
-                detail: outcome.detail,
+                detail: outcome.detail.or(kept),
             });
         }
 

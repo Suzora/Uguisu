@@ -15476,7 +15476,7 @@
               "string",
               "null"
             ],
-            "description": "Detail when the check could not complete."
+            "description": "Detail when the check could not complete or could not decide."
           },
           "file": {
             "$ref": "#/components/schemas/ArchiveFile",
@@ -15488,7 +15488,7 @@
           },
           "state": {
             "$ref": "#/components/schemas/VerificationState",
-            "description": "What the check found."
+            "description": "The record's state after the check: what it found, or what the\nrecord already said when the check could not decide."
           }
         }
       },
