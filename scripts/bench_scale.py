@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure the release binary at the scale ADR 0002 and DATA_MODEL.md §7 promise.
+"""Measure the release binary at the scale ADR 0002 and DATA_MODEL.md §6 promise.
 
     python3 scripts/bench_scale.py            # 100, 1 000 and 10 000 feeds; 100 000 archived files
     python3 scripts/bench_scale.py --quick    # 100 feeds and 1 000 files
@@ -29,7 +29,6 @@ It deletes only the working directory it created under `target/bench-scale`.
 from __future__ import annotations
 
 import argparse
-import functools
 import http.client
 import http.server
 import json
@@ -52,7 +51,7 @@ TARGET = ROOT / os.environ.get("CARGO_TARGET_DIR", "target")
 OUT = TARGET / "bench-scale"
 EPISODES = 50
 SAMPLES = 25
-# DATA_MODEL.md §7: list and filter queries under 50 ms on a laptop SSD.
+# DATA_MODEL.md §6: list and filter queries under 50 ms on a laptop SSD.
 TARGET_MS = 50
 
 
@@ -364,9 +363,10 @@ def feeds_tier(bench: Bench, base: str, feeds: int) -> None:
         bench.latency(tier, client, "/podcasts/{id}/episodes", [f"/api/v1/podcasts/{p}/episodes" for p in picks])
         episodes = [client.api("GET", f"/api/v1/podcasts/{p}/episodes")["episodes"][0]["id"] for p in picks]
         bench.latency(tier, client, "/episodes/{id}", [f"/api/v1/episodes/{e}" for e in episodes])
-        # The worst case: "episode" is in every episode, so every row is ranked.
+        # The worst case: one word every episode contains, so every row is ranked.
+        words = ("episode", "show", "about", "archives", "feeds")
         bench.latency(tier, client, "/search?kind=episodes (a word in every one)", [
-            f"/api/v1/search?q=episode%20{i}&kind=episodes" for i in range(SAMPLES)
+            f"/api/v1/search?q={words[i % len(words)]}&kind=episodes" for i in range(SAMPLES)
         ])
         # A show's number, above every episode number: one show's episodes match.
         bench.latency(tier, client, "/search?kind=episodes (one show)", [
@@ -431,6 +431,8 @@ def archive_tier(bench: Bench, base: str, files: int) -> None:
     try:
         rows = bench.pages(tier, client, "/archive", "/api/v1/archive", "files")
         expect("archived files listed", len(rows), files)
+        # The light passes since the full one must not have cleared its finding.
+        expect("invalid files listed", len(KeptAlive(client.port).get("/api/v1/archive/invalid")[1]["files"]), 1)
         bench.latency(tier, client, "/archive?state=invalid", ["/api/v1/archive?state=invalid"] * SAMPLES)
         bench.latency(tier, client, "/archive/invalid", ["/api/v1/archive/invalid"] * SAMPLES)
         bench.latency(tier, client, "/archive/stats", ["/api/v1/archive/stats"] * SAMPLES)
@@ -451,7 +453,7 @@ def main() -> int:
     work = Path(tempfile.mkdtemp(prefix="work-", dir=OUT))
     port = free_port()
     Publisher.base = f"http://127.0.0.1:{port}"
-    publisher = http.server.ThreadingHTTPServer(("127.0.0.1", port), functools.partial(Publisher))
+    publisher = http.server.ThreadingHTTPServer(("127.0.0.1", port), Publisher)
     threading.Thread(target=publisher.serve_forever, daemon=True).start()
     bench = Bench(binary, work)
     try:
@@ -478,7 +480,7 @@ def main() -> int:
             ]
             measured = ", ".join(parts)
         print(f"{step.tier:>12} | {step.name:<46} | {measured}")
-    print(f"{len(bench.steps)} steps, report {report.relative_to(ROOT)}")
+    print(f"{len(bench.steps)} steps, report {report}")
     return 0
 
 
