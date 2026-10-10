@@ -767,3 +767,37 @@ fn parser_panic_is_unreadable() {
         );
     }
 }
+
+/// MPEG frame syncs behind an `ID3` header inside junk: Uguisu's tag moves
+/// the sync `lofty` finds first, and the file reads back as AAC. Found by
+/// fuzzing (ADR 0065), minimized.
+const MPEG_TURNS_AAC: [u8; 32] = [
+    0x67, 0x79, 0x70, 0x65, 0x74, 0x79, 0x70, 0x02, 0xff, 0xff, 0x6f, 0x00, 0x49, 0x44, 0x33, 0x04,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xf9, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+];
+
+/// A write counts only when the file reads back as the container it was,
+/// with every value written: one that does not would be rewritten, and its
+/// hash moved, on every sync.
+#[test]
+fn write_must_read_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let turns = write_fixture(dir.path(), "turns.mp3", &MPEG_TURNS_AAC);
+    let err = write_tags(&turns, &episode_tags(), TagMode::Sync).unwrap_err();
+    assert!(err.to_string().contains("reads as aac, not mp3"), "{err}");
+
+    // An M4A whose metadata handler atom claims the rest of its parent:
+    // the values go where `lofty` does not read them back. Found by fuzzing.
+    let mut m4a = m4a_with_audio();
+    let tagged = write_fixture(dir.path(), "tagged.m4a", &m4a);
+    write_tags(&tagged, &episode_tags(), TagMode::Sync).unwrap();
+    m4a = std::fs::read(&tagged).unwrap();
+    let hdlr = m4a.windows(4).position(|w| w == b"hdlr").unwrap() - 4;
+    m4a[hdlr..hdlr + 8].fill(0);
+    let lost = write_fixture(dir.path(), "lost.m4a", &m4a);
+    let err = write_tags(&lost, &episode_tags(), TagMode::Sync).unwrap_err();
+    assert!(
+        err.to_string().contains("does not read back as written"),
+        "{err}"
+    );
+}

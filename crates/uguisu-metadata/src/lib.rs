@@ -330,10 +330,14 @@ fn open(path: &Path, options: ParseOptions) -> Result<lofty::file::TaggedFile, M
 /// anything with them — and a caller that cannot see them cannot
 /// accidentally drop them.
 pub fn read_tags(path: &Path) -> Result<TagSet, MetadataError> {
-    let tagged = open(path, tags_only())?;
+    Ok(tags_of(&open(path, tags_only())?))
+}
+
+/// The managed fields and the cover of a parsed file.
+fn tags_of(tagged: &lofty::file::TaggedFile) -> TagSet {
     let mut out = TagSet::default();
     let Some(tag) = tagged.primary_tag().or_else(|| tagged.first_tag()) else {
-        return Ok(out);
+        return out;
     };
     for field in Field::ALL {
         if let Some(value) = tag.get_string(field.item_key()) {
@@ -354,7 +358,7 @@ pub fn read_tags(path: &Path) -> Result<TagSet, MetadataError> {
             bytes: picture.data().to_vec(),
         });
     }
-    Ok(out)
+    out
 }
 
 /// What a foreign file says it is: its title, an embedded episode GUID and
@@ -514,6 +518,7 @@ pub fn write_tags(
     }
 
     save(path, &tag)?;
+    read_back(path, file_type, desired, &written)?;
     Ok(TagOutcome {
         state: OutcomeState::Written,
         format: Some(name),
@@ -542,6 +547,44 @@ fn save(path: &Path, tag: &Tag) -> Result<(), MetadataError> {
             .map_err(|e| not_written(path.to_path_buf(), e.to_string()))
     })?;
     file.file.sync_all().map_err(io(path))
+}
+
+/// Refuses a write unless the file at `path` reads back as the same
+/// container, with every value in `written` as `desired` has it: `lofty`
+/// can write a file it reads as another container, or without the values,
+/// and a sync write that does not read back would rewrite it on every run
+/// (fuzzing found both; ADR 0065).
+fn read_back(
+    path: &Path,
+    file_type: FileType,
+    desired: &TagSet,
+    written: &[Field],
+) -> Result<(), MetadataError> {
+    let refused = |why: String| not_written(path.to_path_buf(), why);
+    let back = open(path, tags_only()).map_err(|e| match e {
+        MetadataError::Unreadable { detail, .. } => {
+            refused(format!("the written file does not read back: {detail}"))
+        }
+        other => other,
+    })?;
+    if back.file_type() != file_type {
+        return Err(refused(format!(
+            "the written file reads as {}, not {}",
+            format_name(back.file_type()),
+            format_name(file_type)
+        )));
+    }
+    let read = tags_of(&back);
+    if let Some(lost) = written
+        .iter()
+        .find(|f| read.values.get(f) != desired.values.get(f))
+    {
+        return Err(refused(format!(
+            "{} does not read back as written",
+            lost.as_str()
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
