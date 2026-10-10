@@ -111,7 +111,7 @@ Built in Phase 5, extended in Phase 6 (`docs/ARCHIVE_ENGINE.md`). Three state ma
 ```mermaid
 stateDiagram-v2
     [*] --> Unchecked: download completed, record registered
-    Unchecked --> Verified: existence / size / hash check passed
+    Unchecked --> Verified: a size or hash check passed; an existence check never verifies
     Unchecked --> Missing: nothing at the recorded path
     Unchecked --> Invalid: something there, but not the artifact
     Verified --> Verified: a later verification run passed
@@ -145,7 +145,7 @@ Non-completed jobs keep the projection exactly (`expected`, `queued`, `downloadi
 - **No state transition deletes anything.** `Missing` keeps its record, hash included, so the artifact is recognizable if it comes back. `Invalid` keeps the file. A file with no record is reported, never removed.
 - **The recorded hash is the download's.** Verification compares against it and never replaces it, which is what makes `invalid` a meaningful statement rather than a tautology.
 - **"Could not check" is not a finding.** A permission error or an I/O failure leaves the record `unchecked` rather than `missing`; calling it missing would invite a re-download of a file that is present.
-- **Cheap by default.** A *light* pass compares type, size and mtime; a *full* pass hashes the whole file in bounded memory. Startup only stats.
+- **Cheap by default.** A *light* pass compares type, size and mtime; a *full* pass hashes the whole file in bounded memory. A start touches no recorded file; a server's background check stats them ([`ARCHIVE_ENGINE.md`](ARCHIVE_ENGINE.md) §8).
 - **One record per episode, one owner per path.** Both are database constraints, so a concurrent registration or a colliding relocation is refused rather than raced.
 
 ### 4.3 Tag state (Phase 6)
