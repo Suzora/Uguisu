@@ -413,11 +413,12 @@ Scripted since: the discovery scenarios (`tests/fixtures/discovery/README.md`), 
 
 **Found by the scale benchmark and fixed**, 2026-10-10 ([report](benchmarks/2026-10-10-phase11.md)), at 10 000 podcasts, 500 000 episodes and 100 000 archived files:
 - a watcher that fell behind the bounded event bus left completed downloads without an archive record until the next start; it archives them once the bus is quiet;
-- every start stat'ed every archived file, 12.6 s for each command at 100 000 files; a start reads the database only, and `serve` and the desktop check the files in the background ([ADR 0021](DECISIONS/0021-archive-file-and-verification.md), amended);
+- every start stat'ed every archived file, 12.6 s for each command at 100 000 files; a start looks only at what a crash left behind, and `serve` and the desktop check the files in the background ([ADR 0021](DECISIONS/0021-archive-file-and-verification.md), amended);
 - a verification pass announced every intact file, 100 000 events that pushed the rest of the history out of the event log; only a change of state is announced (ADR 0021, amended);
-- sorting the library by episodes took 78 ms a page; a counted column (migration 0009) makes it 3 ms.
+- sorting the library by episodes took 78 ms a page; a counted column (migration 0009) makes it 3 ms;
+- a light pass, the default `archive verify` and `reconcile --deep`, cleared an `invalid` finding whose size and mtime had not moved, such as a byte rotted in place; only a full pass clears one now.
 
-Every list and filter the web UI asks for stays under 50 ms; a search for a word in every one of 500 000 episodes takes 94 ms and is accepted.
+Every list and filter the benchmark measured stays under 50 ms; a search for one word in every one of 500 000 episodes takes 794 ms and is accepted, since keeping its order without the join that costs most of it needs a schema change.
 
 Settled rather than fixed: RUSTSEC-2024-0436 (`paste` through lofty) stays accepted, since lofty 0.25.4 still uses it and upstream declined a replacement (`docs/SECURITY.md` §3.10).
 

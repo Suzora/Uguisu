@@ -274,7 +274,7 @@ A database rebuilt from sidecars loses the events log, the fetch log and every v
 - `episode_extras` is JSON to avoid hundreds of nullable columns; `episodes.source_metadata` is a JSON column nothing writes.
 - Keyset pagination on `(sort_at, id)` (`sort_at` is never NULL).
 - The FTS5 index is kept current by triggers and built in batches when it is not ready (§11).
-- Target: 10k podcasts, 500k episodes, 500k archive files, list/filter queries < 50 ms on a laptop SSD. Measured in Phase 11 at 10k podcasts, 500k episodes and 100k archive files ([report](benchmarks/2026-10-10-phase11.md)): every list and filter met it; a search for a word in every episode took 94 ms.
+- Target: 10k podcasts, 500k episodes, 500k archive files, list/filter queries < 50 ms on a laptop SSD. Measured in Phase 11 at 10k podcasts, 500k episodes and 100k archive files ([report](benchmarks/2026-10-10-phase11.md)): every list and filter it measured met it; a search for one word in every episode took 794 ms, accepted.
 
 ## 7. Phase 3 deltas (as migrated)
 
