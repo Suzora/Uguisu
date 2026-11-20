@@ -59,7 +59,7 @@ proxy with HTTPS in front of it if the instance is reachable from outside your n
 
 ## Running from source
 
-Requires a current stable Rust toolchain.
+Requires Rust 1.88 or newer.
 
 ```bash
 cargo run --release -p uguisu
@@ -106,6 +106,10 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
+
+CI additionally runs [`cargo deny check`](https://github.com/EmbarkStudios/cargo-deny)
+(vulnerabilities, unmaintained crates and licenses of all dependencies, see `deny.toml`) and
+[`typos`](https://github.com/crate-ci/typos) (spelling, see `_typos.toml`).
 
 ## Not there yet
 

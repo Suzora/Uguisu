@@ -1,0 +1,37 @@
+# cargo-deny: checks the dependency tree in CI.
+# Run locally with `cargo deny check`.
+
+[graph]
+all-features = true
+
+[advisories]
+# Fail on dependencies with known vulnerabilities and on unmaintained direct dependencies.
+unmaintained = "workspace"
+
+[licenses]
+# Licenses found in the dependency tree, all of which may be combined with
+# AGPL-3.0-or-later. A dependency under any other license fails the check and
+# has to be reviewed before its license is added here.
+allow = [
+    "AGPL-3.0-or-later",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

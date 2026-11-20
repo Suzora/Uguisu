@@ -1,0 +1,9 @@
+# typos: spell checker for code and documentation, run in CI.
+# Run locally with `typos`.
+
+[files]
+extend-exclude = [
+    "Cargo.lock",
+    "LICENSE",
+    "crates/uguisu/assets/htmx.min.js",
+]

@@ -29,15 +29,11 @@ fn format_bytes(bytes: i64) -> String {
 }
 
 fn format_date(timestamp: i64) -> String {
-    chrono::DateTime::from_timestamp(timestamp, 0)
-        .map(|d| d.format("%-d %b %Y").to_string())
-        .unwrap_or_default()
+    uguisu_core::util::format_utc(timestamp, "%-d %b %Y").unwrap_or_default()
 }
 
 fn format_datetime(timestamp: i64) -> String {
-    chrono::DateTime::from_timestamp(timestamp, 0)
-        .map(|d| d.format("%-d %b %Y, %H:%M UTC").to_string())
-        .unwrap_or_default()
+    uguisu_core::util::format_utc(timestamp, "%-d %b %Y, %H:%M UTC").unwrap_or_default()
 }
 
 fn format_duration(seconds: i64) -> String {
