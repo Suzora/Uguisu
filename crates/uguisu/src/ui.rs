@@ -128,6 +128,7 @@ fn shell(title: &str, active: &str, content: Markup) -> Markup {
                     nav {
                         a class=(nav_class("library")) href="/" { "Library" }
                         a class=(nav_class("add")) href="/add" { "Add podcast" }
+                        a class=(nav_class("status")) href="/status" { "Status" }
                         a class=(nav_class("settings")) href="/settings" { "Settings" }
                     }
                     form.logout method="post" action="/logout" {
@@ -183,6 +184,162 @@ pub fn setup_page(error: Option<&str>) -> Markup {
                     input type="password" name="confirm" required minlength="10" autocomplete="new-password";
                 }
                 button.button.is-primary type="submit" { "Create archive" }
+            }
+        },
+    )
+}
+
+/// What the status page shows.
+pub struct StatusReport<'a> {
+    pub podcasts: &'a [PodcastSummary],
+    pub stats: &'a Stats,
+    pub problems: &'a [uguisu_core::model::DownloadProblem],
+    pub damaged: &'a [uguisu_core::model::DamagedFile],
+    /// Downloads running at this moment.
+    pub downloading: usize,
+    pub free_space: Option<u64>,
+    pub reserve: u64,
+}
+
+/// What the archive is doing and what needs attention.
+pub fn status_page(status: &StatusReport) -> Markup {
+    let waiting: i64 = status.podcasts.iter().map(|p| p.pending_count).sum();
+    let feed_errors: Vec<&PodcastSummary> = status
+        .podcasts
+        .iter()
+        .filter(|p| p.podcast.last_fetch_error.is_some())
+        .collect();
+    let (gave_up, retrying): (Vec<_>, Vec<_>) = status
+        .problems
+        .iter()
+        .partition(|problem| problem.download_attempts >= 5);
+    let space_low = status
+        .free_space
+        .is_some_and(|free| status.reserve > 0 && free < status.reserve);
+    let all_well = feed_errors.is_empty()
+        && status.problems.is_empty()
+        && status.damaged.is_empty()
+        && !space_low;
+    shell(
+        "Status",
+        "status",
+        html! {
+            h1 { "Status" }
+            @if all_well {
+                p.notice role="status" { "Everything is in order." }
+            }
+            section.stats {
+                div.stat {
+                    span.stat-value { (status.downloading) }
+                    span.stat-label { "Downloading now" }
+                }
+                div.stat title="Episodes whose files are still to be downloaded" {
+                    span.stat-value { (waiting) }
+                    span.stat-label { "Waiting" }
+                }
+                div class=(if gave_up.is_empty() { "stat" } else { "stat is-error" }) {
+                    span.stat-value { (gave_up.len()) }
+                    span.stat-label { "Downloads given up" }
+                }
+                div class=(if status.damaged.is_empty() { "stat" } else { "stat is-error" }) {
+                    span.stat-value { (status.damaged.len()) }
+                    span.stat-label { "Damaged or missing files" }
+                }
+                div.stat {
+                    span.stat-value { (format_bytes(status.stats.bytes)) }
+                    span.stat-label { "In the archive" }
+                }
+                @if let Some(free) = status.free_space {
+                    div class=(if space_low { "stat is-error" } else { "stat" })
+                        title=(format!("Downloads wait while less than {} is free", format_bytes(status.reserve as i64))) {
+                        span.stat-value { (format_bytes(free as i64)) }
+                        span.stat-label { "Free on the disk" }
+                    }
+                }
+            }
+            @if space_low {
+                p.notice.is-error {
+                    "The disk is almost full. Downloads are on hold until more than "
+                    (format_bytes(status.reserve as i64)) " is free again."
+                }
+            }
+            @if let Some(oldest) = status.stats.oldest_check {
+                p.muted.small {
+                    "Every archived file has been checked against its checksum since "
+                    (format_date(oldest)) "."
+                }
+            }
+
+            @if !feed_errors.is_empty() {
+                section.panel {
+                    h2 { "Feeds that could not be checked" }
+                    ul.file-list {
+                        @for p in &feed_errors {
+                            li {
+                                div {
+                                    a href=(format!("/podcasts/{}", p.podcast.id)) { (p.podcast.title) }
+                                    div.muted.small { (p.podcast.last_fetch_error.as_deref().unwrap_or("")) }
+                                }
+                                @if let Some(checked) = p.podcast.last_fetched_at {
+                                    span.muted.small { "last tried " (format_datetime(checked)) }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            @if !status.problems.is_empty() {
+                section.panel {
+                    h2 { "Downloads that failed" }
+                    p.muted.small {
+                        "A download is tried five times, with growing pauses. After that it is given up until you ask for another try."
+                    }
+                    form method="post" action="/status/retry" {
+                        button.button type="submit" { "Try all of them again" }
+                    }
+                    ul.file-list {
+                        @for problem in gave_up.iter().chain(retrying.iter()) {
+                            li {
+                                div {
+                                    a href=(format!("/podcasts/{}/episodes/{}", problem.podcast_id, problem.episode_id)) { (problem.title) }
+                                    span.muted.small { " · " (problem.podcast_title) }
+                                    div.muted.small { (problem.download_error) }
+                                }
+                                @if problem.download_attempts >= 5 {
+                                    span.pill.is-error { "Given up" }
+                                } @else {
+                                    span.pill.is-warn title=(format!("Next attempt {}", format_datetime(problem.next_attempt_at))) { "Retrying" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            @if !status.damaged.is_empty() {
+                section.panel {
+                    h2 { "Damaged or missing files" }
+                    p.muted.small {
+                        "These files no longer match their checksums or are gone from the disk. They are downloaded again while the source still offers them."
+                    }
+                    ul.file-list {
+                        @for file in status.damaged {
+                            li {
+                                div {
+                                    a href=(format!("/podcasts/{}/episodes/{}", file.podcast_id, file.episode_id)) { (file.title) }
+                                    span.muted.small { " · " (file.podcast_title) }
+                                    div.muted.small { code { (file.path) } }
+                                }
+                                @if file.status == "missing" {
+                                    span.pill.is-error { "Missing" }
+                                } @else {
+                                    span.pill.is-error { "Damaged" }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         },
     )
@@ -872,6 +1029,9 @@ pub fn episode_page(
                 }
                 @if let Some(error) = &e.download_error {
                     p.notice.is-error { "Last download attempt: " (error) }
+                    form method="post" action=(format!("/podcasts/{}/episodes/{}/retry", podcast.id, e.id)) {
+                        button.button type="submit" { "Try the download again" }
+                    }
                 }
                 @if let Some(link) = e.link.as_deref().filter(|l| l.starts_with("http")) {
                     p.small { a href=(link) rel="noreferrer noopener" { (link) } }
