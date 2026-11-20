@@ -567,9 +567,85 @@ async fn remove_podcast(
     Ok(see_other("/"))
 }
 
-async fn cover(State(state): State<AppState>, Path(id): Path<i64>, request: Request) -> AppResult {
+#[derive(Deserialize, Default)]
+struct CoverQuery {
+    /// `small` asks for a reduced copy, which is what the interface shows.
+    size: Option<String>,
+}
+
+async fn cover(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Query(query): Query<CoverQuery>,
+    request: Request,
+) -> AppResult {
     let podcast = state.app.podcast(id).await?.ok_or(AppError::NotFound)?;
+    if query.size.as_deref() == Some("small")
+        && let Some(path) = small_cover(&state, &podcast).await
+    {
+        let mut response = serve_file(&path, "image/jpeg", request).await?;
+        response.headers_mut().insert(
+            CACHE_CONTROL,
+            HeaderValue::from_static("private, max-age=86400"),
+        );
+        return Ok(response);
+    }
     serve_cover(&state, &podcast, request).await
+}
+
+/// Longest side of a reduced cover, enough for the largest place it is shown at double density.
+const SMALL_COVER: u32 = 600;
+
+/// Path of a reduced copy of the podcast's cover, made at first use. Covers are commonly
+/// 3000 pixels wide and several megabytes, and the library shows all of them at once. The
+/// copies live outside the archive, in `cache/`, and can be deleted at any time. `None` if
+/// there is no cover or it cannot be read as an image; the original is served then.
+async fn small_cover(state: &AppState, podcast: &Podcast) -> Option<std::path::PathBuf> {
+    let file = podcast.cover_file.as_deref()?;
+    let original = state.app.archive_path(&podcast.dir).join(file);
+    let metadata = tokio::fs::metadata(&original).await.ok()?;
+    let changed = metadata
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    // A new cover has another size or date, and so another name.
+    let dir = state.app.config().data_dir.join("cache").join("covers");
+    let target = dir.join(format!("{}-{}-{changed}.jpg", podcast.id, metadata.len()));
+    if tokio::fs::try_exists(&target).await.unwrap_or(false) {
+        return Some(target);
+    }
+    tokio::fs::create_dir_all(&dir).await.ok()?;
+    let written = target.clone();
+    let made = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+        let mut reader = image::ImageReader::open(&original)?.with_guessed_format()?;
+        // The file comes from somewhere on the internet: bound what decoding it may cost.
+        let mut limits = image::Limits::default();
+        limits.max_image_width = Some(12_000);
+        limits.max_image_height = Some(12_000);
+        limits.max_alloc = Some(512 << 20);
+        reader.limits(limits);
+        let small = reader
+            .decode()?
+            .thumbnail(SMALL_COVER, SMALL_COVER)
+            .to_rgb8();
+        let part = written.with_extension("jpg.part");
+        let mut out = std::io::BufWriter::new(std::fs::File::create(&part)?);
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 82).encode_image(&small)?;
+        drop(out);
+        std::fs::rename(&part, &written)?;
+        Ok(())
+    })
+    .await;
+    match made {
+        Ok(Ok(())) => Some(target),
+        Ok(Err(error)) => {
+            tracing::debug!(podcast = %podcast.title, "no reduced cover: {error:#}");
+            None
+        }
+        Err(_) => None,
+    }
 }
 
 // ── OPML ───────────────────────────────────────────────────────────────────────────────────
@@ -1003,6 +1079,65 @@ mod tests {
             .unwrap();
         let response = router.oneshot(wrong).await.unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn the_interface_gets_reduced_covers() {
+        let (data, router, _) = archive().await;
+        let app = uguisu_core::Uguisu::open(uguisu_core::Config::new(data.path()))
+            .await
+            .unwrap();
+        // A cover of 2000 by 1000 pixels in the archive.
+        let dir = data.path().join("archive/test");
+        std::fs::create_dir_all(&dir).unwrap();
+        image::RgbImage::from_pixel(2000, 1000, image::Rgb([90, 120, 60]))
+            .save(dir.join("cover.png"))
+            .unwrap();
+        sqlx::query("UPDATE podcasts SET cover_file = 'cover.png'")
+            .execute(app.pool())
+            .await
+            .unwrap();
+        let session = crate::auth::create_session(app.pool()).await.unwrap();
+        let get = |address: &'static str| {
+            let request = Request::get(address)
+                .header(header::COOKIE, format!("uguisu_session={session}"))
+                .body(Body::empty())
+                .unwrap();
+            let router = router.clone();
+            async move {
+                let response = router.oneshot(request).await.unwrap();
+                assert_eq!(response.status(), StatusCode::OK, "{address}");
+                let kind = response.headers()[header::CONTENT_TYPE].clone();
+                let body = axum::body::to_bytes(response.into_body(), 64 << 20)
+                    .await
+                    .unwrap();
+                (kind, body)
+            }
+        };
+
+        let (kind, original) = get("/cover/1").await;
+        assert_eq!(kind, "image/png");
+        let (kind, small) = get("/cover/1?size=small").await;
+        assert_eq!(kind, "image/jpeg");
+        let decoded = image::load_from_memory(&small).unwrap();
+        assert_eq!((decoded.width(), decoded.height()), (600, 300));
+        assert_eq!(
+            image::load_from_memory(&original).unwrap().width(),
+            2000,
+            "the archived cover is untouched"
+        );
+        // Made once, then served from the cache directory.
+        let cached = std::fs::read_dir(data.path().join("cache/covers"))
+            .unwrap()
+            .count();
+        assert_eq!(cached, 1);
+        get("/cover/1?size=small").await;
+
+        // Something that is no image: the original is served instead of an error.
+        std::fs::write(dir.join("cover.png"), "not an image, and of another size").unwrap();
+        let (kind, body) = get("/cover/1?size=small").await;
+        assert_eq!(kind, "image/png");
+        assert_eq!(&body[..], b"not an image, and of another size");
     }
 
     #[tokio::test]

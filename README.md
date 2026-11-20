@@ -136,6 +136,16 @@ checked; the directory is left as it is. With Docker the directory has to be mou
 container, for example
 `docker compose run --rm -v /path/to/files:/import:ro uguisu import /import --feed …`.
 
+### The data directory
+
+```text
+data/
+  uguisu.db        index of the archive
+  archive/         the archive itself – this is what matters
+  backups/         daily copies of the database
+  cache/           reduced covers for the web interface; can be deleted at any time
+```
+
 ### The database
 
 `uguisu.db` is an index of the archive. Once a day Uguisu writes a complete copy of it to

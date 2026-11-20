@@ -208,7 +208,7 @@ pub fn login_page(error: Option<&str>) -> Markup {
 fn cover_image(podcast: &Podcast, class: &str) -> Markup {
     html! {
         @if podcast.cover_file.is_some() {
-            img class=(class) src=(format!("/cover/{}", podcast.id)) alt="" loading="lazy";
+            img class=(class) src=(format!("/cover/{}?size=small", podcast.id)) alt="" loading="lazy";
         } @else {
             div class=(format!("{class} is-placeholder")) aria-hidden="true" {
                 (podcast.title.chars().next().unwrap_or('?'))
@@ -424,7 +424,7 @@ pub fn podcast_page(
         html! {
             section.hero {
                 @if p.cover_file.is_some() {
-                    img.hero-backdrop src=(format!("/cover/{}", p.id)) alt="" aria-hidden="true";
+                    img.hero-backdrop src=(format!("/cover/{}?size=small", p.id)) alt="" aria-hidden="true";
                 }
                 div.hero-content {
                     (cover_image(p, "hero-cover"))
