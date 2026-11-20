@@ -217,11 +217,21 @@ fn cover_image(podcast: &Podcast, class: &str) -> Markup {
     }
 }
 
-pub fn library_page(podcasts: &[PodcastSummary], stats: &Stats, import: Option<usize>) -> Markup {
+pub fn library_page(
+    podcasts: &[PodcastSummary],
+    stats: &Stats,
+    import: Option<usize>,
+    space_low: bool,
+) -> Markup {
     shell(
         "Library",
         "library",
         html! {
+            @if space_low {
+                p.notice {
+                    "The disk is almost full. Downloads are on hold until there is free space again; feeds are still checked."
+                }
+            }
             @if let Some(count) = import {
                 p.notice {
                     "Importing " (count) " feeds in the background. Podcasts appear here as they are fetched – reload to see progress."

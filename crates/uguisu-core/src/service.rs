@@ -114,6 +114,9 @@ pub struct Config {
     /// Shortest time between two requests to the same host, so that archiving a long feed
     /// does not look like an attack to its server.
     pub host_pause: Duration,
+    /// Free disk space that downloads leave untouched, in bytes. A disk filled to the last
+    /// byte also stops the database and the feed snapshots. `0` turns the check off.
+    pub min_free_space: u64,
 }
 
 impl Config {
@@ -127,6 +130,7 @@ impl Config {
             download_concurrency: 2,
             verify_interval: Some(Duration::from_secs(30 * 24 * 3600)),
             host_pause: Duration::from_secs(1),
+            min_free_space: 1 << 30,
         }
     }
 }
@@ -252,8 +256,37 @@ impl std::fmt::Display for HostBusy {
 
 impl std::error::Error for HostBusy {}
 
-/// Seconds to wait if `error` is a host's request for a break.
+/// A download was not started, or was stopped, because it would use up the reserve of free
+/// disk space. Like a host's break this says nothing about the file itself.
+#[derive(Debug)]
+struct DiskFull {
+    free: u64,
+    needed: u64,
+}
+
+impl std::fmt::Display for DiskFull {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mib = |bytes: u64| bytes >> 20;
+        write!(
+            f,
+            "not enough disk space: {} MiB free, {} MiB needed including the reserve",
+            mib(self.free),
+            mib(self.needed)
+        )
+    }
+}
+
+impl std::error::Error for DiskFull {}
+
+/// How long to wait before trying again after running out of disk space.
+const DISK_FULL_RETRY: i64 = 3600;
+
+/// Seconds to wait if `error` is no failure of the file: a host's request for a break, or a
+/// full disk.
 fn host_break(error: &anyhow::Error) -> Option<i64> {
+    if error.downcast_ref::<DiskFull>().is_some() {
+        return Some(DISK_FULL_RETRY);
+    }
     error
         .downcast_ref::<HostBusy>()
         .map(|busy| busy.seconds as i64)
@@ -390,6 +423,31 @@ impl Uguisu {
             return Err(HostBusy { host, seconds }.into());
         }
         Ok(response)
+    }
+
+    /// Free space on the disk that holds the archive, if the system tells.
+    pub fn free_space(&self) -> Option<u64> {
+        let stat = rustix::fs::statvfs(self.archive_dir()).ok()?;
+        Some(stat.f_bavail.saturating_mul(stat.f_frsize))
+    }
+
+    /// Whether downloads are on hold because the reserve of free disk space is used up.
+    pub fn space_is_low(&self) -> bool {
+        let reserve = self.inner.cfg.min_free_space;
+        reserve > 0 && self.free_space().is_some_and(|free| free < reserve)
+    }
+
+    /// Fails if writing `bytes` more would cut into the reserve of free disk space.
+    fn ensure_space(&self, bytes: u64) -> Result<()> {
+        let reserve = self.inner.cfg.min_free_space;
+        if reserve == 0 {
+            return Ok(());
+        }
+        let needed = reserve.saturating_add(bytes);
+        match self.free_space() {
+            Some(free) if free < needed => Err(DiskFull { free, needed }.into()),
+            _ => Ok(()),
+        }
     }
 
     pub fn pool(&self) -> &SqlitePool {
@@ -1483,6 +1541,7 @@ impl Uguisu {
     }
 
     async fn fetch_attachment(&self, pending: &PendingAttachment) -> Result<()> {
+        self.ensure_space(0)?;
         let mut url = url::Url::parse(&pending.source_url).context("invalid address")?;
         check_url(&url, self.inner.cfg.allow_private_networks)?;
         lend_credentials(&mut url, &pending.feed_url);
@@ -1613,6 +1672,8 @@ impl Uguisu {
             }
             .await;
 
+            // Not even asked for while the disk is full.
+            self.ensure_space(0)?;
             let mut request = self.inner.client.get(url.clone());
             if let Some((size, validator)) = &kept {
                 request = request
@@ -1647,6 +1708,8 @@ impl Uguisu {
             if content_type == "text/html" {
                 bail!("the media server returned a web page instead of a media file");
             }
+            // With the size known, a file that will not fit is not begun.
+            self.ensure_space(response.content_length().unwrap_or(0))?;
 
             let mut hasher = blake3::Hasher::new();
             let mut size = 0u64;

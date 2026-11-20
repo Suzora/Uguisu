@@ -115,6 +115,7 @@ async fn archive_flow() {
     let data = tempfile::tempdir().unwrap();
     let mut cfg = Config::new(data.path());
     cfg.allow_private_networks = true;
+    cfg.min_free_space = 0;
     cfg.host_pause = std::time::Duration::ZERO;
     let uguisu = Uguisu::open(cfg).await.unwrap();
 
@@ -277,6 +278,7 @@ async fn replaced_media_is_kept_as_a_new_version() {
     let data = tempfile::tempdir().unwrap();
     let mut cfg = Config::new(data.path());
     cfg.allow_private_networks = true;
+    cfg.min_free_space = 0;
     cfg.host_pause = std::time::Duration::ZERO;
     let uguisu = Uguisu::open(cfg).await.unwrap();
     let id = uguisu
@@ -357,6 +359,7 @@ async fn files_are_rechecked_when_their_last_check_is_old() {
     let data = tempfile::tempdir().unwrap();
     let mut cfg = Config::new(data.path());
     cfg.allow_private_networks = true;
+    cfg.min_free_space = 0;
     cfg.host_pause = std::time::Duration::ZERO;
     let uguisu = Uguisu::open(cfg).await.unwrap();
     let id = uguisu
@@ -425,6 +428,7 @@ async fn published_feed_keeps_the_original_items() {
     let data = tempfile::tempdir().unwrap();
     let mut cfg = Config::new(data.path());
     cfg.allow_private_networks = true;
+    cfg.min_free_space = 0;
     cfg.host_pause = std::time::Duration::ZERO;
     let uguisu = Uguisu::open(cfg).await.unwrap();
     let id = uguisu
@@ -585,6 +589,7 @@ async fn paged_feeds_are_read_completely() {
     let data = tempfile::tempdir().unwrap();
     let mut cfg = Config::new(data.path());
     cfg.allow_private_networks = true;
+    cfg.min_free_space = 0;
     cfg.host_pause = std::time::Duration::ZERO;
     let uguisu = Uguisu::open(cfg).await.unwrap();
 
@@ -638,6 +643,7 @@ async fn atom_feeds_are_archived_and_published_as_rss() {
     let data = tempfile::tempdir().unwrap();
     let mut cfg = Config::new(data.path());
     cfg.allow_private_networks = true;
+    cfg.min_free_space = 0;
     cfg.host_pause = std::time::Duration::ZERO;
     let uguisu = Uguisu::open(cfg).await.unwrap();
 
@@ -685,6 +691,7 @@ async fn the_feed_is_found_from_the_web_page() {
     let data = tempfile::tempdir().unwrap();
     let mut cfg = Config::new(data.path());
     cfg.allow_private_networks = true;
+    cfg.min_free_space = 0;
     cfg.host_pause = std::time::Duration::ZERO;
     let uguisu = Uguisu::open(cfg).await.unwrap();
 
@@ -806,6 +813,7 @@ async fn interrupted_downloads_are_continued() {
     let data = tempfile::tempdir().unwrap();
     let mut cfg = Config::new(data.path());
     cfg.allow_private_networks = true;
+    cfg.min_free_space = 0;
     cfg.host_pause = std::time::Duration::ZERO;
     let uguisu = Uguisu::open(cfg).await.unwrap();
     let id = uguisu
@@ -871,6 +879,7 @@ async fn sources_are_treated_politely() {
     let data = tempfile::tempdir().unwrap();
     let mut cfg = Config::new(data.path());
     cfg.allow_private_networks = true;
+    cfg.min_free_space = 0;
     cfg.host_pause = std::time::Duration::from_millis(300);
     cfg.download_concurrency = 1;
     let uguisu = Uguisu::open(cfg).await.unwrap();
@@ -920,6 +929,7 @@ async fn images_in_show_notes_are_archived() {
     let data = tempfile::tempdir().unwrap();
     let mut cfg = Config::new(data.path());
     cfg.allow_private_networks = true;
+    cfg.min_free_space = 0;
     cfg.host_pause = std::time::Duration::ZERO;
     let uguisu = Uguisu::open(cfg).await.unwrap();
     let id = uguisu
@@ -1006,6 +1016,7 @@ async fn feeds_with_credentials_are_archived_without_leaking_them() {
     let data = tempfile::tempdir().unwrap();
     let mut cfg = Config::new(data.path());
     cfg.allow_private_networks = true;
+    cfg.min_free_space = 0;
     cfg.host_pause = std::time::Duration::ZERO;
     let uguisu = Uguisu::open(cfg).await.unwrap();
 
@@ -1099,6 +1110,7 @@ async fn episode_files_describe_the_archive() {
     let data = tempfile::tempdir().unwrap();
     let mut cfg = Config::new(data.path());
     cfg.allow_private_networks = true;
+    cfg.min_free_space = 0;
     cfg.host_pause = std::time::Duration::ZERO;
     let uguisu = Uguisu::open(cfg).await.unwrap();
     let id = uguisu
@@ -1220,6 +1232,7 @@ async fn the_index_is_rebuilt_from_the_archive() {
     let config = || {
         let mut cfg = Config::new(data.path());
         cfg.allow_private_networks = true;
+        cfg.min_free_space = 0;
         cfg.host_pause = std::time::Duration::ZERO;
         cfg
     };
@@ -1301,4 +1314,33 @@ async fn the_index_is_rebuilt_from_the_archive() {
     uguisu.refresh(id).await.unwrap();
     assert_eq!(uguisu.download_pending().await.unwrap(), 0);
     assert_eq!(before, publish(uguisu.clone(), id).await);
+}
+
+/// With the reserve of free disk space used up, downloads wait instead of filling the disk,
+/// and waiting does not count against the episode.
+#[tokio::test]
+async fn downloads_wait_while_the_disk_is_full() {
+    let base = start_source(Arc::new(Mutex::new(feed(&item(1, "First"))))).await;
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = Config::new(data.path());
+    cfg.allow_private_networks = true;
+    cfg.host_pause = std::time::Duration::ZERO;
+    // More than any disk has free.
+    cfg.min_free_space = u64::MAX / 2;
+    let uguisu = Uguisu::open(cfg).await.unwrap();
+    assert!(uguisu.free_space().is_some());
+    assert!(uguisu.space_is_low());
+
+    // The feed itself is still archived.
+    let id = uguisu
+        .add_podcast(&format!("{base}/feed.xml"))
+        .await
+        .unwrap();
+    uguisu.download_pending().await.unwrap();
+    let episode = uguisu.episodes(id).await.unwrap().remove(0);
+    assert!(episode.media_path.is_none());
+    assert_eq!(episode.episode.download_attempts, 0);
+    assert!(episode.episode.next_attempt_at > uguisu_core::util::now() + 3000);
+    let error = episode.episode.download_error.unwrap();
+    assert!(error.contains("not enough disk space"), "{error}");
 }
