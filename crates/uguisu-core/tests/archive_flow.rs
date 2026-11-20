@@ -498,3 +498,95 @@ async fn published_feed_keeps_the_original_items() {
     assert_eq!(uguisu.verify().await.unwrap().ok, 5);
     assert_eq!(uguisu.stats().await.unwrap().damaged, 0);
 }
+
+/// A feed split into pages (RFC 5005): every page is read and kept, and a broken page fails
+/// the check instead of making its episodes look removed.
+#[tokio::test]
+async fn paged_feeds_are_read_completely() {
+    #[derive(serde::Deserialize)]
+    struct Page {
+        page: Option<u32>,
+    }
+    let broken = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let app = Router::new().route(
+        "/feed.xml",
+        get({
+            let base = base.clone();
+            let broken = broken.clone();
+            move |axum::extract::Query(query): axum::extract::Query<Page>| {
+                let base = base.clone();
+                let broken = broken.clone();
+                async move {
+                    let page = query.page.unwrap_or(1);
+                    if page == 3 && broken.load(std::sync::atomic::Ordering::SeqCst) {
+                        return Err(axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+                    }
+                    // Three pages; the last one links back to the first, which must not loop.
+                    // Page 2 repeats an episode of page 1 and uses a relative link.
+                    let (items, next) = match page {
+                        1 => (
+                            format!("{}{}", item(6, "Six"), item(5, "Five")),
+                            format!("{base}/feed.xml?page=2"),
+                        ),
+                        2 => (
+                            format!("{}{}{}", item(5, "Five"), item(4, "Four"), item(3, "Three")),
+                            "feed.xml?page=3".to_string(),
+                        ),
+                        _ => (
+                            format!("{}{}", item(2, "Two"), item(1, "One")),
+                            format!("{base}/feed.xml"),
+                        ),
+                    };
+                    let xml = format!(
+                        r#"<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+<channel><title>Paged Cast</title><link>https://example.org</link>
+<atom:link rel="next" href="{}"/>
+{items}</channel></rss>"#,
+                        next.replace('&', "&amp;")
+                    )
+                    .replace("BASE", &base);
+                    Ok(([(CONTENT_TYPE, "application/rss+xml")], xml))
+                }
+            }
+        }),
+    );
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = Config::new(data.path());
+    cfg.allow_private_networks = true;
+    let uguisu = Uguisu::open(cfg).await.unwrap();
+
+    let id = uguisu
+        .add_podcast(&format!("{base}/feed.xml"))
+        .await
+        .unwrap();
+    let titles: Vec<String> = uguisu
+        .episodes(id)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|view| view.episode.title)
+        .collect();
+    assert_eq!(titles, ["Six", "Five", "Four", "Three", "Two", "One"]);
+    let podcast = uguisu.podcast(id).await.unwrap().unwrap();
+    let snapshots = uguisu.archive_path(&podcast.dir).join("feeds");
+    assert_eq!(std::fs::read_dir(&snapshots).unwrap().count(), 3);
+
+    // A page that fails: the check reports it and no episode is marked as removed.
+    broken.store(true, std::sync::atomic::Ordering::SeqCst);
+    let error = uguisu.refresh(id).await.unwrap_err();
+    assert!(format!("{error:#}").contains("500"), "{error:#}");
+    let summary = uguisu.podcast_summary(id).await.unwrap().unwrap();
+    assert_eq!(summary.removed_count, 0);
+    assert!(summary.podcast.last_fetch_error.is_some());
+
+    // Back to normal: nothing changed, so nothing new is stored.
+    broken.store(false, std::sync::atomic::Ordering::SeqCst);
+    uguisu.refresh(id).await.unwrap();
+    assert_eq!(uguisu.episodes(id).await.unwrap().len(), 6);
+    assert_eq!(std::fs::read_dir(&snapshots).unwrap().count(), 3);
+}
