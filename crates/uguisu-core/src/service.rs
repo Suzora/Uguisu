@@ -19,7 +19,7 @@ use crate::util::{now, random_token, short_hash, slugify};
 use crate::{db, search};
 
 /// Version of the on-disk archive format, described in `docs/ARCHIVE.md`.
-pub const ARCHIVE_FORMAT: u64 = 2;
+pub const ARCHIVE_FORMAT: u64 = 3;
 
 async fn write_archive_marker(path: &Path, format: u64) -> Result<()> {
     let content = serde_json::json!({ "format": format, "software": "Uguisu" });
@@ -694,6 +694,40 @@ impl Uguisu {
                 },
             )
             .collect();
+        // Every state of the feed entry is kept: the current one as item.xml, earlier ones
+        // under the time they were seen.
+        let revisions: Vec<(i64, String, String)> = sqlx::query_as(
+            "SELECT seen_at, meta_hash, raw_xml FROM episode_revisions WHERE episode_id = ? \
+             ORDER BY seen_at, id",
+        )
+        .bind(episode_id)
+        .fetch_all(self.pool())
+        .await?;
+        let episode_dir = self
+            .archive_path(&podcast_dir)
+            .join("episodes")
+            .join(&episode.dir);
+        let mut revision_list = Vec::with_capacity(revisions.len());
+        for (seen_at, hash, raw_xml) in &revisions {
+            // Not simply the last one: a publisher can also return to an earlier state.
+            let name = if *hash == episode.meta_hash {
+                "item.xml".to_string()
+            } else {
+                let stamp = crate::util::format_utc(*seen_at, "%Y%m%dT%H%M%SZ")
+                    .unwrap_or_else(|| seen_at.to_string());
+                format!("item-{stamp}-{}.xml", &hash[..hash.len().min(8)])
+            };
+            let path = episode_dir.join(&name);
+            // The current entry is written by whoever changed it; here only what is missing.
+            if !tokio::fs::try_exists(&path).await.unwrap_or(false) {
+                write_atomic(&path, raw_xml.as_bytes()).await?;
+            }
+            revision_list.push(serde_json::json!({
+                "seen": iso_date(*seen_at),
+                "hash": hash,
+                "file": name,
+            }));
+        }
         let json = serde_json::json!({
             "guid": episode.guid,
             "title": episode.title,
@@ -712,14 +746,34 @@ impl Uguisu {
             "hash": episode.meta_hash,
             "first_seen": iso_date(episode.first_seen_at),
             "removed": episode.removed_at.and_then(iso_date),
+            "revisions": revision_list,
             "files": files,
         });
-        let path = self
-            .archive_path(&podcast_dir)
-            .join("episodes")
-            .join(&episode.dir)
-            .join("episode.json");
-        write_atomic(&path, &serde_json::to_vec_pretty(&json)?).await
+        write_atomic(
+            &episode_dir.join("episode.json"),
+            &serde_json::to_vec_pretty(&json)?,
+        )
+        .await
+    }
+
+    /// Writes `uguisu.json`: what this installation has decided about a podcast. Unlike the
+    /// other files it is not a record of the source, and it holds the secret part of the
+    /// published feed's address.
+    async fn write_podcast_settings(&self, podcast_id: i64) -> Result<()> {
+        let Some(podcast) = self.podcast(podcast_id).await? else {
+            return Ok(());
+        };
+        let json = serde_json::json!({
+            "feed_token": podcast.feed_token,
+            "include_removed": podcast.include_removed,
+            "keep_versions": podcast.keep_versions,
+            "added": iso_date(podcast.created_at),
+        });
+        write_atomic(
+            &self.archive_path(&podcast.dir).join("uguisu.json"),
+            &serde_json::to_vec_pretty(&json)?,
+        )
+        .await
     }
 
     /// Brings an archive written by an earlier version up to the current format. Returns the
@@ -734,6 +788,13 @@ impl Uguisu {
             return Ok(0);
         }
         // Format 2: episode.json also lists the episode's files and its state in the feed.
+        // Format 3: earlier states of the feed entry are files, and each podcast has uguisu.json.
+        let podcasts: Vec<i64> = sqlx::query_scalar("SELECT id FROM podcasts ORDER BY id")
+            .fetch_all(self.pool())
+            .await?;
+        for id in podcasts {
+            self.write_podcast_settings(id).await?;
+        }
         let ids: Vec<i64> = sqlx::query_scalar("SELECT id FROM episodes ORDER BY id")
             .fetch_all(self.pool())
             .await?;
@@ -1209,6 +1270,7 @@ impl Uguisu {
             // Without user name and password: the archive may be passed on, a password not.
             "feed_url": redact(&feed_url),
             "original_feed_url": redact(&podcast.original_feed_url),
+            "namespaces": parsed.namespaces,
             "last_fetched": iso_date(now),
         });
         write_atomic(
@@ -1216,6 +1278,12 @@ impl Uguisu {
             &serde_json::to_vec_pretty(&json)?,
         )
         .await?;
+        if !tokio::fs::try_exists(podcast_dir.join("uguisu.json"))
+            .await
+            .unwrap_or(false)
+        {
+            self.write_podcast_settings(podcast_id).await?;
+        }
 
         // 6. Cover art, best effort.
         if let Some(image_url) = &parsed.image_url
@@ -1280,7 +1348,7 @@ impl Uguisu {
             .bind(podcast_id)
             .execute(self.pool())
             .await?;
-        Ok(())
+        self.write_podcast_settings(podcast_id).await
     }
 
     /// Removes a podcast from the index. The archived files stay on disk unless `delete_files`
@@ -1325,7 +1393,7 @@ impl Uguisu {
             .bind(podcast_id)
             .execute(self.pool())
             .await?;
-        Ok(())
+        self.write_podcast_settings(podcast_id).await
     }
 
     // ── Downloads ──────────────────────────────────────────────────────────────────────────

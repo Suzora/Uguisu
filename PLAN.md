@@ -81,9 +81,9 @@ The promise "readable without Uguisu" is made good and tested.
 
 - [x] Write down the archive format (`docs/ARCHIVE.md`) and give it a version number
       (`archive.json` in the archive root).
-- [~] Close the gaps in the files on disk, part 1: `episode.json` lists the episode's files with
+- [x] Close the gaps in the files on disk, part 1: `episode.json` lists the episode's files with
       their checksums and says whether the episode is still in the feed (archive format 2).
-- [ ] Close the gaps, part 2: earlier states of a feed entry per episode, and the settings and
+- [~] Close the gaps, part 2: earlier states of a feed entry per episode, and the settings and
       feed addresses per podcast.
 - [ ] `uguisu reindex`: rebuild the database completely from the archive on disk. Test: delete
       the database, reindex, the published feeds are identical.
