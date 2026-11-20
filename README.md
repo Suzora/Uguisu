@@ -72,19 +72,20 @@ mkdir -p data && sudo chown 65532:65532 data
 Alternatively set `user:` in `compose.yaml` to your own uid and gid; the file shows how. The image
 has a health check, so `docker ps` shows whether the instance answers.
 
+Each release also publishes the image as `ghcr.io/suzora/uguisu:<version>`; to use it, replace
+`build: .` in `compose.yaml` with `image: ghcr.io/suzora/uguisu:<version>`.
+
 Set `UGUISU_BASE_URL` to the address your podcast app will use to reach Uguisu. Put a reverse
 proxy with HTTPS in front of it if the instance is reachable from outside your network.
 
-## Running from source
+## Building from source
 
-Requires Rust 1.88 or newer.
+Docker is the supported way to run Uguisu. For development you need Linux or macOS (on Windows:
+WSL) and Rust 1.88 or newer:
 
 ```bash
-cargo run --release -p uguisu
+cargo run -p uguisu
 ```
-
-The result is a single binary with the web interface built in; it runs on Linux, Windows and
-macOS.
 
 ## Configuration
 
@@ -129,6 +130,13 @@ cargo test --workspace
 CI additionally runs [`cargo deny check`](https://github.com/EmbarkStudios/cargo-deny)
 (vulnerabilities, unmaintained crates and licenses of all dependencies, see `deny.toml`) and
 [`typos`](https://github.com/crate-ci/typos) (spelling, see `_typos.toml`).
+
+### Releasing
+
+Set the version in `Cargo.toml`, then push a tag with the same version, for example `v0.2.0`. The
+release workflow publishes the container image to `ghcr.io` and creates the GitHub release.
+Starting the workflow by hand from the Actions page is a dry run that builds the image and
+publishes nothing.
 
 ## Not there yet
 

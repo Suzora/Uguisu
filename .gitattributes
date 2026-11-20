@@ -1,0 +1,5 @@
+# Check text files out with LF on every platform. The database migrations are identified by a
+# checksum of their content, which must not depend on where the repository was checked out.
+* text=auto eol=lf
+*.png binary
+*.webp binary
