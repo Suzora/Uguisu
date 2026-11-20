@@ -100,7 +100,11 @@ pub fn router(state: AppState) -> Router {
         .route("/assets/{file}", get(asset))
         .route("/setup", get(setup_page).post(setup))
         .route("/login", get(login_page).post(login))
-        .route("/feed/{file}", get(feed))
+        // Feeds are text that shrinks to a fraction; media files are compressed already.
+        .route(
+            "/feed/{file}",
+            get(feed).layer(tower_http::compression::CompressionLayer::new()),
+        )
         .route("/media/{token}/{file}", get(feed_cover))
         .route("/media/{token}/{episode_id}/{file}", get(media))
         .route(
@@ -619,11 +623,27 @@ async fn feed(
         &attachments,
         &base_url(&state, &headers),
     );
+    // Podcast apps ask for their feeds every hour or so, and mostly nothing has changed. The
+    // tag lets them find that out without downloading the feed again.
+    let etag = format!("\"{}\"", &blake3::hash(xml.as_bytes()).to_hex()[..32]);
+    let unchanged = headers
+        .get(axum::http::header::IF_NONE_MATCH)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|sent| {
+            sent.split(',')
+                .map(|tag| tag.trim().trim_start_matches("W/"))
+                .any(|tag| tag == etag || tag == "*")
+        });
+    let cache = [
+        (CACHE_CONTROL, "private, max-age=60".to_string()),
+        (axum::http::header::ETAG, etag),
+    ];
+    if unchanged {
+        return Ok((StatusCode::NOT_MODIFIED, cache).into_response());
+    }
     Ok((
-        [
-            (CONTENT_TYPE, "application/rss+xml; charset=utf-8"),
-            (CACHE_CONTROL, "private, max-age=60"),
-        ],
+        cache,
+        [(CONTENT_TYPE, "application/rss+xml; charset=utf-8")],
         xml,
     )
         .into_response())
@@ -710,4 +730,87 @@ async fn serve_file(path: &std::path::Path, mime: &str, request: Request) -> App
         .await
         .map_err(|e| anyhow!("cannot serve file: {e}"))?;
     Ok(response.map(Body::new))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{Request, header};
+    use tower::ServiceExt;
+
+    /// A router over an archive with one podcast (without episodes), and its feed address.
+    async fn archive() -> (tempfile::TempDir, Router, String) {
+        let data = tempfile::tempdir().unwrap();
+        let app = uguisu_core::Uguisu::open(uguisu_core::Config::new(data.path()))
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO podcasts (feed_url, original_feed_url, title, dir, feed_token, created_at) \
+             VALUES ('https://example.org/feed', 'https://example.org/feed', 'Test Cast', 'test', \
+             'secret-token', 0)",
+        )
+        .execute(app.pool())
+        .await
+        .unwrap();
+        let router = router(AppState {
+            app,
+            base_url: Some("https://archive.example".into()),
+        });
+        (data, router, "/feed/secret-token.xml".to_string())
+    }
+
+    #[tokio::test]
+    async fn an_unchanged_feed_is_not_sent_again() {
+        let (_data, router, address) = archive().await;
+        let get = |extra: Option<(header::HeaderName, String)>| {
+            let mut request = Request::get(&address);
+            if let Some((name, value)) = extra {
+                request = request.header(name, value);
+            }
+            router.clone().oneshot(request.body(Body::empty()).unwrap())
+        };
+
+        let first = get(None).await.unwrap();
+        assert_eq!(first.status(), StatusCode::OK);
+        let etag = first.headers()[header::ETAG].to_str().unwrap().to_string();
+        assert!(etag.starts_with('"') && etag.len() > 10);
+
+        let again = get(Some((header::IF_NONE_MATCH, etag.clone())))
+            .await
+            .unwrap();
+        assert_eq!(again.status(), StatusCode::NOT_MODIFIED);
+        assert_eq!(again.headers()[header::ETAG].to_str().unwrap(), etag);
+
+        let other = get(Some((header::IF_NONE_MATCH, "\"something-else\"".into())))
+            .await
+            .unwrap();
+        assert_eq!(other.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn feeds_are_compressed_on_request() {
+        let (_data, router, address) = archive().await;
+        let request = Request::get(&address)
+            .header(header::ACCEPT_ENCODING, "gzip")
+            .body(Body::empty())
+            .unwrap();
+        let response = router.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CONTENT_ENCODING], "gzip");
+
+        let plain = Request::get(&address).body(Body::empty()).unwrap();
+        let response = router.oneshot(plain).await.unwrap();
+        assert!(!response.headers().contains_key(header::CONTENT_ENCODING));
+    }
+
+    #[tokio::test]
+    async fn a_wrong_feed_address_reveals_nothing() {
+        let (_data, router, _) = archive().await;
+        let request = Request::get("/feed/not-the-token.xml")
+            .body(Body::empty())
+            .unwrap();
+        let response = router.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
 }

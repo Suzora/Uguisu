@@ -87,7 +87,7 @@ The promise "readable without Uguisu" is made good and tested.
       feed addresses per podcast.
 - [x] `uguisu reindex`: rebuild the database completely from the archive on disk. Test: delete
       the database, reindex, the published feeds are identical.
-- [~] `uguisu import <directory>`: take over an existing collection of files with its feed.
+- [x] `uguisu import <directory>`: take over an existing collection of files with its feed.
 - [x] Repair: re-download a damaged file and keep the damaged copy until the new one is
       verified; show clearly when the source no longer offers the file.
 - [x] Disk space: check the reserve before downloading, fail with a clear message instead of
@@ -105,8 +105,8 @@ The promise "readable without Uguisu" is made good and tested.
 
 ### 0.4 – Feeds that work everywhere
 
-- [ ] Conditional requests (ETag, Last-Modified) and compression for published feeds; cache the
-      generated feed.
+- [~] Conditional requests (ETag) and compression for published feeds. Caching the generated
+      feed is dropped: building one takes about 30 ms for 500 episodes (see the load test).
 - [ ] Very large feeds: optionally limit to the newest episodes, or publish in pages (RFC 5005).
 - [ ] Cover thumbnails for the web interface. Originals stay untouched in the archive.
 - [ ] One combined feed over all podcasts.
