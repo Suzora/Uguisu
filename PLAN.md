@@ -110,8 +110,8 @@ The promise "readable without Uguisu" is made good and tested.
 - [x] Very large feeds: `?limit=N` on a feed address publishes only the newest N episodes.
 - [ ] Very large feeds, continued: publish in pages (RFC 5005) – only if an app turns out to
       need it.
-- [ ] Cover thumbnails for the web interface. Originals stay untouched in the archive.
-- [~] One combined feed over all podcasts.
+- [~] Cover thumbnails for the web interface. Originals stay untouched in the archive.
+- [x] One combined feed over all podcasts.
 - [ ] Access to removed episodes and earlier media versions through the published feed.
 - [ ] Compatibility check with real apps – AntennaPod, PinePods, Apple Podcasts, Pocket Casts,
       gPodder – documented as a table. Not checked with any app so far.
