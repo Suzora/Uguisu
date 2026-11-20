@@ -9,6 +9,7 @@ pub mod feed;
 pub mod http;
 pub mod model;
 pub mod opml;
+pub mod reindex;
 pub mod rss;
 pub mod search;
 pub mod service;

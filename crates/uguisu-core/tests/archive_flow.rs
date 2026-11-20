@@ -1066,7 +1066,7 @@ async fn the_archive_states_its_format() {
     drop(Uguisu::open(Config::new(data.path())).await.unwrap());
     let content: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&marker).unwrap()).unwrap();
-    assert_eq!(content["format"], 3);
+    assert_eq!(content["format"], 4);
     // Opening again is fine and leaves the marker alone.
     drop(Uguisu::open(Config::new(data.path())).await.unwrap());
 
@@ -1199,5 +1199,106 @@ async fn episode_files_describe_the_archive() {
     assert_eq!(uguisu.upgrade_archive().await.unwrap(), 0);
     let content: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&marker).unwrap()).unwrap();
-    assert_eq!(content["format"], 3);
+    assert_eq!(content["format"], 4);
+}
+
+/// The database is only an index: after losing it, a rebuild from the archive publishes the
+/// very same feed.
+#[tokio::test]
+async fn the_index_is_rebuilt_from_the_archive() {
+    let transcript = "<podcast:transcript xmlns:podcast=\"https://podcastindex.org/namespace/1.0\" \
+                      url=\"BASE/files/two.vtt\" type=\"text/vtt\"/><guid>";
+    let three = format!(
+        "{}{}{}",
+        item(3, "Third"),
+        item(2, "Second").replace("<guid>", transcript),
+        item(1, "First")
+    );
+    let source: FeedBody = Arc::new(Mutex::new(feed(&three)));
+    let base = start_source(source.clone()).await;
+    let data = tempfile::tempdir().unwrap();
+    let config = || {
+        let mut cfg = Config::new(data.path());
+        cfg.allow_private_networks = true;
+        cfg.host_pause = std::time::Duration::ZERO;
+        cfg
+    };
+    let uguisu = Uguisu::open(config()).await.unwrap();
+    let id = uguisu
+        .add_podcast(&format!("{base}/feed.xml"))
+        .await
+        .unwrap();
+    uguisu.set_options(id, true, true).await.unwrap();
+    uguisu.download_pending().await.unwrap();
+    // History: one episode changes, one leaves the feed.
+    *source.lock().unwrap() = feed(&format!(
+        "{}{}",
+        item(3, "Third, corrected"),
+        item(2, "Second").replace("<guid>", transcript)
+    ));
+    uguisu.refresh(id).await.unwrap();
+
+    let publish = |uguisu: Uguisu, id: i64| async move {
+        let podcast = uguisu.podcast(id).await.unwrap().unwrap();
+        let episodes = uguisu.feed_episodes(id).await.unwrap();
+        let attachments = uguisu.attachments(id).await.unwrap();
+        rss::build_feed(&podcast, &episodes, &attachments, "https://archive.example")
+    };
+    let before = publish(uguisu.clone(), id).await;
+    assert!(before.contains("Third, corrected") && before.contains("ep-1"));
+    assert!(
+        before.contains("/a/"),
+        "the transcript is published from the archive"
+    );
+    let revisions_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM episode_revisions")
+        .fetch_one(uguisu.pool())
+        .await
+        .unwrap();
+
+    // A rebuild never touches an index that is in use.
+    assert!(uguisu.reindex().await.is_err());
+
+    // Lose the database.
+    uguisu.pool().close().await;
+    drop(uguisu);
+    for name in ["uguisu.db", "uguisu.db-wal", "uguisu.db-shm"] {
+        let _ = std::fs::remove_file(data.path().join(name));
+    }
+    let uguisu = Uguisu::open(config()).await.unwrap();
+    assert!(uguisu.podcasts().await.unwrap().is_empty());
+
+    let report = uguisu.reindex().await.unwrap();
+    assert!(report.problems.is_empty(), "{:?}", report.problems);
+    assert_eq!((report.podcasts, report.episodes), (1, 3));
+    assert_eq!(report.files, 4, "three media files and a transcript");
+
+    let id = uguisu.podcasts().await.unwrap()[0].podcast.id;
+    let after = publish(uguisu.clone(), id).await;
+    assert_eq!(
+        before, after,
+        "the published feed is the same, address for address"
+    );
+
+    let podcast = uguisu.podcast(id).await.unwrap().unwrap();
+    assert!(podcast.keep_versions && podcast.include_removed);
+    assert_eq!(podcast.cover_file.as_deref(), Some("cover.png"));
+    let summary = uguisu.podcast_summary(id).await.unwrap().unwrap();
+    assert_eq!(summary.removed_count, 1);
+    let revisions_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM episode_revisions")
+        .fetch_one(uguisu.pool())
+        .await
+        .unwrap();
+    assert_eq!(revisions_before, revisions_after);
+    let snapshots: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM feed_snapshots")
+        .fetch_one(uguisu.pool())
+        .await
+        .unwrap();
+    assert_eq!(snapshots, 2);
+
+    // The rebuilt index agrees with the files, and the next check of the feed changes nothing.
+    let verified = uguisu.verify().await.unwrap();
+    assert_eq!(verified.ok, verified.checked);
+    uguisu.refresh(id).await.unwrap();
+    assert_eq!(uguisu.download_pending().await.unwrap(), 0);
+    assert_eq!(before, publish(uguisu.clone(), id).await);
 }

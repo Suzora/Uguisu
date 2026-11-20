@@ -19,7 +19,7 @@ use crate::util::{now, random_token, short_hash, slugify};
 use crate::{db, search};
 
 /// Version of the on-disk archive format, described in `docs/ARCHIVE.md`.
-pub const ARCHIVE_FORMAT: u64 = 3;
+pub const ARCHIVE_FORMAT: u64 = 4;
 
 async fn write_archive_marker(path: &Path, format: u64) -> Result<()> {
     let content = serde_json::json!({ "format": format, "software": "Uguisu" });
@@ -681,8 +681,10 @@ impl Uguisu {
         let files: Vec<serde_json::Value> = files
             .into_iter()
             .map(
-                |(kind, path, source, blake3, size, mime, downloaded, _, _)| {
+                |(kind, path, source, blake3, size, mime, downloaded, _, id)| {
                     serde_json::json!({
+                        // The numbers are part of the addresses in the published feed.
+                        "id": id,
                         "name": path.rsplit('/').next().unwrap_or(&path),
                         "kind": kind,
                         "source": redact(&source),
@@ -729,6 +731,7 @@ impl Uguisu {
             }));
         }
         let json = serde_json::json!({
+            "id": episode.id,
             "guid": episode.guid,
             "title": episode.title,
             "description": episode.description,
@@ -789,6 +792,7 @@ impl Uguisu {
         }
         // Format 2: episode.json also lists the episode's files and its state in the feed.
         // Format 3: earlier states of the feed entry are files, and each podcast has uguisu.json.
+        // Format 4: episodes and files carry the numbers used in published addresses.
         let podcasts: Vec<i64> = sqlx::query_scalar("SELECT id FROM podcasts ORDER BY id")
             .fetch_all(self.pool())
             .await?;

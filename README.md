@@ -40,7 +40,7 @@ Uguisu is not a player and does not sync listening progress. That is the job of 
   current app. Source feeds may be RSS 2.0, Atom or
   RSS 1.0; the published feed is always RSS 2.0.
 - **Keeps the archive readable without Uguisu.** The database is only an index. Everything needed
-  to understand the archive is on disk as plain files.
+  to understand the archive is on disk as plain files, and the database can be rebuilt from them.
 
 ## Archive layout
 
@@ -108,8 +108,11 @@ cargo run -p uguisu
 | `--verify-days` | `UGUISU_VERIFY_DAYS` | `30` | Re-hash every file at least this often; `0` turns it off |
 | `--allow-private-networks` | `UGUISU_ALLOW_PRIVATE_NETWORKS` | off | Allow sources on local and private addresses |
 
-Commands: `uguisu serve` (default) and `uguisu verify`. `verify` exits with a non-zero status if
-any file is damaged or missing, so it can be used from cron or a monitoring job.
+Commands: `uguisu serve` (default), `uguisu verify` and `uguisu reindex`. `verify` exits with a
+non-zero status if any file is damaged or missing, so it can be used from cron or a monitoring
+job. `reindex` rebuilds a lost or damaged database from the archive; the published feeds keep
+their addresses. Feed passwords and the login are not part of the archive and have to be entered
+again.
 
 ## Security notes
 

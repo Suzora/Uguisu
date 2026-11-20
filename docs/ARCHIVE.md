@@ -1,6 +1,6 @@
 # The Uguisu archive format
 
-Format version: **3** (early development – may still change before Uguisu 1.0)
+Format version: **4** (early development – may still change before Uguisu 1.0)
 
 An Uguisu archive is a directory of ordinary files. This document describes it so that an
 archive can be read, checked and used without Uguisu – today or in twenty years.
@@ -38,7 +38,7 @@ All text files are UTF-8. JSON files are pretty-printed. Times are in UTC.
 ## `archive.json`
 
 ```json
-{ "format": 3, "software": "Uguisu" }
+{ "format": 4, "software": "Uguisu" }
 ```
 
 `format` is the version of this document. Uguisu refuses to open an archive with a higher
@@ -50,6 +50,7 @@ archive in an older format is brought up to date in the background after the sta
 | 1 | First format |
 | 2 | `episode.json` also holds `hash`, `first_seen`, `removed` and `files` |
 | 3 | Earlier states of a feed entry are kept as `item-….xml`; `uguisu.json` per podcast; `namespaces` in `podcast.json` |
+| 4 | `id` for episodes and files |
 
 ## Directory names
 
@@ -111,6 +112,7 @@ without any change. When the publisher changes the entry, the earlier state is k
 
 | Field | Meaning |
 | --- | --- |
+| `id` | Number of the episode in this installation; part of the addresses in the published feed |
 | `guid` | The episode's identifier in the feed |
 | `title`, `description`, `link` | As given in the feed; `description` is HTML |
 | `published` | Publication time |
@@ -128,6 +130,7 @@ Each entry of `files` describes one file in the episode's directory:
 
 | Field | Meaning |
 | --- | --- |
+| `id` | Number of the file in this installation; part of the address of a linked file in the published feed |
 | `name` | File name |
 | `kind` | `media`, `transcript`, `chapters`, `image` or `notes-image` |
 | `source` | Address the file was downloaded from, without user name and password |
@@ -167,6 +170,13 @@ address. Their checksums are in the `files` list of `episode.json`.
 
 Files ending in `.part`, and `download.part.json`, belong to a download or a write in progress.
 They can be deleted at any time while Uguisu is not running.
+
+## Rebuilding the database
+
+`uguisu reindex` fills an empty database from these files: podcasts with their settings, feed
+snapshots, episodes with every recorded state of their feed entry, and the archived files with
+their checksums. The published feeds keep their addresses. Stop Uguisu and move `uguisu.db` away
+before running it.
 
 ## What is only in the database
 
