@@ -1,8 +1,7 @@
 name: Release
 
-# Pushing a tag like v0.2.0 builds the programs for Linux and Windows, publishes the container
-# image to ghcr.io and creates a GitHub release. Starting the workflow by hand is a dry run:
-# everything is built, nothing is published.
+# Pushing a tag like v0.2.0 publishes the container image to ghcr.io and creates a GitHub
+# release. Starting the workflow by hand is a dry run: the image is built, nothing is published.
 on:
   push:
     tags: ["v*"]
@@ -11,62 +10,7 @@ on:
 permissions:
   contents: read
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
-  binaries:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Statically linked, so it runs on any x86-64 Linux regardless of its C library.
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-            program: uguisu
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            program: uguisu.exe
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: The tag must match the version in Cargo.toml
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: bash
-        run: |
-          version=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "tag $GITHUB_REF_NAME does not match version $version in Cargo.toml"
-            exit 1
-          fi
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      - if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
-      - run: cargo build --release --locked -p uguisu --target ${{ matrix.target }}
-      - name: Package
-        shell: bash
-        run: |
-          name="uguisu-${GITHUB_REF_NAME//\//-}-${{ matrix.target }}"
-          mkdir "$name"
-          cp "target/${{ matrix.target }}/release/${{ matrix.program }}" README.md LICENSE "$name/"
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            7z a "$name.zip" "$name"
-          else
-            tar czf "$name.tar.gz" "$name"
-          fi
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.target }}
-          path: |
-            uguisu-*.tar.gz
-            uguisu-*.zip
-          if-no-files-found: error
-
   image:
     runs-on: ubuntu-latest
     permissions:
@@ -74,6 +18,14 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
+      - name: The tag must match the version in Cargo.toml
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME does not match version $version in Cargo.toml"
+            exit 1
+          fi
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         if: startsWith(github.ref, 'refs/tags/v')
@@ -98,19 +50,12 @@ jobs:
           cache-to: type=gha,mode=max
 
   release:
-    needs: [binaries, image]
+    needs: image
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          merge-multiple: true
-      - run: sha256sum uguisu-* > SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            uguisu-*
-            SHA256SUMS
           generate_release_notes: true
