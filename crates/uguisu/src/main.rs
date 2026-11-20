@@ -63,6 +63,11 @@ struct Cli {
     #[arg(long, env = "UGUISU_MIN_FREE_GB", default_value_t = 1, global = true)]
     min_free_gb: u64,
 
+    /// Number of daily copies of the database kept in `backups/` inside the data directory.
+    /// 0 turns the copies off.
+    #[arg(long, env = "UGUISU_BACKUPS", default_value_t = 7, global = true)]
+    backups: usize,
+
     /// Allow fetching feeds and media from loopback and private addresses.
     #[arg(long, env = "UGUISU_ALLOW_PRIVATE_NETWORKS", global = true)]
     allow_private_networks: bool,
@@ -112,6 +117,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
     cfg.refresh_interval = Duration::from_secs(cli.refresh_minutes.max(1) * 60);
     cfg.download_concurrency = cli.download_concurrency.max(1);
     cfg.min_free_space = cli.min_free_gb.saturating_mul(1 << 30);
+    cfg.backups = cli.backups;
     cfg.verify_interval =
         (cli.verify_days > 0).then(|| Duration::from_secs(cli.verify_days * 24 * 3600));
     if matches!(cli.command, Some(Command::Healthcheck)) {

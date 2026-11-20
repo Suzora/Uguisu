@@ -1344,3 +1344,43 @@ async fn downloads_wait_while_the_disk_is_full() {
     let error = episode.episode.download_error.unwrap();
     assert!(error.contains("not enough disk space"), "{error}");
 }
+
+/// Copies of the database: each is a complete, usable database, and only the newest are kept.
+#[tokio::test]
+async fn the_database_is_copied() {
+    let base = start_source(Arc::new(Mutex::new(feed(&item(1, "First"))))).await;
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = Config::new(data.path());
+    cfg.allow_private_networks = true;
+    cfg.min_free_space = 0;
+    cfg.host_pause = std::time::Duration::ZERO;
+    cfg.backups = 2;
+    let uguisu = Uguisu::open(cfg).await.unwrap();
+    uguisu
+        .add_podcast(&format!("{base}/feed.xml"))
+        .await
+        .unwrap();
+
+    let mut copies = Vec::new();
+    for _ in 0..3 {
+        copies.push(uguisu.backup_database().await.unwrap());
+        // The name carries the second.
+        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+    }
+    assert!(!copies[0].exists(), "the oldest copy made room");
+    assert!(copies[1].exists() && copies[2].exists());
+    assert_eq!(
+        std::fs::read_dir(data.path().join("backups"))
+            .unwrap()
+            .count(),
+        2
+    );
+
+    // A copy put in the place of the database is a working database.
+    let restored = tempfile::tempdir().unwrap();
+    std::fs::copy(&copies[2], restored.path().join("uguisu.db")).unwrap();
+    let from_copy = Uguisu::open(Config::new(restored.path())).await.unwrap();
+    let podcasts = from_copy.podcasts().await.unwrap();
+    assert_eq!(podcasts.len(), 1);
+    assert_eq!(podcasts[0].episode_count, 1);
+}

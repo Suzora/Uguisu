@@ -107,6 +107,7 @@ cargo run -p uguisu
 | `--download-concurrency` | `UGUISU_DOWNLOAD_CONCURRENCY` | `2` | Simultaneous downloads |
 | `--verify-days` | `UGUISU_VERIFY_DAYS` | `30` | Re-hash every file at least this often; `0` turns it off |
 | `--min-free-gb` | `UGUISU_MIN_FREE_GB` | `1` | Downloads wait while less than this is free on the disk; `0` turns it off |
+| `--backups` | `UGUISU_BACKUPS` | `7` | Daily copies of the database kept in `backups/`; `0` turns them off |
 | `--allow-private-networks` | `UGUISU_ALLOW_PRIVATE_NETWORKS` | off | Allow sources on local and private addresses |
 
 Commands: `uguisu serve` (default), `uguisu verify` and `uguisu reindex`. `verify` exits with a
@@ -114,6 +115,14 @@ non-zero status if any file is damaged or missing, so it can be used from cron o
 job. `reindex` rebuilds a lost or damaged database from the archive; the published feeds keep
 their addresses. Feed passwords and the login are not part of the archive and have to be entered
 again.
+
+### The database
+
+`uguisu.db` is an index of the archive. Once a day Uguisu writes a complete copy of it to
+`backups/` in the data directory and keeps the newest seven. To go back to a copy, stop Uguisu
+and put the copy in the place of `uguisu.db`. Without any copy, `uguisu reindex` rebuilds the
+database from the archive; only feed passwords and the login are then missing. The copies contain
+feed passwords in plain text, like the database itself.
 
 ## Security notes
 

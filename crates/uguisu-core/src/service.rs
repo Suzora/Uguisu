@@ -117,6 +117,8 @@ pub struct Config {
     /// Free disk space that downloads leave untouched, in bytes. A disk filled to the last
     /// byte also stops the database and the feed snapshots. `0` turns the check off.
     pub min_free_space: u64,
+    /// How many daily copies of the database are kept in `backups/`. `0` turns them off.
+    pub backups: usize,
 }
 
 impl Config {
@@ -131,6 +133,7 @@ impl Config {
             verify_interval: Some(Duration::from_secs(30 * 24 * 3600)),
             host_pause: Duration::from_secs(1),
             min_free_space: 1 << 30,
+            backups: 7,
         }
     }
 }
@@ -835,6 +838,75 @@ impl Uguisu {
             &serde_json::to_vec_pretty(&json)?,
         )
         .await
+    }
+
+    /// Writes a consistent copy of the database to `backups/uguisu-<time>.db` in the data
+    /// directory and removes the oldest copies beyond the configured number. The database can
+    /// be rebuilt from the archive, but a copy also keeps what the archive leaves out: feed
+    /// passwords, the login and the state of downloads.
+    pub async fn backup_database(&self) -> Result<PathBuf> {
+        let dir = self.inner.cfg.data_dir.join("backups");
+        tokio::fs::create_dir_all(&dir)
+            .await
+            .with_context(|| format!("cannot create {}", dir.display()))?;
+        let stamp = crate::util::format_utc(now(), "%Y%m%dT%H%M%SZ").context("invalid time")?;
+        let target = dir.join(format!("uguisu-{stamp}.db"));
+        // SQLite refuses to write over an existing file, hence the detour.
+        let part = dir.join(format!("uguisu-{stamp}.db.part"));
+        let _ = tokio::fs::remove_file(&part).await;
+        sqlx::query("VACUUM INTO ?")
+            .bind(
+                part.to_str()
+                    .context("the data directory is not valid UTF-8")?,
+            )
+            .execute(self.pool())
+            .await
+            .context("cannot copy the database")?;
+        tokio::fs::rename(&part, &target).await?;
+
+        let mut copies = Vec::new();
+        let mut entries = tokio::fs::read_dir(&dir).await?;
+        while let Some(entry) = entries.next_entry().await? {
+            if let Ok(name) = entry.file_name().into_string()
+                && name.starts_with("uguisu-")
+                && name.ends_with(".db")
+            {
+                copies.push(name);
+            }
+        }
+        // The names sort by time.
+        copies.sort();
+        let keep = self.inner.cfg.backups.max(1);
+        for name in copies.iter().take(copies.len().saturating_sub(keep)) {
+            let _ = tokio::fs::remove_file(dir.join(name)).await;
+        }
+        Ok(target)
+    }
+
+    /// Makes a copy of the database if the newest one is older than a day.
+    async fn backup_if_due(&self) -> Result<()> {
+        if self.inner.cfg.backups == 0 {
+            return Ok(());
+        }
+        let dir = self.inner.cfg.data_dir.join("backups");
+        let mut newest: Option<std::time::SystemTime> = None;
+        if let Ok(mut entries) = tokio::fs::read_dir(&dir).await {
+            while let Some(entry) = entries.next_entry().await? {
+                if entry.file_name().to_string_lossy().ends_with(".db")
+                    && let Ok(modified) = entry.metadata().await.and_then(|m| m.modified())
+                {
+                    newest = newest.max(Some(modified));
+                }
+            }
+        }
+        let due = newest
+            .and_then(|time| time.elapsed().ok())
+            .is_none_or(|age| age >= Duration::from_secs(24 * 3600));
+        if due {
+            let path = self.backup_database().await?;
+            tracing::info!(file = %path.display(), "database copied");
+        }
+        Ok(())
     }
 
     /// Brings an archive written by an earlier version up to the current format. Returns the
@@ -1904,6 +1976,15 @@ impl Uguisu {
         tokio::spawn(async move {
             if let Err(e) = this.upgrade_archive().await {
                 tracing::error!("upgrading the archive failed: {e:#}");
+            }
+        });
+        let this = self.clone();
+        tokio::spawn(async move {
+            loop {
+                if let Err(e) = this.backup_if_due().await {
+                    tracing::error!("copying the database failed: {e:#}");
+                }
+                tokio::time::sleep(Duration::from_secs(3600)).await;
             }
         });
         let this = self.clone();
