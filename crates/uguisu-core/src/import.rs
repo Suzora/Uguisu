@@ -292,6 +292,9 @@ impl Uguisu {
             .await?;
             self.write_episode_json(episode_id).await?;
         }
+        if !report.added.is_empty() {
+            self.index_podcast_text(podcast_id).await?;
+        }
         Ok(report)
     }
 }

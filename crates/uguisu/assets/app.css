@@ -406,3 +406,7 @@ a.episode-title:hover { color: var(--accent-strong); text-decoration: underline;
 }
 .diff-add { color: var(--ok); }
 .diff-del { color: var(--error); }
+
+/* Search in the archive */
+.find { margin-bottom: 18px; }
+mark { background: var(--accent-soft); color: inherit; border-radius: 3px; padding: 0 2px; }

@@ -91,6 +91,32 @@ pub fn slugify(input: &str, max_chars: usize) -> String {
     }
 }
 
+/// HTML as plain text for searching: tags become spaces, the common character references are
+/// decoded. Not meant for display.
+pub fn html_to_text(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut in_tag = false;
+    for c in html.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' if in_tag => {
+                in_tag = false;
+                out.push(' ');
+            }
+            c if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    let out = out
+        .replace("&nbsp;", " ")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&amp;", "&");
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 pub fn xml_escape(input: &str) -> String {
     let mut out = String::with_capacity(input.len() + 16);
     for c in input.chars() {

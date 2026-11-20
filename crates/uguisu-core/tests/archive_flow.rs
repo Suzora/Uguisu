@@ -1666,3 +1666,92 @@ async fn existing_files_are_imported() {
     assert_eq!(republished.items.len(), 3);
     assert!(xml.contains("Episode 0 - the pilot"));
 }
+
+/// Titles and show notes of the whole archive can be searched.
+#[tokio::test]
+async fn the_archive_is_searchable() {
+    let notes = |n: u32, title: &str, text: &str| {
+        item(n, title).replace(
+            "<guid>",
+            &format!("<description><![CDATA[<p>{text}</p>]]></description><guid>"),
+        )
+    };
+    let source: FeedBody = Arc::new(Mutex::new(feed(&format!(
+        "{}{}",
+        notes(
+            2,
+            "Nightingales at dusk",
+            "A <strong>recording</strong> from the K&ouml;nigsforst, with café."
+        ),
+        notes(
+            1,
+            "Warblers",
+            "The bush warbler is called uguisu; \"quoted\" AND (odd) *syntax."
+        ),
+    ))));
+    let base = start_source(source.clone()).await;
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = Config::new(data.path());
+    cfg.allow_private_networks = true;
+    cfg.min_free_space = 0;
+    cfg.host_pause = std::time::Duration::ZERO;
+    let uguisu = Uguisu::open(cfg).await.unwrap();
+    let id = uguisu
+        .add_podcast(&format!("{base}/feed.xml"))
+        .await
+        .unwrap();
+
+    let titles = |uguisu: Uguisu, query: &'static str| async move {
+        uguisu
+            .search_episodes(query, 20)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|hit| hit.title)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(titles(uguisu.clone(), "warbler").await, ["Warblers"]);
+    assert_eq!(
+        titles(uguisu.clone(), "night").await,
+        ["Nightingales at dusk"],
+        "a beginning"
+    );
+    assert_eq!(
+        titles(uguisu.clone(), "recording dusk").await,
+        ["Nightingales at dusk"]
+    );
+    assert_eq!(
+        titles(uguisu.clone(), "CAFE").await,
+        ["Nightingales at dusk"],
+        "accents and case"
+    );
+    assert!(
+        titles(uguisu.clone(), "warbler nightingales")
+            .await
+            .is_empty(),
+        "every word"
+    );
+    assert!(
+        titles(uguisu.clone(), "strong").await.is_empty(),
+        "markup is not indexed"
+    );
+    // Nothing a person types is read as query syntax.
+    for odd in ["\"quoted", "AND (odd) *", "a:b NEAR(x y)", "   ", "-"] {
+        uguisu.search_episodes(odd, 20).await.unwrap();
+    }
+    let hit = &uguisu.search_episodes("uguisu", 20).await.unwrap()[0];
+    assert_eq!(hit.podcast_title, "Test Cast");
+    assert!(
+        hit.snippet.contains("\u{1}uguisu\u{2}"),
+        "{:?}",
+        hit.snippet
+    );
+
+    // A changed entry is found by its new words; a removed podcast is not found at all.
+    *source.lock().unwrap() = feed(&notes(1, "Warblers", "Now about wrens."));
+    uguisu.refresh(id).await.unwrap();
+    assert_eq!(titles(uguisu.clone(), "wrens").await, ["Warblers"]);
+    assert!(titles(uguisu.clone(), "uguisu").await.is_empty());
+    uguisu.remove_podcast(id, false).await.unwrap();
+    assert!(titles(uguisu.clone(), "wrens").await.is_empty());
+}
