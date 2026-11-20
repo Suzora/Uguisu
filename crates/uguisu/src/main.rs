@@ -197,13 +197,13 @@ async fn healthcheck(listen: SocketAddr) -> bool {
     )
 }
 
+/// Resolves on Ctrl-C or on SIGTERM, which is what `docker stop` sends.
 async fn shutdown_signal() {
+    use tokio::signal::unix::{SignalKind, signal};
     let ctrl_c = async {
         let _ = tokio::signal::ctrl_c().await;
     };
-    #[cfg(unix)]
     let terminate = async {
-        use tokio::signal::unix::{SignalKind, signal};
         match signal(SignalKind::terminate()) {
             Ok(mut stream) => {
                 stream.recv().await;
@@ -211,8 +211,6 @@ async fn shutdown_signal() {
             Err(_) => std::future::pending::<()>().await,
         }
     };
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
     tokio::select! {
         _ = ctrl_c => {}
         _ = terminate => {}

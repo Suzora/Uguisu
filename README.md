@@ -80,7 +80,8 @@ proxy with HTTPS in front of it if the instance is reachable from outside your n
 
 ## Building from source
 
-Docker is the supported way to run Uguisu. For development you need Rust 1.88 or newer:
+Docker is the supported way to run Uguisu. For development you need Linux or macOS (on Windows:
+WSL) and Rust 1.88 or newer:
 
 ```bash
 cargo run -p uguisu
