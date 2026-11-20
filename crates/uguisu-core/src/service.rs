@@ -731,7 +731,7 @@ impl Uguisu {
 
     /// Writes `episode.json`: everything the index knows about an episode and its files, so
     /// that the index can be rebuilt from the archive.
-    async fn write_episode_json(&self, episode_id: i64) -> Result<()> {
+    pub(crate) async fn write_episode_json(&self, episode_id: i64) -> Result<()> {
         let Some((episode, podcast_dir)): Option<(Episode, String)> =
             sqlx::query_as::<_, PendingDownload>(
                 "SELECT e.*, p.dir AS podcast_dir, p.feed_url FROM episodes e \

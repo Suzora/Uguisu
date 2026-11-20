@@ -1508,3 +1508,86 @@ async fn episodes_before_the_start_date_are_not_downloaded() {
         Some(from + 86_400)
     );
 }
+
+/// Files downloaded earlier by some podcast app are taken into the archive: matched by the
+/// name in the media address or by title, and what the feed no longer lists is kept on request.
+#[tokio::test]
+async fn existing_files_are_imported() {
+    let two = format!("{}{}", item(2, "Second episode"), item(1, "First episode"));
+    let base = start_source(Arc::new(Mutex::new(feed(&two)))).await;
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = Config::new(data.path());
+    cfg.allow_private_networks = true;
+    cfg.min_free_space = 0;
+    cfg.host_pause = std::time::Duration::ZERO;
+    let uguisu = Uguisu::open(cfg).await.unwrap();
+    let id = uguisu
+        .add_podcast(&format!("{base}/feed.xml"))
+        .await
+        .unwrap();
+
+    let collection = tempfile::tempdir().unwrap();
+    std::fs::create_dir(collection.path().join("old")).unwrap();
+    let write = |name: &str, content: &str| {
+        std::fs::write(collection.path().join(name), content).unwrap();
+    };
+    write("1.mp3", "my copy of one"); // the name in the media address
+    write("2024 - Second Episode (final).mp3", "my copy of two"); // the title
+    write("old/Episode 0 - the pilot.mp3", "the lost pilot"); // not in the feed
+    write("notes.txt", "not a media file");
+
+    // Without asking for it, a file that fits no episode is left alone.
+    let report = uguisu
+        .import_directory(id, collection.path(), false)
+        .await
+        .unwrap();
+    assert_eq!(report.matched.len(), 2, "{report:?}");
+    assert_eq!(report.skipped.len(), 1, "{report:?}");
+    assert!(report.added.is_empty());
+
+    let episodes = uguisu.episodes(id).await.unwrap();
+    assert_eq!(episodes.len(), 2);
+    for (view, content) in episodes.iter().zip(["my copy of two", "my copy of one"]) {
+        let path = uguisu.archive_path(view.media_path.as_deref().expect("imported"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), content);
+        assert!(path.with_file_name("media.mp3.blake3").exists());
+    }
+    // Nothing is left to download, and the files verify.
+    assert_eq!(uguisu.download_pending().await.unwrap(), 0);
+    let verified = uguisu.verify().await.unwrap();
+    assert_eq!((verified.checked, verified.ok), (2, 2));
+
+    // Again, keeping the rest: the known files are recognised, the pilot becomes an episode.
+    let report = uguisu
+        .import_directory(id, collection.path(), true)
+        .await
+        .unwrap();
+    assert_eq!(
+        (report.known.len(), report.added.len()),
+        (2, 1),
+        "{report:?}"
+    );
+    let episodes = uguisu.episodes(id).await.unwrap();
+    assert_eq!(episodes.len(), 3);
+    let pilot = episodes
+        .iter()
+        .find(|view| view.episode.title == "Episode 0 - the pilot")
+        .unwrap();
+    assert!(
+        pilot.episode.removed_at.is_some(),
+        "marked as not in the feed"
+    );
+    assert!(
+        collection.path().join("1.mp3").exists(),
+        "the collection is untouched"
+    );
+
+    // The pilot is published with the others and survives the next check of the feed.
+    uguisu.refresh(id).await.unwrap();
+    let podcast = uguisu.podcast(id).await.unwrap().unwrap();
+    let published = uguisu.feed_episodes(id).await.unwrap();
+    let xml = rss::build_feed(&podcast, &published, &[], "https://archive.example");
+    let republished = uguisu_core::feed::parse(xml.as_bytes()).unwrap();
+    assert_eq!(republished.items.len(), 3);
+    assert!(xml.contains("Episode 0 - the pilot"));
+}

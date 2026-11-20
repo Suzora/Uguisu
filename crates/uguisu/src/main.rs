@@ -85,6 +85,18 @@ enum Command {
     /// Rebuild the database from the archive on disk. Needs an empty database: stop Uguisu and
     /// move `uguisu.db` away first.
     Reindex,
+    /// Take media files that are already on disk into the archive of a podcast. Files are
+    /// matched to episodes by file name or title and copied; the directory is left as it is.
+    Import {
+        /// Directory with the media files; subdirectories are included.
+        directory: PathBuf,
+        /// Feed address of the podcast the files belong to. It is added if it is not archived yet.
+        #[arg(long)]
+        feed: String,
+        /// Keep files that fit no episode of the feed as episodes of their own.
+        #[arg(long)]
+        keep_unmatched: bool,
+    },
     /// Ask the running instance whether it answers; exits with 0 if it does. Used by the
     /// container health check, where no other HTTP client is available.
     Healthcheck,
@@ -163,6 +175,37 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         Command::Healthcheck => unreachable!("handled before the archive is opened"),
+        Command::Import {
+            directory,
+            feed,
+            keep_unmatched,
+        } => {
+            let podcast_id = app.add_podcast(&feed).await?;
+            let report = app
+                .import_directory(podcast_id, &directory, keep_unmatched)
+                .await?;
+            for (file, episode) in &report.matched {
+                println!("MATCHED  {file}  ->  {episode}");
+            }
+            for file in &report.added {
+                println!("ADDED    {file}");
+            }
+            for file in &report.known {
+                println!("KNOWN    {file}");
+            }
+            for (file, reason) in &report.skipped {
+                println!("SKIPPED  {file}  ({reason})");
+            }
+            println!(
+                "{} files matched to episodes, {} kept as episodes of their own, \
+                 {} already archived, {} skipped",
+                report.matched.len(),
+                report.added.len(),
+                report.known.len(),
+                report.skipped.len()
+            );
+            Ok(ExitCode::SUCCESS)
+        }
         Command::Reindex => {
             let report = app.reindex().await?;
             for problem in &report.problems {
