@@ -33,6 +33,8 @@ Uguisu is not a player and does not sync listening progress. That is the job of 
 - **Archives what an episode links to.** Transcripts, chapter files and episode images are
   stored next to the media file, checked like it, and the published feed points at the archived
   copies.
+- **Is a polite guest.** Requests to the same server are at least a second apart, and a server
+  that asks for a break (`Retry-After`) gets it, without the wait counting as a failure.
 - **Takes input the easy way.** Search podcast directories (iTunes and fyyd), paste a feed
   address or simply the address of the podcast's web page, or import an OPML file from your
   current app. Source feeds may be RSS 2.0, Atom or
