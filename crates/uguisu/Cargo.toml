@@ -1,0 +1,27 @@
+[package]
+name = "uguisu"
+description = "Uguisu – a self-hosted podcast archiver that re-publishes its archive as feeds"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+uguisu-core = { path = "../uguisu-core" }
+anyhow.workspace = true
+argon2 = "0.5"
+axum = { version = "0.8", features = ["multipart"] }
+blake3.workspace = true
+chrono.workspace = true
+clap = { version = "4", features = ["derive", "env"] }
+maud = "0.27"
+mime = "0.3"
+serde.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["fs", "trace"] }
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

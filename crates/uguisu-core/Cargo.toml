@@ -1,0 +1,29 @@
+[package]
+name = "uguisu-core"
+description = "Archive engine of Uguisu: feed ingestion, on-disk archive, fixity checks and feed re-publishing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+blake3.workspace = true
+chrono.workspace = true
+futures-util.workspace = true
+getrandom.workspace = true
+reqwest.workspace = true
+roxmltree.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+axum = "0.8"
+tempfile = "3"
+sqlx.workspace = true

@@ -1,0 +1,37 @@
+[workspace]
+resolver = "3"
+members = ["crates/uguisu-core", "crates/uguisu"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/Suzora/Uguisu"
+authors = ["Uguisu contributors"]
+
+[workspace.dependencies]
+anyhow = "1"
+blake3 = "1"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+futures-util = "0.3"
+getrandom = "0.3"
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls-webpki-roots",
+    "rustls-tls-native-roots",
+    "stream",
+    "gzip",
+    "brotli",
+    "json",
+] }
+roxmltree = "0.20"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+url = "2"
+
+[profile.release]
+lto = "thin"
+strip = true

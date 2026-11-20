@@ -1,0 +1,13 @@
+services:
+  uguisu:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8484:8484"
+    volumes:
+      - ./data:/data
+    environment:
+      # Public address of this instance; it is written into the published feeds.
+      UGUISU_BASE_URL: "http://localhost:8484"
+    # The container runs as uid 65532. For a bind mount, make ./data writable for it:
+    #   mkdir -p data && sudo chown 65532:65532 data
