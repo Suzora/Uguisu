@@ -1,0 +1,5 @@
+# Check text files out with LF on every platform. The database migrations are identified by a
+# checksum of their content; with CRLF on Windows a database created elsewhere would be refused.
+* text=auto eol=lf
+*.png binary
+*.webp binary

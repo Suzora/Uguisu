@@ -75,16 +75,22 @@ has a health check, so `docker ps` shows whether the instance answers.
 Set `UGUISU_BASE_URL` to the address your podcast app will use to reach Uguisu. Put a reverse
 proxy with HTTPS in front of it if the instance is reachable from outside your network.
 
-## Running from source
+## Running without Docker
 
-Requires Rust 1.88 or newer.
+Releases come with ready-made programs for Linux and Windows (x86-64). Each is a single file with
+the web interface built in; unpack it and start it:
+
+```bash
+./uguisu --data-dir ./data
+```
+
+The Linux program is statically linked and runs on any x86-64 distribution.
+
+To build from source you need Rust 1.88 or newer:
 
 ```bash
 cargo run --release -p uguisu
 ```
-
-The result is a single binary with the web interface built in; it runs on Linux, Windows and
-macOS.
 
 ## Configuration
 
@@ -129,6 +135,13 @@ cargo test --workspace
 CI additionally runs [`cargo deny check`](https://github.com/EmbarkStudios/cargo-deny)
 (vulnerabilities, unmaintained crates and licenses of all dependencies, see `deny.toml`) and
 [`typos`](https://github.com/crate-ci/typos) (spelling, see `_typos.toml`).
+
+### Releasing
+
+Set the version in `Cargo.toml`, then push a tag with the same version, for example `v0.2.0`. The
+release workflow builds the programs for Linux and Windows, publishes the container image to
+`ghcr.io` and creates the GitHub release with checksums. Starting the workflow by hand from the
+Actions page is a dry run that builds everything and publishes nothing.
 
 ## Not there yet
 

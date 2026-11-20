@@ -24,6 +24,15 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
 
+  # Uguisu is also distributed as a Windows program; the tests exercise paths and files there.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --locked
+
   # Known vulnerabilities, unmaintained crates, licenses and sources of all dependencies.
   # Configuration: deny.toml
   dependencies:
