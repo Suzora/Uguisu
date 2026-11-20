@@ -507,6 +507,64 @@ impl Uguisu {
         )
     }
 
+    /// The secret part of the address of the feed over all podcasts; created at first use. It
+    /// is kept in the archive as well, so that a rebuilt index publishes the same address.
+    pub async fn combined_feed_token(&self) -> Result<String> {
+        const KEY: &str = "combined_feed_token";
+        if let Some(token) = db::get_setting(self.pool(), KEY).await? {
+            return Ok(token);
+        }
+        let file = self.archive_dir().join("uguisu.json");
+        let stored = match tokio::fs::read(&file).await {
+            Ok(bytes) => serde_json::from_slice::<serde_json::Value>(&bytes)
+                .ok()
+                .and_then(|value| value["combined_feed_token"].as_str().map(str::to_string)),
+            Err(_) => None,
+        };
+        let token = match stored {
+            Some(token) => token,
+            None => {
+                let token = random_token(24);
+                let content = serde_json::json!({ "combined_feed_token": token });
+                write_atomic(&file, &serde_json::to_vec_pretty(&content)?).await?;
+                token
+            }
+        };
+        db::set_setting(self.pool(), KEY, &token).await?;
+        Ok(token)
+    }
+
+    /// The newest archived episodes across all podcasts, each with the id of its podcast.
+    /// Episodes that left their source feed are included where the podcast publishes them.
+    pub async fn newest_episodes(&self, limit: i64) -> Result<Vec<EpisodeView>> {
+        Ok(sqlx::query_as(concat!(
+            "SELECT v.* FROM (",
+            episode_view_sql!(""),
+            ") v JOIN podcasts p ON p.id = v.podcast_id \
+             WHERE v.media_path IS NOT NULL AND (v.removed_at IS NULL OR p.include_removed) \
+             ORDER BY v.published_at IS NULL, v.published_at DESC, v.id DESC LIMIT ?"
+        ))
+        .bind(limit)
+        .fetch_all(self.pool())
+        .await?)
+    }
+
+    /// Archived attachments of the given episodes.
+    pub async fn attachments_of(&self, episode_ids: &[i64]) -> Result<Vec<Attachment>> {
+        let mut found = Vec::new();
+        for id in episode_ids {
+            let rows: Vec<Attachment> = sqlx::query_as(
+                "SELECT id, episode_id, source_key, path, mime FROM attachments \
+                 WHERE episode_id = ? AND status = 'ok'",
+            )
+            .bind(id)
+            .fetch_all(self.pool())
+            .await?;
+            found.extend(rows);
+        }
+        Ok(found)
+    }
+
     /// Episodes of a podcast, newest first.
     pub async fn episodes(&self, podcast_id: i64) -> Result<Vec<EpisodeView>> {
         Ok(sqlx::query_as(episode_view_sql!(

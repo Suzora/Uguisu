@@ -294,35 +294,99 @@ pub fn build_feed(
             x.push('\n');
             continue;
         }
-        x.push_str("<item>\n");
-        let _ = writeln!(x, "<title>{}</title>", xml_escape(&e.title));
-        let _ = writeln!(
-            x,
-            "<guid isPermaLink=\"false\">{}</guid>",
-            xml_escape(&e.guid)
+        generated_item(&mut x, e, &e.title, &enclosure, &links);
+    }
+    x.push_str("</channel>\n</rss>\n");
+    x
+}
+
+/// An item written from the indexed fields.
+fn generated_item(
+    x: &mut String,
+    e: &crate::model::Episode,
+    title: &str,
+    enclosure: &str,
+    links: &[(&str, String)],
+) {
+    x.push_str("<item>\n");
+    let _ = writeln!(x, "<title>{}</title>", xml_escape(title));
+    let _ = writeln!(
+        x,
+        "<guid isPermaLink=\"false\">{}</guid>",
+        xml_escape(&e.guid)
+    );
+    if let Some(date) = e.published_at.and_then(rfc2822) {
+        let _ = writeln!(x, "<pubDate>{date}</pubDate>");
+    }
+    if let Some(link) = &e.link {
+        let _ = writeln!(x, "<link>{}</link>", xml_escape(link));
+    }
+    if let Some(description) = &e.description {
+        let escaped = xml_escape(&rewrite_text(description, links));
+        let _ = writeln!(x, "<description>{escaped}</description>");
+        let _ = writeln!(x, "<content:encoded>{escaped}</content:encoded>");
+    }
+    if let Some(duration) = e.duration {
+        let _ = writeln!(x, "<itunes:duration>{duration}</itunes:duration>");
+    }
+    if let Some(season) = e.season {
+        let _ = writeln!(x, "<itunes:season>{season}</itunes:season>");
+    }
+    if let Some(number) = e.episode_no {
+        let _ = writeln!(x, "<itunes:episode>{number}</itunes:episode>");
+    }
+    x.push_str(enclosure);
+    x.push_str("\n</item>\n");
+}
+
+pub fn combined_feed_url(base_url: &str, token: &str) -> String {
+    format!("{}/feed/all/{token}.xml", base_url.trim_end_matches('/'))
+}
+
+/// One feed over every podcast of the archive: the given episodes, each with its podcast. The
+/// items are written from the indexed fields, with the podcast's name in front of the title and
+/// in a GUID that cannot clash between podcasts.
+pub fn build_combined_feed(
+    entries: &[(&Podcast, &crate::model::EpisodeView)],
+    attachments: &[Attachment],
+    base_url: &str,
+) -> String {
+    let base = base_url.trim_end_matches('/');
+    let mut x = String::with_capacity(4096 + entries.len() * 1024);
+    x.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    let _ = writeln!(
+        x,
+        "<rss version=\"2.0\" xmlns:itunes=\"{NS_ITUNES}\" xmlns:content=\"{NS_CONTENT}\">\n<channel>"
+    );
+    x.push_str("<title>Uguisu archive</title>\n");
+    let _ = writeln!(x, "<link>{}</link>", xml_escape(base));
+    x.push_str("<description>The newest episodes of every archived podcast</description>\n");
+    x.push_str("<itunes:block>Yes</itunes:block>\n<generator>Uguisu</generator>\n");
+    for (podcast, view) in entries {
+        let e = &view.episode;
+        let (Some(file_name), Some(size), Some(mime)) = (
+            view.media_file_name(),
+            view.media_size,
+            view.media_mime.as_deref(),
+        ) else {
+            continue;
+        };
+        let token = &podcast.feed_token;
+        let enclosure = format!(
+            "<enclosure url=\"{}\" length=\"{size}\" type=\"{}\"/>",
+            xml_escape(&media_url(base, token, e.id, file_name)),
+            xml_escape(mime)
         );
-        if let Some(date) = e.published_at.and_then(rfc2822) {
-            let _ = writeln!(x, "<pubDate>{date}</pubDate>");
-        }
-        if let Some(link) = &e.link {
-            let _ = writeln!(x, "<link>{}</link>", xml_escape(link));
-        }
-        if let Some(description) = &e.description {
-            let escaped = xml_escape(&rewrite_text(description, &links));
-            let _ = writeln!(x, "<description>{escaped}</description>");
-            let _ = writeln!(x, "<content:encoded>{escaped}</content:encoded>");
-        }
-        if let Some(duration) = e.duration {
-            let _ = writeln!(x, "<itunes:duration>{duration}</itunes:duration>");
-        }
-        if let Some(season) = e.season {
-            let _ = writeln!(x, "<itunes:season>{season}</itunes:season>");
-        }
-        if let Some(number) = e.episode_no {
-            let _ = writeln!(x, "<itunes:episode>{number}</itunes:episode>");
-        }
-        x.push_str(&enclosure);
-        x.push_str("\n</item>\n");
+        let links: Vec<(&str, String)> = attachments
+            .iter()
+            .filter(|a| a.episode_id == e.id)
+            .map(|a| (a.source_key.as_str(), attachment_url(base, token, a)))
+            .collect();
+        // Two podcasts may use the same GUID; within this feed it has to be unique.
+        let mut unique = e.clone();
+        unique.guid = format!("{}:{}", podcast.id, e.guid);
+        let title = format!("{} – {}", podcast.title, e.title);
+        generated_item(&mut x, &unique, &title, &enclosure, &links);
     }
     x.push_str("</channel>\n</rss>\n");
     x
