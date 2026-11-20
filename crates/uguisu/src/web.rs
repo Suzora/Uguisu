@@ -86,6 +86,7 @@ pub fn router(state: AppState) -> Router {
         .route("/podcasts", post(add_podcast))
         .route("/podcasts/{id}", get(podcast_page))
         .route("/podcasts/{id}/episodes", get(episodes_fragment))
+        .route("/podcasts/{id}/episodes/{episode_id}", get(episode_page))
         .route("/podcasts/{id}/refresh", post(refresh_podcast))
         .route("/podcasts/{id}/settings", post(update_settings))
         .route("/podcasts/{id}/token", post(regenerate_token))
@@ -451,6 +452,30 @@ async fn add_podcast(State(state): State<AppState>, Form(form): Form<AddForm>) -
 #[derive(Deserialize, Default)]
 struct PageQuery {
     page: Option<i64>,
+}
+
+async fn episode_page(
+    State(state): State<AppState>,
+    Path((id, episode_id)): Path<(i64, i64)>,
+) -> AppResult {
+    let podcast = state.app.podcast(id).await?.ok_or(AppError::NotFound)?;
+    let view = state
+        .app
+        .episode(id, episode_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let media = state.app.media_files(episode_id).await?;
+    let attachments = state.app.episode_attachments(episode_id).await?;
+    let revisions = state.app.revisions(episode_id).await?;
+    Ok(page(ui::episode_page(
+        &podcast,
+        &view,
+        &media,
+        &attachments,
+        &revisions,
+        &state.app.downloading(),
+    ))
+    .into_response())
 }
 
 async fn podcast_page(
@@ -1138,6 +1163,73 @@ mod tests {
         let (kind, body) = get("/cover/1?size=small").await;
         assert_eq!(kind, "image/png");
         assert_eq!(&body[..], b"not an image, and of another size");
+    }
+
+    #[tokio::test]
+    async fn the_episode_page_shows_what_is_archived() {
+        let (data, router, _) = archive().await;
+        let app = uguisu_core::Uguisu::open(uguisu_core::Config::new(data.path()))
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO episodes (id, podcast_id, guid, title, description, published_at, \
+             enclosure_url, dir, meta_hash, first_seen_at, last_seen_at) \
+             VALUES (7, 1, 'ep-7', 'Seventh <heaven>', '<p>Notes &amp; <script>x()</script></p>', \
+             86400, 'https://x.test/a.mp3', 'e7', 'new', 0, 0)",
+        )
+        .execute(app.pool())
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO media_files (episode_id, path, size, blake3, mime, source_url, \
+             downloaded_at, verified_at) \
+             VALUES (7, 'test/episodes/e7/media.mp3', 2048, 'abc123', 'audio/mpeg', 's', 0, 0)",
+        )
+        .execute(app.pool())
+        .await
+        .unwrap();
+        for (seen, hash, title) in [(100, "old", "Sevnth"), (200, "new", "Seventh")] {
+            sqlx::query(
+                "INSERT INTO episode_revisions (episode_id, seen_at, meta_hash, raw_xml) \
+                 VALUES (7, ?, ?, '<item><title>' || ? || '</title><guid>ep-7</guid></item>')",
+            )
+            .bind(seen)
+            .bind(hash)
+            .bind(title)
+            .execute(app.pool())
+            .await
+            .unwrap();
+        }
+        let session = crate::auth::create_session(app.pool()).await.unwrap();
+        let get = |address: &'static str, cookie: bool| {
+            let mut request = Request::get(address);
+            if cookie {
+                request = request.header(header::COOKIE, format!("uguisu_session={session}"));
+            }
+            router.clone().oneshot(request.body(Body::empty()).unwrap())
+        };
+
+        let response = get("/podcasts/1/episodes/7", true).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        let page = String::from_utf8_lossy(&body);
+        assert!(
+            page.contains("Seventh &lt;heaven&gt;"),
+            "titles are escaped"
+        );
+        assert!(page.contains("media.mp3") && page.contains("abc123"));
+        assert!(page.contains("Notes &amp; x()"), "show notes as text");
+        assert!(!page.contains("<script>x()"), "never as markup");
+        assert!(page.contains("− &lt;title&gt;Sevnth&lt;/title&gt;"));
+        assert!(page.contains("+ &lt;title&gt;Seventh&lt;/title&gt;"));
+
+        // Not without a login, and not under another podcast.
+        let response = get("/podcasts/1/episodes/7", false).await.unwrap();
+        assert_ne!(response.status(), StatusCode::OK);
+        let response = get("/podcasts/2/episodes/7", true).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

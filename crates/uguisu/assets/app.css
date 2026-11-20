@@ -391,3 +391,18 @@ a.episode-title:hover { color: var(--accent-strong); text-decoration: underline;
   .episode { align-items: flex-start; flex-direction: column; gap: 8px; }
   .panel { padding: 18px; }
 }
+
+/* Episode page */
+.file-list, .revision-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.file-list li { display: flex; gap: 12px; justify-content: space-between; align-items: flex-start; }
+.file-list li > div { min-width: 0; overflow-wrap: anywhere; }
+.file-list code { font-family: var(--mono); font-size: 0.74rem; }
+.show-notes { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 75ch; }
+.diff {
+  margin: 8px 0 0; padding: 10px 12px;
+  background: var(--surface-2); border-radius: var(--radius-small);
+  font-family: var(--mono); font-size: 0.78rem;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.diff-add { color: var(--ok); }
+.diff-del { color: var(--error); }
