@@ -52,6 +52,11 @@ struct Cli {
     )]
     download_concurrency: usize,
 
+    /// Every archived file is re-hashed at least once in this many days. 0 turns the automatic
+    /// integrity check off; `uguisu verify` still checks everything on demand.
+    #[arg(long, env = "UGUISU_VERIFY_DAYS", default_value_t = 30, global = true)]
+    verify_days: u64,
+
     /// Allow fetching feeds and media from loopback and private addresses.
     #[arg(long, env = "UGUISU_ALLOW_PRIVATE_NETWORKS", global = true)]
     allow_private_networks: bool,
@@ -92,6 +97,8 @@ async fn run(cli: Cli) -> Result<ExitCode> {
     cfg.allow_private_networks = cli.allow_private_networks;
     cfg.refresh_interval = Duration::from_secs(cli.refresh_minutes.max(1) * 60);
     cfg.download_concurrency = cli.download_concurrency.max(1);
+    cfg.verify_interval =
+        (cli.verify_days > 0).then(|| Duration::from_secs(cli.verify_days * 24 * 3600));
     let app = Uguisu::open(cfg).await?;
 
     match cli.command.unwrap_or(Command::Serve) {

@@ -239,6 +239,17 @@ pub fn library_page(podcasts: &[PodcastSummary], stats: &Stats, import: Option<u
                         span.stat-label { "Episodes archived" }
                     }
                     div.stat { span.stat-value { (format_bytes(stats.bytes)) } span.stat-label { "On disk" } }
+                    @if stats.damaged > 0 {
+                        div.stat.is-error title="Damaged or missing files are downloaded again while the source still offers them" {
+                            span.stat-value { (stats.damaged) }
+                            span.stat-label { "Damaged files" }
+                        }
+                    } @else if let Some(oldest) = stats.oldest_check {
+                        div.stat.is-ok title="Every archived file matched its recorded checksum when it was last read" {
+                            span.stat-value { "Intact" }
+                            span.stat-label { "All files checked since " (format_date(oldest)) }
+                        }
+                    }
                     div.stat-actions {
                         a.button href="/opml" title="Subscription list of all archive feeds, for import into a podcast app" { "Export OPML" }
                     }
@@ -433,6 +444,10 @@ pub fn podcast_page(
                             input type="checkbox" name="include_removed" checked[p.include_removed] data-autosubmit;
                             "Publish episodes that left the source feed"
                         }
+                        label.check title="When the address of an episode's media file changes, download it again and keep both copies. Uses more disk space if a podcast moves to another host." {
+                            input type="checkbox" name="keep_versions" checked[p.keep_versions] data-autosubmit;
+                            "Keep a new copy when the source replaces a file"
+                        }
                         noscript { button.button type="submit" { "Save" } }
                     }
                     form method="post" action=(format!("/podcasts/{}/token", p.id))
@@ -467,6 +482,7 @@ pub fn podcast_page(
 
 enum Status<'a> {
     Archived(i64),
+    Damaged,
     Downloading,
     Queued,
     Retrying(&'a str),
@@ -480,6 +496,8 @@ fn status_of<'a>(view: &'a EpisodeView, downloading: &HashSet<i64>) -> Status<'a
         Status::Archived(size)
     } else if downloading.contains(&e.id) {
         Status::Downloading
+    } else if view.media_damaged > 0 && e.download_attempts >= 5 {
+        Status::Damaged
     } else if e.enclosure_url.is_none() {
         Status::NoMedia
     } else if e.download_attempts >= 5 {
@@ -498,12 +516,15 @@ pub fn episode_list(
     downloading: &HashSet<i64>,
 ) -> Markup {
     let statuses: Vec<Status> = episodes.iter().map(|v| status_of(v, downloading)).collect();
+    // A replaced source file is fetched while the earlier copy stays published.
+    let refetching =
+        |view: &EpisodeView| view.episode.refetch && view.episode.download_attempts < 5;
     let busy = statuses.iter().any(|s| {
         matches!(
             s,
             Status::Downloading | Status::Queued | Status::Retrying(_)
         )
-    });
+    }) || episodes.iter().any(refetching);
     let poll_url = format!("/podcasts/{}/episodes", podcast.id);
     html! {
         section #episodes .panel.episodes
@@ -530,10 +551,22 @@ pub fn episode_list(
                                 @if e.removed_at.is_some() {
                                     span.tag title="This episode is no longer listed in the source feed" { "Gone from feed" }
                                 }
+                                @if refetching(view) {
+                                    span.tag title="The source replaced the media file; the new copy is being downloaded" { "Fetching new version" }
+                                }
+                                @if view.media_versions - view.media_damaged > 1 {
+                                    span.tag title="The source replaced the media file; earlier copies are kept in the archive and the newest is published" {
+                                        (view.media_versions - view.media_damaged) " versions"
+                                    }
+                                }
+                                @if view.media_damaged > 0 && view.media_size.is_some() {
+                                    span.tag.is-error title="An earlier copy failed its integrity check" { "Damaged copy" }
+                                }
                             }
                         }
                         @match status {
                             Status::Archived(size) => span.pill.is-ok title="Archived and hashed" { "Archived · " (format_bytes(*size)) },
+                            Status::Damaged => span.pill.is-error title="The archived file failed its integrity check and could not be downloaded again" { "Damaged" },
                             Status::Downloading => span.pill.is-busy { "Downloading" },
                             Status::Queued => span.pill { "Queued" },
                             Status::Retrying(error) => span.pill.is-warn title=(error) { "Retrying" },

@@ -230,6 +230,10 @@ body.centered { min-height: 100vh; display: grid; place-items: center; padding: 
 .stat-value { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .stat-value small { font-size: 1rem; font-weight: 500; color: var(--muted); }
 .stat-label { color: var(--muted); font-size: 0.85rem; }
+.stat.is-ok .stat-value { color: var(--ok); }
+.stat.is-error { border-color: var(--error); }
+.stat.is-error .stat-value { color: var(--error); }
+.tag.is-error { border-color: var(--error); color: var(--error); }
 .stat-actions { margin-left: auto; display: flex; align-items: center; }
 
 .grid { display: grid; gap: 22px; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }

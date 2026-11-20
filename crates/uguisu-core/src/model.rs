@@ -16,6 +16,7 @@ pub struct Podcast {
     pub cover_file: Option<String>,
     pub feed_token: String,
     pub include_removed: bool,
+    pub keep_versions: bool,
     pub etag: Option<String>,
     pub last_modified: Option<String>,
     pub created_at: i64,
@@ -57,6 +58,7 @@ pub struct Episode {
     pub download_attempts: i64,
     pub download_error: Option<String>,
     pub next_attempt_at: i64,
+    pub refetch: bool,
 }
 
 /// An episode joined with its newest intact media file, if any.
@@ -68,6 +70,10 @@ pub struct EpisodeView {
     pub media_size: Option<i64>,
     pub media_mime: Option<String>,
     pub media_blake3: Option<String>,
+    /// Number of archived copies, including superseded and damaged ones.
+    pub media_versions: i64,
+    /// Copies that failed their last integrity check.
+    pub media_damaged: i64,
 }
 
 impl EpisodeView {
@@ -99,4 +105,8 @@ pub struct Stats {
     pub episodes: i64,
     pub archived: i64,
     pub bytes: i64,
+    /// Files that failed their last integrity check.
+    pub damaged: i64,
+    /// The longest any intact file has gone without a check.
+    pub oldest_check: Option<i64>,
 }

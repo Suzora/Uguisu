@@ -13,9 +13,13 @@ Uguisu is not a player and does not sync listening progress. That is the job of 
 - **Archives for the long term.** Every distinct version of a source feed is stored byte for byte.
   Episodes that disappear from a feed stay in the archive and are marked, not deleted. Changes to
   titles and show notes are kept as revisions together with the raw `<item>` XML.
-- **Verifies its files.** Each media file is hashed with BLAKE3 while it is downloaded.
-  `uguisu verify` re-hashes the archive, reports damaged or missing files and queues them for a
-  new download.
+- **Verifies its files.** Each media file is hashed with BLAKE3 while it is downloaded. In the
+  background every file is re-hashed at least once in 30 days; the library shows whether the
+  archive is intact. `uguisu verify` checks everything at once. Damaged or missing files are
+  reported and queued for a new download.
+- **Keeps replaced audio.** Optionally per podcast: when the source replaces an episode's media
+  file, the new one is archived next to the earlier copies (`media.v2.mp3`, …) and the newest is
+  published. A file that only moved to a new address is not stored twice.
 - **Publishes the archive as feeds.** One feed per podcast behind a secret address, with the
   original episode GUIDs and support for range requests (seeking). An OPML export lists all
   archive feeds for import into a podcast app.
@@ -77,6 +81,7 @@ macOS.
 | `--base-url` | `UGUISU_BASE_URL` | derived from the request | Public address written into feeds |
 | `--refresh-minutes` | `UGUISU_REFRESH_MINUTES` | `60` | Interval between checks of each source feed |
 | `--download-concurrency` | `UGUISU_DOWNLOAD_CONCURRENCY` | `2` | Simultaneous downloads |
+| `--verify-days` | `UGUISU_VERIFY_DAYS` | `30` | Re-hash every file at least this often; `0` turns it off |
 | `--allow-private-networks` | `UGUISU_ALLOW_PRIVATE_NETWORKS` | off | Allow sources on local and private addresses |
 
 Commands: `uguisu serve` (default) and `uguisu verify`. `verify` exits with a non-zero status if
@@ -113,9 +118,8 @@ CI additionally runs [`cargo deny check`](https://github.com/EmbarkStudios/cargo
 
 ## Not there yet
 
-Podcast Index search (needs an API key), Atom feeds, paged feeds (RFC 5005), keeping several
-versions of an episode whose audio was replaced, transcripts and chapters, show-note images,
-scheduled verification, and passing through Podcasting 2.0
+Podcast Index search (needs an API key), Atom feeds, paged feeds (RFC 5005), transcripts and chapters, show-note images,
+and passing through Podcasting 2.0
 tags in the published feeds.
 
 ## License
