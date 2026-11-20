@@ -139,9 +139,9 @@ release workflow publishes the container image to `ghcr.io` and creates the GitH
 Starting the workflow by hand from the Actions page is a dry run that builds the image and
 publishes nothing.
 
-## Not there yet
+## Roadmap
 
-Podcast Index search (needs an API key), Atom feeds, and archiving images embedded in show notes.
+[PLAN.md](PLAN.md) lists what is done, what comes next, and what Uguisu will not do.
 
 ## License
 
