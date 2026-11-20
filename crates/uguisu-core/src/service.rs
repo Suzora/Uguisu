@@ -18,6 +18,8 @@ use crate::model::{Attachment, Episode, EpisodeView, FeedEpisode, Podcast, Podca
 use crate::util::{now, random_token, short_hash, slugify};
 use crate::{db, search};
 
+/// Version of the on-disk archive format, described in `docs/ARCHIVE.md`.
+pub const ARCHIVE_FORMAT: u64 = 1;
 const MAX_FEED_BYTES: usize = 64 * 1024 * 1024;
 /// Upper bound for the pages of one feed (RFC 5005); far beyond what real feeds use.
 const MAX_FEED_PAGES: usize = 500;
@@ -296,6 +298,31 @@ impl Uguisu {
         tokio::fs::create_dir_all(&archive_dir)
             .await
             .with_context(|| format!("cannot create {}", archive_dir.display()))?;
+        // The marker says which version of docs/ARCHIVE.md the archive follows. An archive
+        // written by a newer Uguisu is left alone rather than risked.
+        let marker = archive_dir.join("archive.json");
+        match tokio::fs::read(&marker).await {
+            Ok(bytes) => {
+                let format = serde_json::from_slice::<serde_json::Value>(&bytes)
+                    .ok()
+                    .and_then(|value| value["format"].as_u64())
+                    .with_context(|| format!("cannot read {}", marker.display()))?;
+                if format > ARCHIVE_FORMAT {
+                    bail!(
+                        "the archive in {} has format version {format}, this version of Uguisu \
+                         knows up to {ARCHIVE_FORMAT}; use a newer Uguisu",
+                        archive_dir.display()
+                    );
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let content = serde_json::json!({ "format": ARCHIVE_FORMAT, "software": "Uguisu" });
+                write_atomic(&marker, &serde_json::to_vec_pretty(&content)?).await?;
+            }
+            Err(error) => {
+                return Err(error).with_context(|| format!("cannot read {}", marker.display()));
+            }
+        }
         let pool = db::open(&cfg.data_dir.join("uguisu.db")).await?;
         let client = build_client(&cfg.user_agent, cfg.allow_private_networks)?;
         Ok(Self {

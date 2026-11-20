@@ -1057,3 +1057,26 @@ async fn feeds_with_credentials_are_archived_without_leaking_them() {
     let xml = rss::build_feed(&podcast, &published, &[], "https://archive.example");
     assert!(!xml.contains("secret"));
 }
+
+/// The archive carries its format version, and a newer archive is not touched.
+#[tokio::test]
+async fn the_archive_states_its_format() {
+    let data = tempfile::tempdir().unwrap();
+    let marker = data.path().join("archive/archive.json");
+    drop(Uguisu::open(Config::new(data.path())).await.unwrap());
+    let content: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&marker).unwrap()).unwrap();
+    assert_eq!(content["format"], 1);
+    // Opening again is fine and leaves the marker alone.
+    drop(Uguisu::open(Config::new(data.path())).await.unwrap());
+
+    std::fs::write(&marker, r#"{ "format": 2, "software": "Uguisu" }"#).unwrap();
+    let error = Uguisu::open(Config::new(data.path()))
+        .await
+        .err()
+        .expect("a newer archive must be refused");
+    assert!(
+        format!("{error:#}").contains("format version 2"),
+        "{error:#}"
+    );
+}
