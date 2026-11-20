@@ -707,12 +707,11 @@ async fn the_feed_is_found_from_the_web_page() {
 async fn interrupted_downloads_are_continued() {
     use axum::body::{Body, Bytes};
     use axum::http::{HeaderMap, StatusCode, header};
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
     const AUDIO: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
     // What each request asked for, as the `Range` header or "-" without one.
     let requests: Arc<Mutex<Vec<String>>> = Arc::default();
-    let failures = Arc::new(AtomicUsize::new(2));
+    let failures = Arc::new(Mutex::new(2u32));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
@@ -753,9 +752,12 @@ async fn interrupted_downloads_are_continued() {
                             None => 0,
                         };
                         // The first two answers break off after ten bytes.
-                        let fail = failures
-                            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
-                            .is_ok();
+                        let fail = {
+                            let mut left = failures.lock().unwrap();
+                            let fail = *left > 0;
+                            *left = left.saturating_sub(1);
+                            fail
+                        };
                         let end = if fail { start + 10 } else { AUDIO.len() };
                         let mut chunks: Vec<Result<Bytes, std::io::Error>> =
                             vec![Ok(Bytes::from_static(&AUDIO[start..end]))];
