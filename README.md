@@ -15,6 +15,7 @@ Uguisu is not a player and does not sync listening progress. That is the job of 
 ## What it does
 
 - **Archives for the long term.** Every distinct version of a source feed is stored byte for byte.
+  Feeds that are split into pages (RFC 5005) are read to the last page.
   Episodes that disappear from a feed stay in the archive and are marked, not deleted. Changes to
   titles and show notes are kept as revisions together with the raw `<item>` XML.
 - **Verifies its files.** Each media file is hashed with BLAKE3 while it is downloaded. In the
@@ -138,10 +139,9 @@ release workflow publishes the container image to `ghcr.io` and creates the GitH
 Starting the workflow by hand from the Actions page is a dry run that builds the image and
 publishes nothing.
 
-## Not there yet
+## Roadmap
 
-Podcast Index search (needs an API key), Atom feeds, paged feeds (RFC 5005), and archiving images
-embedded in show notes.
+[PLAN.md](PLAN.md) lists what is done, what comes next, and what Uguisu will not do.
 
 ## License
 

@@ -9,6 +9,7 @@ use roxmltree::{Document, Node, ParsingOptions};
 const NS_ITUNES: &str = "http://www.itunes.com/dtds/podcast-1.0.dtd";
 const NS_PODCAST: &str = "https://podcastindex.org/namespace/1.0";
 const NS_CONTENT: &str = "http://purl.org/rss/1.0/modules/content/";
+const NS_ATOM: &str = "http://www.w3.org/2005/Atom";
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ParsedFeed {
@@ -20,6 +21,9 @@ pub struct ParsedFeed {
     pub language: Option<String>,
     pub podcast_guid: Option<String>,
     pub new_feed_url: Option<String>,
+    /// Address of the page with the next older episodes, if the feed is split into pages
+    /// (RFC 5005). May be relative to the address of this page.
+    pub next_page: Option<String>,
     /// Namespace declarations of the root element as `(prefix, uri)`; the default namespace
     /// has an empty prefix.
     pub namespaces: Vec<(String, String)>,
@@ -132,6 +136,26 @@ fn item_links(item: Node) -> Vec<ItemLink> {
     links
 }
 
+/// A paged feed links its next page with `rel="next"`, an archived feed its previous archive
+/// document with `rel="prev-archive"`. Both lead to older episodes.
+fn next_page(channel: Node) -> Option<String> {
+    let link = |rel: &str| {
+        channel
+            .children()
+            .filter(|c| {
+                c.is_element()
+                    && c.tag_name().name() == "link"
+                    && ns_matches(c.tag_name().namespace(), Some(NS_ATOM))
+            })
+            .find(|c| {
+                c.attribute("rel")
+                    .is_some_and(|r| r.trim().eq_ignore_ascii_case(rel))
+            })
+            .and_then(|c| attr(c, "href"))
+    };
+    link("next").or_else(|| link("prev-archive"))
+}
+
 fn ns_matches(actual: Option<&str>, wanted: Option<&str>) -> bool {
     match (actual, wanted) {
         (None, None) => true,
@@ -232,6 +256,7 @@ pub fn parse(bytes: &[u8]) -> Result<ParsedFeed> {
         language: child_text(channel, None, "language"),
         podcast_guid: child_text(channel, Some(NS_PODCAST), "guid"),
         new_feed_url: child_text(channel, Some(NS_ITUNES), "new-feed-url"),
+        next_page: next_page(channel),
         namespaces: root
             .namespaces()
             .filter(|ns| ns.name() != Some("xml"))
@@ -415,6 +440,28 @@ mod tests {
                 ("chapters", "https://cdn.example.org/2.json"),
                 ("image", "https://cdn.example.org/2.jpg"),
             ]
+        );
+    }
+
+    #[test]
+    fn finds_the_next_page() {
+        let page = |links: &str| {
+            let xml = format!(
+                r#"<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel>
+<title>Paged</title><link>https://example.org</link>{links}</channel></rss>"#
+            );
+            parse(xml.as_bytes()).unwrap().next_page
+        };
+        assert_eq!(page(r#"<atom:link rel="self" href="/feed"/>"#), None);
+        assert_eq!(
+            page(
+                r#"<atom:link rel="self" href="/feed"/><atom:link rel="next" href="/feed?page=2"/>"#
+            ),
+            Some("/feed?page=2".into())
+        );
+        assert_eq!(
+            page(r#"<atom:link rel="prev-archive" href="https://example.org/2023.xml"/>"#),
+            Some("https://example.org/2023.xml".into())
         );
     }
 

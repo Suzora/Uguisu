@@ -19,6 +19,8 @@ use crate::util::{now, random_token, short_hash, slugify};
 use crate::{db, search};
 
 const MAX_FEED_BYTES: usize = 64 * 1024 * 1024;
+/// Upper bound for the pages of one feed (RFC 5005); far beyond what real feeds use.
+const MAX_FEED_PAGES: usize = 500;
 const MAX_COVER_BYTES: usize = 32 * 1024 * 1024;
 const MAX_ATTACHMENT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_DOWNLOAD_ATTEMPTS: i64 = 5;
@@ -142,6 +144,16 @@ enum Fetched {
         etag: Option<String>,
         last_modified: Option<String>,
     },
+}
+
+/// A source feed with all of its pages.
+struct FetchedFeed {
+    /// The first page, with the episodes and namespaces of the further pages merged in.
+    parsed: ParsedFeed,
+    /// Every page exactly as served, the first one first.
+    pages: Vec<Vec<u8>>,
+    etag: Option<String>,
+    last_modified: Option<String>,
 }
 
 #[derive(FromRow)]
@@ -408,15 +420,10 @@ impl Uguisu {
             return Ok(id);
         }
 
-        let Fetched::Body {
-            bytes,
-            etag,
-            last_modified,
-        } = self.fetch_feed(url, None, None).await?
-        else {
+        let Some(fetched) = self.fetch_all(url, None, None).await? else {
             bail!("the server answered 'not modified' to an unconditional request");
         };
-        let parsed = feed::parse(&bytes)?;
+        let parsed = &fetched.parsed;
 
         if let Some(guid) = &parsed.podcast_guid {
             let existing: Option<i64> =
@@ -443,9 +450,8 @@ impl Uguisu {
         .fetch_one(self.pool())
         .await?;
 
-        self.ingest(id, &parsed, &bytes, etag, last_modified)
-            .await?;
         tracing::info!(podcast = %parsed.title, episodes = parsed.items.len(), "podcast added");
+        self.ingest(id, fetched).await?;
         Ok(id)
     }
 
@@ -487,14 +493,14 @@ impl Uguisu {
             .await?
             .context("podcast not found")?;
         let fetched = self
-            .fetch_feed(
+            .fetch_all(
                 &podcast.feed_url,
                 podcast.etag.as_deref(),
                 podcast.last_modified.as_deref(),
             )
             .await?;
         match fetched {
-            Fetched::NotModified => {
+            None => {
                 sqlx::query(
                     "UPDATE podcasts SET last_fetched_at = ?, last_fetch_error = NULL WHERE id = ?",
                 )
@@ -505,16 +511,75 @@ impl Uguisu {
                 self.inner.wake_downloader.notify_one();
                 Ok(())
             }
-            Fetched::Body {
-                bytes,
-                etag,
-                last_modified,
-            } => {
-                let parsed = feed::parse(&bytes)?;
-                self.ingest(podcast_id, &parsed, &bytes, etag, last_modified)
-                    .await
-            }
+            Some(fetched) => self.ingest(podcast_id, fetched).await,
         }
+    }
+
+    /// Fetches a feed and, if it is split into pages, every further page. `None` means the
+    /// first page has not changed since the given validators were issued.
+    ///
+    /// A page that cannot be fetched fails the whole request: an incomplete feed would make
+    /// the episodes of the missing pages look removed.
+    async fn fetch_all(
+        &self,
+        url: &str,
+        etag: Option<&str>,
+        last_modified: Option<&str>,
+    ) -> Result<Option<FetchedFeed>> {
+        let Fetched::Body {
+            bytes,
+            etag,
+            last_modified,
+        } = self.fetch_feed(url, etag, last_modified).await?
+        else {
+            return Ok(None);
+        };
+        let mut parsed = feed::parse(&bytes)?;
+        let mut pages = vec![bytes];
+
+        let mut current = reqwest::Url::parse(url)?;
+        let mut visited: HashSet<String> = HashSet::from([current.to_string()]);
+        let mut guids: HashSet<String> = parsed.items.iter().map(|i| i.guid.clone()).collect();
+        let mut next = parsed.next_page.take();
+        while let Some(link) = next {
+            let Ok(target) = current.join(&link) else {
+                break;
+            };
+            // A link back to a page that was already read ends the chain.
+            if !visited.insert(target.to_string()) {
+                break;
+            }
+            if pages.len() >= MAX_FEED_PAGES {
+                bail!("the feed has more than {MAX_FEED_PAGES} pages");
+            }
+            check_url(&target, self.inner.cfg.allow_private_networks)
+                .with_context(|| format!("page {} of the feed", pages.len() + 1))?;
+            let Fetched::Body { bytes, .. } = self.fetch_feed(target.as_str(), None, None).await?
+            else {
+                bail!("the server answered 'not modified' to an unconditional request");
+            };
+            let page = feed::parse(&bytes)
+                .with_context(|| format!("page {} of the feed ({target})", pages.len() + 1))?;
+            pages.push(bytes);
+            for namespace in page.namespaces {
+                if !parsed.namespaces.iter().any(|(p, _)| *p == namespace.0) {
+                    parsed.namespaces.push(namespace);
+                }
+            }
+            for item in page.items {
+                if guids.insert(item.guid.clone()) {
+                    parsed.items.push(item);
+                }
+            }
+            next = page.next_page;
+            current = target;
+        }
+        Ok(Some(FetchedFeed {
+            parsed,
+            pages,
+            etag,
+            last_modified,
+        }))
     }
 
     async fn fetch_feed(
@@ -569,14 +634,14 @@ impl Uguisu {
     }
 
     /// Stores a fetched feed: snapshot on disk, podcast metadata, episodes and their revisions.
-    async fn ingest(
-        &self,
-        podcast_id: i64,
-        parsed: &ParsedFeed,
-        bytes: &[u8],
-        etag: Option<String>,
-        last_modified: Option<String>,
-    ) -> Result<()> {
+    async fn ingest(&self, podcast_id: i64, fetched: FetchedFeed) -> Result<()> {
+        let FetchedFeed {
+            parsed,
+            pages,
+            etag,
+            last_modified,
+        } = fetched;
+        let parsed = &parsed;
         let podcast = self
             .podcast(podcast_id)
             .await?
@@ -584,17 +649,22 @@ impl Uguisu {
         let now = now();
         let podcast_dir = self.archive_path(&podcast.dir);
 
-        // 1. Keep the feed exactly as served, once per distinct content.
-        let hash = blake3::hash(bytes).to_hex().to_string();
-        let known: Option<i64> =
-            sqlx::query_scalar("SELECT id FROM feed_snapshots WHERE podcast_id = ? AND blake3 = ?")
-                .bind(podcast_id)
-                .bind(&hash)
-                .fetch_optional(self.pool())
-                .await?;
-        if known.is_none() {
-            let stamp =
-                crate::util::format_utc(now, "%Y%m%dT%H%M%SZ").unwrap_or_else(|| now.to_string());
+        // 1. Keep the feed exactly as served, once per distinct content. A paged feed is kept
+        //    page by page.
+        let stamp =
+            crate::util::format_utc(now, "%Y%m%dT%H%M%SZ").unwrap_or_else(|| now.to_string());
+        for bytes in &pages {
+            let hash = blake3::hash(bytes).to_hex().to_string();
+            let known: Option<i64> = sqlx::query_scalar(
+                "SELECT id FROM feed_snapshots WHERE podcast_id = ? AND blake3 = ?",
+            )
+            .bind(podcast_id)
+            .bind(&hash)
+            .fetch_optional(self.pool())
+            .await?;
+            if known.is_some() {
+                continue;
+            }
             let relative = format!("{}/feeds/{stamp}-{}.xml", podcast.dir, &hash[..8]);
             write_atomic(&self.archive_path(&relative), bytes).await?;
             sqlx::query(
