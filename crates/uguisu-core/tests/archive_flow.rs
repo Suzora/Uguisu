@@ -907,3 +907,55 @@ async fn sources_are_treated_politely() {
         );
     }
 }
+
+/// Images shown in the show notes are archived, and the published notes show the copies.
+#[tokio::test]
+async fn images_in_show_notes_are_archived() {
+    let notes = r#"<item><title>Pictures</title><guid>ep-1</guid>
+<pubDate>Mon, 01 Jan 2024 10:00:00 +0000</pubDate>
+<description><![CDATA[<p><img src="BASE/files/photo.png?w=600&amp;fit=1" alt="A photo">
+<img src="BASE/files/missing.png"> <img src="BASE/files/pixel"></p>]]></description>
+<enclosure url="BASE/audio/1.mp3" type="audio/mpeg" length="10"/></item>"#;
+    let base = start_source(Arc::new(Mutex::new(feed(notes)))).await;
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = Config::new(data.path());
+    cfg.allow_private_networks = true;
+    cfg.host_pause = std::time::Duration::ZERO;
+    let uguisu = Uguisu::open(cfg).await.unwrap();
+    let id = uguisu
+        .add_podcast(&format!("{base}/feed.xml"))
+        .await
+        .unwrap();
+    uguisu.download_pending().await.unwrap();
+
+    // The photo is archived; the missing file and the thing that is no image are not.
+    let attachments = uguisu.attachments(id).await.unwrap();
+    assert_eq!(attachments.len(), 1);
+    let photo = &attachments[0];
+    assert!(photo.file_name().starts_with("notes-image-"));
+    assert!(photo.file_name().ends_with(".png"));
+    assert_eq!(
+        std::fs::read_to_string(uguisu.archive_path(&photo.path)).unwrap(),
+        "content of photo.png"
+    );
+
+    let podcast = uguisu.podcast(id).await.unwrap().unwrap();
+    let published = uguisu.feed_episodes(id).await.unwrap();
+    let xml = rss::build_feed(
+        &podcast,
+        &published,
+        &attachments,
+        "https://archive.example",
+    );
+    let archived = rss::attachment_url("https://archive.example", &podcast.feed_token, photo);
+    assert!(
+        xml.contains(&format!("<img src=\"{archived}\" alt=\"A photo\">")),
+        "{xml}"
+    );
+    assert!(!xml.contains("photo.png?w=600"));
+    assert!(
+        xml.contains(&format!("{base}/files/missing.png")),
+        "what could not be archived keeps its source address"
+    );
+    assert!(uguisu_core::feed::parse(xml.as_bytes()).is_ok());
+}

@@ -30,9 +30,9 @@ Uguisu is not a player and does not sync listening progress. That is the job of 
   published as the original feed entries – show notes, chapters, transcripts and other
   Podcasting 2.0 tags included – with the media address pointing at the archive. Range requests
   (seeking) are supported.
-- **Archives what an episode links to.** Transcripts, chapter files and episode images are
-  stored next to the media file, checked like it, and the published feed points at the archived
-  copies.
+- **Archives what an episode links to.** Transcripts, chapter files, episode images and the
+  images shown in the show notes are stored next to the media file, checked like it, and the
+  published feed points at the archived copies.
 - **Is a polite guest.** Requests to the same server are at least a second apart, and a server
   that asks for a break (`Retry-After`) gets it, without the wait counting as a failure.
 - **Takes input the easy way.** Search podcast directories (iTunes and fyyd), paste a feed
@@ -58,7 +58,8 @@ data/
         media.mp3                        the episode
         media.mp3.blake3                 checksum, usable with `b3sum -c`
         transcript-<hash>.vtt            files the episode links to: transcripts,
-        chapters-<hash>.json             chapters and its own image
+        chapters-<hash>.json             chapters, its own image and the images
+        notes-image-<hash>.png           in its show notes
 ```
 
 ## Running with Docker
