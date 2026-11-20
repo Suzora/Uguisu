@@ -72,6 +72,9 @@ enum Command {
     Serve,
     /// Re-hash every archived file and report damaged or missing ones.
     Verify,
+    /// Rebuild the database from the archive on disk. Needs an empty database: stop Uguisu and
+    /// move `uguisu.db` away first.
+    Reindex,
     /// Ask the running instance whether it answers; exits with 0 if it does. Used by the
     /// container health check, where no other HTTP client is available.
     Healthcheck,
@@ -148,6 +151,24 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         Command::Healthcheck => unreachable!("handled before the archive is opened"),
+        Command::Reindex => {
+            let report = app.reindex().await?;
+            for problem in &report.problems {
+                println!("SKIPPED  {problem}");
+            }
+            println!(
+                "{} podcasts, {} episodes and {} files indexed, {} entries skipped",
+                report.podcasts,
+                report.episodes,
+                report.files,
+                report.problems.len()
+            );
+            Ok(if report.problems.is_empty() {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            })
+        }
         Command::Verify => {
             let report = app.verify().await?;
             for path in &report.corrupt {

@@ -83,9 +83,9 @@ The promise "readable without Uguisu" is made good and tested.
       (`archive.json` in the archive root).
 - [x] Close the gaps in the files on disk, part 1: `episode.json` lists the episode's files with
       their checksums and says whether the episode is still in the feed (archive format 2).
-- [~] Close the gaps, part 2: earlier states of a feed entry per episode, and the settings and
+- [x] Close the gaps, part 2: earlier states of a feed entry per episode, and the settings and
       feed addresses per podcast.
-- [ ] `uguisu reindex`: rebuild the database completely from the archive on disk. Test: delete
+- [~] `uguisu reindex`: rebuild the database completely from the archive on disk. Test: delete
       the database, reindex, the published feeds are identical.
 - [ ] `uguisu import <directory>`: take over an existing collection of files with its feed.
 - [ ] Repair: re-download a damaged file and keep the damaged copy until the new one is
