@@ -38,3 +38,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: crate-ci/typos@v1
+
+  # The container image is the main way to run Uguisu: build it and see it come up healthy.
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t uguisu:ci .
+      - name: Start the container and wait for its health check
+        run: |
+          docker run -d --name uguisu uguisu:ci
+          for attempt in $(seq 1 30); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' uguisu)
+            [ "$status" = "healthy" ] && exit 0
+            sleep 2
+          done
+          docker logs uguisu
+          echo "container did not become healthy (last status: $status)"
+          exit 1

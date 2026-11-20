@@ -62,11 +62,15 @@ docker compose up -d --build
 ```
 
 Then open <http://localhost:8484> and choose a password. The container runs as an unprivileged
-user (uid 65532); for the bind mount in `compose.yaml` make the directory writable for it:
+user (uid 65532) and needs to write to the mounted directory. For the bind mount in `compose.yaml`
+create it before the first start:
 
 ```bash
 mkdir -p data && sudo chown 65532:65532 data
 ```
+
+Alternatively set `user:` in `compose.yaml` to your own uid and gid; the file shows how. The image
+has a health check, so `docker ps` shows whether the instance answers.
 
 Set `UGUISU_BASE_URL` to the address your podcast app will use to reach Uguisu. Put a reverse
 proxy with HTTPS in front of it if the instance is reachable from outside your network.

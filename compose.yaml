@@ -9,5 +9,8 @@ services:
     environment:
       # Public address of this instance; it is written into the published feeds.
       UGUISU_BASE_URL: "http://localhost:8484"
-    # The container runs as uid 65532. For a bind mount, make ./data writable for it:
+    # The container runs as uid 65532 and needs to write to ./data. Before the first start:
     #   mkdir -p data && sudo chown 65532:65532 data
+    # Alternatively run it as your own user by uncommenting the next line with your uid and gid
+    # (see `id -u` and `id -g`); then ./data only has to belong to you.
+    # user: "1000:1000"
