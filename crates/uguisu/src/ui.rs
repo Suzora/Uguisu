@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 use uguisu_core::model::{EpisodeView, Podcast, PodcastSummary, Stats};
 use uguisu_core::rss::media_url;
-use uguisu_core::search::SearchHit;
+use uguisu_core::search::{Provider, SearchHit};
 
 const LOGO: &str = include_str!("../assets/logo.svg");
 
@@ -287,8 +287,7 @@ pub fn add_page(error: Option<&str>, url: &str) -> Markup {
                 h2 { "Search" }
                 input.search type="search" name="q" placeholder="Search podcast directories…" autocomplete="off" autofocus
                     hx-get="/search" hx-trigger="input changed delay:400ms, search" hx-target="#results"
-                    hx-indicator="#search-indicator";
-                p #search-indicator .muted.indicator { "Searching…" }
+                    hx-sync="this:replace";
                 div #results {}
             }
 
@@ -314,30 +313,60 @@ pub fn add_page(error: Option<&str>, url: &str) -> Markup {
     )
 }
 
-pub fn search_results(hits: &[SearchHit], error: Option<&str>, query: &str) -> Markup {
+/// One self-loading section per directory.
+pub fn search_placeholders(query: &str) -> Markup {
     html! {
-        @if let Some(error) = error {
-            p.notice.is-error role="alert" { (error) }
-        } @else if hits.is_empty() && query.chars().count() >= 2 {
-            p.muted { "Nothing found for “" (query) "”." }
-        } @else {
-            div.results {
-                @for hit in hits {
-                    form.result method="post" action="/podcasts" {
-                        @if let Some(image) = hit.image_url.as_deref().filter(|u| u.starts_with("https://")) {
-                            img.result-cover src=(image) alt="" loading="lazy" referrerpolicy="no-referrer";
-                        } @else {
-                            div.result-cover.is-placeholder aria-hidden="true" { (hit.title.chars().next().unwrap_or('?')) }
-                        }
-                        div.result-body {
-                            strong { (hit.title) }
-                            @if let Some(author) = &hit.author { span.muted { (author) } }
-                            span.muted.small { "via " (hit.provider) }
-                        }
-                        input type="hidden" name="url" value=(hit.feed_url);
-                        button.button.is-primary type="submit" { "Archive" }
-                    }
+        @if query.chars().count() >= 2 {
+            @for provider in Provider::ALL {
+                div.provider-results
+                    hx-get=(format!("/search/{}", provider.key())) hx-vals=(serde_query(query))
+                    hx-trigger="load" hx-swap="outerHTML" {
+                    p.muted.searching { "Searching " (provider.name()) "…" }
                 }
+            }
+        }
+    }
+}
+
+fn serde_query(query: &str) -> String {
+    // JSON object for hx-vals; maud escapes it for the attribute.
+    let mut escaped = String::with_capacity(query.len() + 8);
+    for c in query.chars() {
+        match c {
+            '"' => escaped.push_str("\\\""),
+            '\\' => escaped.push_str("\\\\"),
+            c if (c as u32) < 0x20 => escaped.push(' '),
+            c => escaped.push(c),
+        }
+    }
+    format!("{{\"q\":\"{escaped}\"}}")
+}
+
+/// Results of one directory; `None` means the directory could not be reached.
+pub fn provider_results(provider: Provider, hits: Option<&[SearchHit]>) -> Markup {
+    html! {
+        div.provider-results {
+            @match hits {
+                None => p.muted.small { (provider.name()) " did not answer." },
+                Some([]) => p.muted.small { "No further results from " (provider.name()) "." },
+                Some(hits) => div.results {
+                    @for hit in hits {
+                        form.result method="post" action="/podcasts" {
+                            @if let Some(image) = hit.image_url.as_deref().filter(|u| u.starts_with("https://")) {
+                                img.result-cover src=(image) alt="" loading="lazy" referrerpolicy="no-referrer";
+                            } @else {
+                                div.result-cover.is-placeholder aria-hidden="true" { (hit.title.chars().next().unwrap_or('?')) }
+                            }
+                            div.result-body {
+                                strong { (hit.title) }
+                                @if let Some(author) = &hit.author { span.muted { (author) } }
+                                span.muted.small { "via " (hit.provider) }
+                            }
+                            input type="hidden" name="url" value=(hit.feed_url);
+                            button.button.is-primary type="submit" { "Archive" }
+                        }
+                    }
+                },
             }
         }
     }
@@ -535,6 +564,12 @@ mod tests {
         assert_eq!(format_duration(3723), "1:02:03");
         assert_eq!(percent(1, 3), 33);
         assert_eq!(percent(0, 0), 0);
+    }
+
+    #[test]
+    fn query_becomes_valid_json() {
+        assert_eq!(serde_query("radio lab"), r#"{"q":"radio lab"}"#);
+        assert_eq!(serde_query(r#"a"b\c"#), r#"{"q":"a\"b\\c"}"#);
     }
 
     #[test]

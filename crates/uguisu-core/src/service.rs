@@ -96,6 +96,7 @@ struct Inner {
     client: reqwest::Client,
     wake_downloader: Notify,
     downloading: Mutex<HashSet<i64>>,
+    search_cache: Mutex<search::SearchCache>,
 }
 
 #[derive(Clone)]
@@ -143,6 +144,7 @@ impl Uguisu {
                 client,
                 wake_downloader: Notify::new(),
                 downloading: Mutex::new(HashSet::new()),
+                search_cache: Mutex::new(search::SearchCache::default()),
             }),
         })
     }
@@ -232,8 +234,23 @@ impl Uguisu {
         self.inner.downloading.lock().unwrap().clone()
     }
 
-    pub async fn search(&self, query: &str) -> Result<Vec<search::SearchHit>> {
-        search::search(&self.inner.client, query).await
+    /// Searches one directory. Results are cached for a few minutes, and feeds that another
+    /// provider already returned for the same query are left out.
+    pub async fn search(
+        &self,
+        provider: search::Provider,
+        query: &str,
+    ) -> Result<Vec<search::SearchHit>> {
+        if let Some(hits) = self.inner.search_cache.lock().unwrap().get(provider, query) {
+            return Ok(hits);
+        }
+        let hits = search::search_provider(&self.inner.client, provider, query).await?;
+        Ok(self
+            .inner
+            .search_cache
+            .lock()
+            .unwrap()
+            .store(provider, query, hits))
     }
 
     // ── Adding and refreshing ──────────────────────────────────────────────────────────────

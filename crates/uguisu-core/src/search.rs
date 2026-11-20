@@ -1,15 +1,18 @@
 //! Podcast search across directory providers.
 //!
 //! A search only ever produces feed URLs; the feed URL stays the single canonical input of the
-//! archive. A provider is one function that fetches and one that parses; both are listed in
-//! [`search`].
+//! archive. A provider is a variant of [`Provider`] plus one function that fetches and one that
+//! parses.
 
-use std::time::Duration;
+use std::collections::HashSet;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
-const TIMEOUT: Duration = Duration::from_secs(15);
+const ITUNES_TIMEOUT: Duration = Duration::from_secs(15);
+// fyyd has been observed to take around 30 seconds for a search.
+const FYYD_TIMEOUT: Duration = Duration::from_secs(45);
 const RESULTS_PER_PROVIDER: &str = "20";
 
 #[derive(Debug, Clone, PartialEq)]
@@ -21,29 +24,46 @@ pub struct SearchHit {
     pub provider: &'static str,
 }
 
-/// Queries all providers at the same time and merges the results.
-/// A failing provider is logged and skipped; an error is returned only if all of them fail.
-pub async fn search(client: &reqwest::Client, query: &str) -> Result<Vec<SearchHit>> {
-    let query = query.trim();
-    if query.is_empty() {
-        return Ok(Vec::new());
-    }
-    let (itunes, fyyd) = tokio::join!(itunes(client, query), fyyd(client, query));
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Provider {
+    Itunes,
+    Fyyd,
+}
 
-    let mut lists = Vec::new();
-    let mut last_error = None;
-    for (provider, result) in [("iTunes", itunes), ("fyyd", fyyd)] {
-        match result {
-            Ok(hits) => lists.push(hits),
-            Err(e) => {
-                tracing::warn!("search provider {provider} failed: {e:#}");
-                last_error = Some(e);
-            }
+impl Provider {
+    pub const ALL: [Provider; 2] = [Provider::Itunes, Provider::Fyyd];
+
+    /// Name shown to the user.
+    pub fn name(self) -> &'static str {
+        match self {
+            Provider::Itunes => "iTunes",
+            Provider::Fyyd => "fyyd",
         }
     }
-    match (lists.is_empty(), last_error) {
-        (true, Some(e)) => Err(e),
-        _ => Ok(merge(lists)),
+
+    /// Stable identifier used in URLs.
+    pub fn key(self) -> &'static str {
+        match self {
+            Provider::Itunes => "itunes",
+            Provider::Fyyd => "fyyd",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|p| p.key() == key)
+    }
+}
+
+/// Queries one provider. Providers are queried separately so that a slow directory never holds
+/// back the results of a fast one.
+pub async fn search_provider(
+    client: &reqwest::Client,
+    provider: Provider,
+    query: &str,
+) -> Result<Vec<SearchHit>> {
+    match provider {
+        Provider::Itunes => itunes(client, query).await,
+        Provider::Fyyd => fyyd(client, query).await,
     }
 }
 
@@ -61,24 +81,77 @@ fn dedup_key(feed_url: &str) -> String {
     )
 }
 
-/// Interleaves the provider lists (best hit of each first) and drops duplicate feeds.
-fn merge(lists: Vec<Vec<SearchHit>>) -> Vec<SearchHit> {
-    let mut merged: Vec<SearchHit> = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    let mut iterators: Vec<_> = lists.into_iter().map(Vec::into_iter).collect();
-    loop {
-        let mut any = false;
-        for iterator in &mut iterators {
-            if let Some(hit) = iterator.next() {
-                any = true;
-                if seen.insert(dedup_key(&hit.feed_url)) {
-                    merged.push(hit);
-                }
-            }
+const CACHE_TTL: Duration = Duration::from_secs(600);
+const CACHE_ENTRIES: usize = 64;
+
+/// Remembers recent results per provider and query.
+///
+/// It serves two purposes: repeated searches do not hit the directories again (they rate-limit),
+/// and a feed that one provider already returned for a query is not shown a second time when
+/// another provider answers later.
+#[derive(Default)]
+pub struct SearchCache {
+    entries: Vec<CacheEntry>,
+}
+
+struct CacheEntry {
+    provider: Provider,
+    query: String,
+    stored: Instant,
+    hits: Vec<SearchHit>,
+}
+
+fn normalize_query(query: &str) -> String {
+    query
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+impl SearchCache {
+    pub fn get(&mut self, provider: Provider, query: &str) -> Option<Vec<SearchHit>> {
+        let query = normalize_query(query);
+        self.entries.retain(|e| e.stored.elapsed() < CACHE_TTL);
+        self.entries
+            .iter()
+            .find(|e| e.provider == provider && e.query == query)
+            .map(|e| e.hits.clone())
+    }
+
+    /// Stores a provider's results and returns them without the feeds that another provider
+    /// already delivered for the same query. Whoever answers first keeps the hit.
+    pub fn store(
+        &mut self,
+        provider: Provider,
+        query: &str,
+        hits: Vec<SearchHit>,
+    ) -> Vec<SearchHit> {
+        let query = normalize_query(query);
+        self.entries.retain(|e| {
+            e.stored.elapsed() < CACHE_TTL && !(e.provider == provider && e.query == query)
+        });
+        let taken: HashSet<String> = self
+            .entries
+            .iter()
+            .filter(|e| e.query == query)
+            .flat_map(|e| e.hits.iter().map(|h| dedup_key(&h.feed_url)))
+            .collect();
+        let mut seen = taken;
+        let hits: Vec<SearchHit> = hits
+            .into_iter()
+            .filter(|h| seen.insert(dedup_key(&h.feed_url)))
+            .collect();
+        if self.entries.len() >= CACHE_ENTRIES {
+            self.entries.remove(0);
         }
-        if !any {
-            return merged;
-        }
+        self.entries.push(CacheEntry {
+            provider,
+            query,
+            stored: Instant::now(),
+            hits: hits.clone(),
+        });
+        hits
     }
 }
 
@@ -114,7 +187,7 @@ async fn itunes(client: &reqwest::Client, query: &str) -> Result<Vec<SearchHit>>
             ("limit", RESULTS_PER_PROVIDER),
             ("term", query),
         ])
-        .timeout(TIMEOUT)
+        .timeout(ITUNES_TIMEOUT)
         .send()
         .await
         .context("iTunes search is unreachable")?
@@ -169,7 +242,7 @@ async fn fyyd(client: &reqwest::Client, query: &str) -> Result<Vec<SearchHit>> {
     let body = client
         .get("https://api.fyyd.de/0.2/search/podcast")
         .query(&[("title", query), ("count", RESULTS_PER_PROVIDER)])
-        .timeout(TIMEOUT)
+        .timeout(FYYD_TIMEOUT)
         .send()
         .await
         .context("fyyd search is unreachable")?
@@ -267,19 +340,49 @@ mod tests {
     }
 
     #[test]
-    fn merges_and_deduplicates() {
-        let merged = merge(vec![
+    fn cache_deduplicates_across_providers() {
+        let mut cache = SearchCache::default();
+        assert!(cache.get(Provider::Itunes, "birds").is_none());
+        let first = cache.store(
+            Provider::Itunes,
+            "Birds",
             vec![
                 hit("A", "https://Feeds.Example/a/", "iTunes"),
                 hit("B", "https://feeds.example/b", "iTunes"),
+                hit("B twice", "https://feeds.example/b", "iTunes"),
             ],
+        );
+        assert_eq!(first.len(), 2);
+        let second = cache.store(
+            Provider::Fyyd,
+            "  birds ",
             vec![
-                hit("C", "https://feeds.example/c", "fyyd"),
                 hit("A again", "http://feeds.example/a", "fyyd"),
-                hit("D", "https://feeds.example/d", "fyyd"),
+                hit("C", "https://feeds.example/c", "fyyd"),
             ],
-        ]);
-        let titles: Vec<&str> = merged.iter().map(|h| h.title.as_str()).collect();
-        assert_eq!(titles, ["A", "C", "B", "D"]);
+        );
+        let titles: Vec<&str> = second.iter().map(|h| h.title.as_str()).collect();
+        assert_eq!(
+            titles,
+            ["C"],
+            "a feed another provider already showed is dropped"
+        );
+        assert_eq!(cache.get(Provider::Fyyd, "BIRDS").unwrap().len(), 1);
+        assert_eq!(cache.get(Provider::Itunes, "birds").unwrap().len(), 2);
+        // A different query is unaffected.
+        let other = cache.store(
+            Provider::Fyyd,
+            "owls",
+            vec![hit("A", "https://feeds.example/a", "fyyd")],
+        );
+        assert_eq!(other.len(), 1);
+    }
+
+    #[test]
+    fn provider_keys_round_trip() {
+        for provider in Provider::ALL {
+            assert_eq!(Provider::from_key(provider.key()), Some(provider));
+        }
+        assert_eq!(Provider::from_key("nope"), None);
     }
 }

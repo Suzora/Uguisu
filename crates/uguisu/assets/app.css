@@ -279,8 +279,8 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 
 /* ── Add / search ──────────────────────────────────────────────────────── */
 
-.indicator { display: none; }
-.indicator.htmx-request { display: block; }
+.provider-results:empty { display: none; }
+.searching { animation: pulse 1.2s ease-in-out infinite; }
 
 .results { display: grid; gap: 4px; }
 .result { display: flex; align-items: center; gap: 14px; padding: 10px; margin: 0 -10px; border-radius: 14px; }
