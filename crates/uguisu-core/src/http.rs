@@ -150,9 +150,75 @@ pub fn build_client(user_agent: &str, allow_private: bool) -> Result<reqwest::Cl
     builder.build().context("cannot build HTTP client")
 }
 
+/// The address without user name and password, for everything that is shown, logged, written
+/// to the archive or published.
+pub fn redact(url: &str) -> String {
+    match Url::parse(url) {
+        Ok(mut parsed) if !parsed.username().is_empty() || parsed.password().is_some() => {
+            let _ = parsed.set_username("");
+            let _ = parsed.set_password(None);
+            parsed.to_string()
+        }
+        _ => url.to_string(),
+    }
+}
+
+/// Gives `target` the user name and password of the podcast's feed address, if it has none of
+/// its own and points at the very same server. Feeds protected by a password usually protect
+/// their media files the same way. Credentials never travel to another host, nor from an
+/// encrypted connection to an unencrypted one.
+pub fn lend_credentials(target: &mut Url, feed_url: &str) {
+    let Ok(feed) = Url::parse(feed_url) else {
+        return;
+    };
+    let has_own = !target.username().is_empty() || target.password().is_some();
+    let same_server = target.host() == feed.host()
+        && target.port_or_known_default() == feed.port_or_known_default()
+        && target.scheme() == feed.scheme();
+    if has_own || !same_server || (feed.username().is_empty() && feed.password().is_none()) {
+        return;
+    }
+    let _ = target.set_username(feed.username());
+    let _ = target.set_password(feed.password());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn credentials_are_redacted_and_lent_only_to_the_same_server() {
+        let feed = "https://me:secret@example.org/feed.xml";
+        assert_eq!(redact(feed), "https://example.org/feed.xml");
+        assert_eq!(
+            redact("https://example.org/a?b=1"),
+            "https://example.org/a?b=1"
+        );
+        assert_eq!(redact("not a url"), "not a url");
+
+        let lend = |target: &str| {
+            let mut url = Url::parse(target).unwrap();
+            lend_credentials(&mut url, feed);
+            url.to_string()
+        };
+        assert_eq!(
+            lend("https://example.org/a.mp3"),
+            "https://me:secret@example.org/a.mp3"
+        );
+        assert_eq!(
+            lend("https://cdn.example.org/a.mp3"),
+            "https://cdn.example.org/a.mp3"
+        );
+        assert_eq!(lend("http://example.org/a.mp3"), "http://example.org/a.mp3");
+        assert_eq!(
+            lend("https://example.org:8443/a.mp3"),
+            "https://example.org:8443/a.mp3"
+        );
+        assert_eq!(
+            lend("https://other:pw@example.org/a.mp3"),
+            "https://other:pw@example.org/a.mp3"
+        );
+    }
 
     #[test]
     fn address_classes() {

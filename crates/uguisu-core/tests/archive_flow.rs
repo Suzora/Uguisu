@@ -959,3 +959,101 @@ async fn images_in_show_notes_are_archived() {
     );
     assert!(uguisu_core::feed::parse(xml.as_bytes()).is_ok());
 }
+
+/// A feed behind a password: the credentials from the feed address also open the media files
+/// on the same server, and appear nowhere in the archive, the published feed or messages.
+#[tokio::test]
+async fn feeds_with_credentials_are_archived_without_leaking_them() {
+    use axum::http::{Request, StatusCode, header};
+
+    // "me:secret" in Base64.
+    const AUTHORIZED: &str = "Basic bWU6c2VjcmV0";
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let base = format!("http://{address}");
+    let feed_xml = feed(&item(1, "First")).replace("BASE", &base);
+    let app = Router::new()
+        .route(
+            "/feed.xml",
+            get(move || {
+                let xml = feed_xml.clone();
+                async move { ([(CONTENT_TYPE, "application/rss+xml")], xml) }
+            }),
+        )
+        .route(
+            "/audio/{file}",
+            get(|| async { ([(CONTENT_TYPE, "audio/mpeg")], "private audio") }),
+        )
+        .route(
+            "/cover.png",
+            get(|| async { ([(CONTENT_TYPE, "image/png")], "fake png") }),
+        )
+        .layer(axum::middleware::from_fn(
+            |request: Request<axum::body::Body>, next: axum::middleware::Next| async move {
+                let authorized = request
+                    .headers()
+                    .get(header::AUTHORIZATION)
+                    .is_some_and(|value| value == AUTHORIZED);
+                if authorized {
+                    Ok(next.run(request).await)
+                } else {
+                    Err(StatusCode::UNAUTHORIZED)
+                }
+            },
+        ));
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = Config::new(data.path());
+    cfg.allow_private_networks = true;
+    cfg.host_pause = std::time::Duration::ZERO;
+    let uguisu = Uguisu::open(cfg).await.unwrap();
+
+    // Without or with wrong credentials the feed is refused, and the message keeps quiet.
+    assert!(
+        uguisu
+            .add_podcast(&format!("{base}/feed.xml"))
+            .await
+            .is_err()
+    );
+    let error = uguisu
+        .add_podcast(&format!("http://me:wrong-pass@{address}/feed.xml"))
+        .await
+        .unwrap_err();
+    let message = format!("{error:#}");
+    assert!(message.contains("401"), "{message}");
+    assert!(!message.contains("wrong-pass"), "{message}");
+
+    let id = uguisu
+        .add_podcast(&format!("http://me:secret@{address}/feed.xml"))
+        .await
+        .unwrap();
+    assert_eq!(uguisu.download_pending().await.unwrap(), 1);
+    let episodes = uguisu.episodes(id).await.unwrap();
+    let media = uguisu.archive_path(episodes[0].media_path.as_deref().expect("archived"));
+    assert_eq!(std::fs::read_to_string(media).unwrap(), "private audio");
+    let podcast = uguisu.podcast(id).await.unwrap().unwrap();
+    assert_eq!(podcast.cover_file.as_deref(), Some("cover.png"));
+
+    // Nothing on disk besides the database knows the password.
+    fn files(dir: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                files(&path, found);
+            } else {
+                found.push(path);
+            }
+        }
+    }
+    let mut archived = Vec::new();
+    files(&uguisu.archive_dir(), &mut archived);
+    assert!(archived.len() >= 5);
+    for path in archived {
+        let content = String::from_utf8_lossy(&std::fs::read(&path).unwrap()).into_owned();
+        assert!(!content.contains("secret"), "{}", path.display());
+    }
+    let published = uguisu.feed_episodes(id).await.unwrap();
+    let xml = rss::build_feed(&podcast, &published, &[], "https://archive.example");
+    assert!(!xml.contains("secret"));
+}

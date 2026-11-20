@@ -119,6 +119,9 @@ any file is damaged or missing, so it can be used from cron or a monitoring job.
   `--allow-private-networks` is set. When an HTTP proxy is configured through the usual
   environment variables, host names are resolved by the proxy and this check only covers IP
   literals.
+- A feed behind a password is added as `https://user:password@host/feed`. The credentials are
+  also used for media files on the same server, never for another one. They are stored in the
+  database in plain text and left out of the archive files, published feeds and log messages.
 - Archive only what you are allowed to keep, and do not share feed addresses of content you have
   no right to redistribute.
 

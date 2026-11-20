@@ -456,7 +456,8 @@ pub fn podcast_page(
                         button.button.is-quiet type="submit" { "New feed address" }
                     }
                 }
-                p.muted.small { "Source: " a href=(p.feed_url) rel="noreferrer noopener" { (p.feed_url) } }
+                @let source = uguisu_core::http::redact(&p.feed_url);
+                p.muted.small { "Source: " a href=(source) rel="noreferrer noopener" { (source) } }
             }
 
             (episode_list(summary, episodes, downloading, page))
