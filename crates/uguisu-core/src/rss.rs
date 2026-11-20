@@ -9,7 +9,8 @@ use std::fmt::Write;
 
 use roxmltree::Document;
 
-use crate::model::{FeedEpisode, Podcast};
+use crate::feed::without_query;
+use crate::model::{Attachment, FeedEpisode, Podcast};
 use crate::util::xml_escape;
 
 fn rfc2822(timestamp: i64) -> Option<String> {
@@ -75,9 +76,28 @@ fn namespaces(podcast: &Podcast) -> (String, bool) {
     (attributes, reusable)
 }
 
+/// Public URL of an archived attachment.
+pub fn attachment_url(base_url: &str, token: &str, attachment: &Attachment) -> String {
+    format!(
+        "{}/media/{token}/{}/a/{}/{}",
+        base_url.trim_end_matches('/'),
+        attachment.episode_id,
+        attachment.id,
+        url_segment(attachment.file_name())
+    )
+}
+
 /// Returns the original `<item>` with its `<enclosure>` replaced, or `None` if it cannot be
 /// reused (not well-formed on its own, no enclosure, or more than one element).
-fn reuse_item(raw: &str, namespace_attributes: &str, enclosure: &str) -> Option<String> {
+///
+/// `links` maps source addresses (without query string) of archived attachments to their
+/// address in the archive; `url` and `href` attributes pointing at one of them are rewritten.
+fn reuse_item(
+    raw: &str,
+    namespace_attributes: &str,
+    enclosure: &str,
+    links: &[(&str, String)],
+) -> Option<String> {
     let open = format!("<r {namespace_attributes}>");
     let text = format!("{open}{raw}</r>");
     let doc = Document::parse(&text).ok()?;
@@ -89,18 +109,50 @@ fn reuse_item(raw: &str, namespace_attributes: &str, enclosure: &str) -> Option<
     let original = item.children().find(|n| {
         n.is_element() && n.tag_name().name() == "enclosure" && n.tag_name().namespace().is_none()
     })?;
-    let range = original.range();
-    let end = text.len() - "</r>".len();
-    Some(format!(
-        "{}{enclosure}{}",
-        &text[open.len()..range.start],
-        &text[range.end..end]
-    ))
+
+    // Replacements as (range in `text`, new content), applied from left to right.
+    let mut edits: Vec<(std::ops::Range<usize>, String)> =
+        vec![(original.range(), enclosure.to_string())];
+    if !links.is_empty() {
+        for node in item
+            .descendants()
+            .filter(|n| n.is_element() && *n != original)
+        {
+            for attribute in node.attributes() {
+                if !matches!(attribute.name(), "url" | "href") {
+                    continue;
+                }
+                let key = without_query(attribute.value());
+                if let Some((_, archived)) = links.iter().find(|(source, _)| *source == key) {
+                    edits.push((attribute.range_value(), xml_escape(archived)));
+                }
+            }
+        }
+        edits.sort_by_key(|(range, _)| range.start);
+    }
+
+    let mut out = String::with_capacity(raw.len() + 128);
+    let mut position = open.len();
+    for (range, replacement) in edits {
+        if range.start < position {
+            return None;
+        }
+        out.push_str(&text[position..range.start]);
+        out.push_str(&replacement);
+        position = range.end;
+    }
+    out.push_str(&text[position..text.len() - "</r>".len()]);
+    Some(out)
 }
 
 /// Renders an RSS 2.0 document. Episodes without an archived file are left out, as are episodes
 /// that disappeared from the source feed when the podcast is configured that way.
-pub fn build_feed(podcast: &Podcast, episodes: &[FeedEpisode], base_url: &str) -> String {
+pub fn build_feed(
+    podcast: &Podcast,
+    episodes: &[FeedEpisode],
+    attachments: &[Attachment],
+    base_url: &str,
+) -> String {
     let base = base_url.trim_end_matches('/');
     let token = &podcast.feed_token;
     let mut x = String::with_capacity(4096 + episodes.len() * 1024);
@@ -160,9 +212,14 @@ pub fn build_feed(podcast: &Podcast, episodes: &[FeedEpisode], base_url: &str) -
             xml_escape(&media_url(base, token, e.id, file_name)),
             xml_escape(mime)
         );
+        let links: Vec<(&str, String)> = attachments
+            .iter()
+            .filter(|a| a.episode_id == e.id)
+            .map(|a| (a.source_key.as_str(), attachment_url(base, token, a)))
+            .collect();
         if reusable
             && let Some(raw) = &episode.raw_xml
-            && let Some(item) = reuse_item(raw, &namespace_attributes, &enclosure)
+            && let Some(item) = reuse_item(raw, &namespace_attributes, &enclosure, &links)
         {
             x.push_str(&item);
             x.push('\n');
@@ -216,7 +273,7 @@ mod tests {
                    <enclosure url=\"https://cdn.example/a.mp3?x=1&amp;y=2\" type=\"audio/mpeg\"></enclosure>\
                    <podcast:transcript url=\"https://cdn.example/a.vtt\" type=\"text/vtt\"/>\
                    <description><![CDATA[<p>Notes</p>]]></description></item>";
-        let item = reuse_item(raw, NAMESPACES, ENCLOSURE).unwrap();
+        let item = reuse_item(raw, NAMESPACES, ENCLOSURE, &[]).unwrap();
         assert_eq!(
             item,
             format!(
@@ -234,20 +291,60 @@ mod tests {
             reuse_item(
                 "<item><x:y/><enclosure url=\"u\"/></item>",
                 NAMESPACES,
-                ENCLOSURE
+                ENCLOSURE,
+                &[]
             )
             .is_none()
         );
-        assert!(reuse_item("<item><title>t</title></item>", NAMESPACES, ENCLOSURE).is_none());
+        assert!(reuse_item("<item><title>t</title></item>", NAMESPACES, ENCLOSURE, &[]).is_none());
         assert!(
             reuse_item(
                 "<item><enclosure url=\"u\"/></item><item><enclosure url=\"v\"/></item>",
                 NAMESPACES,
-                ENCLOSURE
+                ENCLOSURE,
+                &[]
             )
             .is_none()
         );
-        assert!(reuse_item("<item><enclosure url=\"u\"></item>", NAMESPACES, ENCLOSURE).is_none());
+        assert!(
+            reuse_item(
+                "<item><enclosure url=\"u\"></item>",
+                NAMESPACES,
+                ENCLOSURE,
+                &[]
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn rewrites_links_to_archived_attachments() {
+        let raw = "<item><guid>1</guid>\
+                   <podcast:transcript url=\"https://cdn.example/a.vtt?t=9\" type=\"text/vtt\"/>\
+                   <enclosure url=\"https://cdn.example/a.mp3\"/>\
+                   <podcast:chapters type=\"application/json\" url='https://cdn.example/a.json'/>\
+                   <podcast:transcript url=\"https://cdn.example/not-archived.srt\"/></item>";
+        let links = [
+            (
+                "https://cdn.example/a.vtt",
+                "https://archive.example/t?x=1&y=2".to_string(),
+            ),
+            (
+                "https://cdn.example/a.json",
+                "https://archive.example/c".to_string(),
+            ),
+        ];
+        let item = reuse_item(raw, NAMESPACES, ENCLOSURE, &links).unwrap();
+        assert_eq!(
+            item,
+            format!(
+                "<item><guid>1</guid>\
+                 <podcast:transcript url=\"https://archive.example/t?x=1&amp;y=2\" type=\"text/vtt\"/>\
+                 {ENCLOSURE}\
+                 <podcast:chapters type=\"application/json\" url='https://archive.example/c'/>\
+                 <podcast:transcript url=\"https://cdn.example/not-archived.srt\"/></item>"
+            )
+        );
     }
 
     #[test]

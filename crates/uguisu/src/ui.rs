@@ -554,6 +554,11 @@ pub fn episode_list(
                                 @if e.removed_at.is_some() {
                                     span.tag title="This episode is no longer listed in the source feed" { "Gone from feed" }
                                 }
+                                @if view.attachment_count > 0 {
+                                    span.tag title="Transcripts, chapter files and episode images archived with this episode" {
+                                        "+" (view.attachment_count) @if view.attachment_count == 1 { " file" } @else { " files" }
+                                    }
+                                }
                                 @if refetching(view) {
                                     span.tag title="The source replaced the media file; the new copy is being downloaded" { "Fetching new version" }
                                 }

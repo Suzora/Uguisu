@@ -82,6 +82,11 @@ const MEDIA_TYPES: &[(&str, &str)] = &[
     ("png", "image/png"),
     ("webp", "image/webp"),
     ("gif", "image/gif"),
+    ("vtt", "text/vtt"),
+    ("srt", "application/x-subrip"),
+    ("json", "application/json"),
+    ("txt", "text/plain"),
+    ("html", "text/html"),
 ];
 
 /// Known extension at the end of a URL path, lowercased.
@@ -102,6 +107,8 @@ pub fn extension_from_mime(mime: &str) -> Option<&'static str> {
     match mime.as_str() {
         "audio/mp3" | "audio/mpeg3" => return Some("mp3"),
         "audio/x-m4a" | "audio/m4a" => return Some("m4a"),
+        "application/srt" | "text/srt" => return Some("srt"),
+        "application/json+chapters" => return Some("json"),
         _ => {}
     }
     MEDIA_TYPES

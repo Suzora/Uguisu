@@ -60,6 +60,18 @@ async fn start_source(body: FeedBody) -> String {
             ),
         )
         .route(
+            "/files/{file}",
+            get(
+                |axum::extract::Path(file): axum::extract::Path<String>| async move {
+                    if file.starts_with("missing") {
+                        Err(axum::http::StatusCode::NOT_FOUND)
+                    } else {
+                        Ok(([(CONTENT_TYPE, "text/plain")], format!("content of {file}")))
+                    }
+                },
+            ),
+        )
+        .route(
             "/cover.png",
             get(|| async { ([(CONTENT_TYPE, "image/png")], "fake png") }),
         )
@@ -128,7 +140,7 @@ async fn archive_flow() {
 
     // Re-publish: original GUIDs, enclosures pointing at the archive.
     let published = uguisu.feed_episodes(id).await.unwrap();
-    let xml = rss::build_feed(&podcast, &published, "https://archive.example");
+    let xml = rss::build_feed(&podcast, &published, &[], "https://archive.example");
     let republished = uguisu_core::feed::parse(xml.as_bytes()).unwrap();
     assert_eq!(republished.items.len(), 2);
     assert_eq!(republished.items[0].guid, "ep-2");
@@ -173,11 +185,11 @@ async fn archive_flow() {
     // Removed episodes are published or hidden depending on the podcast setting.
     let podcast = uguisu.podcast(id).await.unwrap().unwrap();
     let published = uguisu.feed_episodes(id).await.unwrap();
-    let with_removed = rss::build_feed(&podcast, &published, "https://archive.example");
+    let with_removed = rss::build_feed(&podcast, &published, &[], "https://archive.example");
     assert!(with_removed.contains("<guid>ep-1</guid>"));
     uguisu.set_options(id, false, false).await.unwrap();
     let podcast = uguisu.podcast(id).await.unwrap().unwrap();
-    let without_removed = rss::build_feed(&podcast, &published, "https://archive.example");
+    let without_removed = rss::build_feed(&podcast, &published, &[], "https://archive.example");
     assert!(!without_removed.contains("ep-1</guid>"));
 
     // Fixity: intact files pass, a damaged file is detected and queued again.
@@ -365,8 +377,10 @@ async fn published_feed_keeps_the_original_items() {
     <guid isPermaLink="false">rich-1</guid>
     <pubDate>Mon, 01 Jan 2024 10:00:00 +0000</pubDate>
     <enclosure url="BASE/audio/1.mp3?session=abc" type="audio/mpeg" length="10"/>
-    <podcast:chapters url="https://example.org/1/chapters.json" type="application/json+chapters"/>
-    <podcast:transcript url="https://example.org/1/transcript.vtt" type="text/vtt"/>
+    <podcast:chapters url="BASE/files/chapters.json" type="application/json+chapters"/>
+    <podcast:transcript url="BASE/files/transcript.vtt?session=abc" type="text/vtt"/>
+    <podcast:transcript url="BASE/files/missing.srt" type="application/srt"/>
+    <itunes:image href="BASE/files/episode.png"/>
     <podcast:person role="host">Mika Tanabe</podcast:person>
     <custom:mood>calm</custom:mood>
     <description><![CDATA[<p>Show notes with <a href="https://example.org">a link</a></p>]]></description>
@@ -382,16 +396,45 @@ async fn published_feed_keeps_the_original_items() {
         .add_podcast(&format!("{base}/feed.xml"))
         .await
         .unwrap();
-    uguisu.download_pending().await.unwrap();
+    assert_eq!(uguisu.download_pending().await.unwrap(), 1);
+
+    // The files the episode links to are archived next to its media.
+    let attachments = uguisu.attachments(id).await.unwrap();
+    let mut names: Vec<&str> = attachments.iter().map(|a| a.file_name()).collect();
+    names.sort();
+    assert_eq!(names.len(), 3, "{names:?}");
+    assert!(names[0].starts_with("chapters-") && names[0].ends_with(".json"));
+    assert!(names[1].starts_with("image-") && names[1].ends_with(".png"));
+    assert!(names[2].starts_with("transcript-") && names[2].ends_with(".vtt"));
+    let transcript = attachments
+        .iter()
+        .find(|a| a.file_name() == names[2])
+        .unwrap();
+    assert_eq!(transcript.mime, "text/vtt");
+    assert_eq!(
+        std::fs::read_to_string(uguisu.archive_path(&transcript.path)).unwrap(),
+        "content of transcript.vtt"
+    );
+    let episodes = uguisu.episodes(id).await.unwrap();
+    assert_eq!(episodes[0].attachment_count, 3);
+    assert!(
+        uguisu
+            .archive_path(&transcript.path)
+            .with_file_name("media.mp3")
+            .exists()
+    );
 
     let podcast = uguisu.podcast(id).await.unwrap().unwrap();
     let published = uguisu.feed_episodes(id).await.unwrap();
-    let xml = rss::build_feed(&podcast, &published, "https://archive.example");
+    let xml = rss::build_feed(
+        &podcast,
+        &published,
+        &attachments,
+        "https://archive.example",
+    );
 
-    // Everything the publisher put into the item is still there, byte for byte.
+    // What the publisher put into the item is still there, byte for byte.
     for original in [
-        r#"<podcast:chapters url="https://example.org/1/chapters.json" type="application/json+chapters"/>"#,
-        r#"<podcast:transcript url="https://example.org/1/transcript.vtt" type="text/vtt"/>"#,
         r#"<podcast:person role="host">Mika Tanabe</podcast:person>"#,
         "<custom:mood>calm</custom:mood>",
         r#"<![CDATA[<p>Show notes with <a href="https://example.org">a link</a></p>]]>"#,
@@ -399,21 +442,46 @@ async fn published_feed_keeps_the_original_items() {
     ] {
         assert!(xml.contains(original), "missing {original} in\n{xml}");
     }
-    // Only the enclosure changed: it points at the archive, with the real size.
+    // Links to archived files point at the archive; the one that could not be fetched stays.
+    let archive = format!("https://archive.example/media/{}/", podcast.feed_token);
+    for (tag, name) in [
+        ("<podcast:chapters url=\"", names[0]),
+        ("<itunes:image href=\"", names[1]),
+        ("<podcast:transcript url=\"", names[2]),
+    ] {
+        let start = xml.find(&format!("{tag}{archive}")).unwrap_or_else(|| {
+            panic!("{tag} does not point at the archive in\n{xml}");
+        });
+        let value = &xml[start + tag.len()..];
+        let value = &value[..value.find('"').unwrap()];
+        assert!(value.ends_with(name), "{value} should end with {name}");
+    }
+    assert!(xml.contains(&format!(
+        r#"<podcast:transcript url="{base}/files/missing.srt""#
+    )));
+    assert!(xml.contains(r#"type="application/json+chapters""#));
     assert!(!xml.contains("session=abc"));
+
     let republished = uguisu_core::feed::parse(xml.as_bytes()).expect("published feed is valid");
     assert_eq!(republished.items.len(), 1);
     let item = &republished.items[0];
-    assert!(
-        item.enclosure_url
-            .as_deref()
-            .unwrap()
-            .starts_with("https://archive.example/media/")
-    );
+    assert!(item.enclosure_url.as_deref().unwrap().starts_with(&archive));
     assert_eq!(item.enclosure_length, Some("fake audio 1.mp3".len() as i64));
     assert!(
         republished
             .namespaces
             .contains(&("custom".to_string(), "https://example.org/ns".to_string()))
     );
+
+    // Attachments are part of the integrity check and are fetched again when damaged.
+    let report = uguisu.verify().await.unwrap();
+    assert_eq!((report.checked, report.ok), (4, 4));
+    std::fs::write(uguisu.archive_path(&transcript.path), "bit rot").unwrap();
+    let report = uguisu.verify().await.unwrap();
+    assert_eq!(report.corrupt, vec![transcript.path.clone()]);
+    assert_eq!(uguisu.stats().await.unwrap().damaged, 1);
+    assert_eq!(uguisu.attachments(id).await.unwrap().len(), 2);
+    uguisu.download_pending().await.unwrap();
+    assert_eq!(uguisu.verify().await.unwrap().ok, 4);
+    assert_eq!(uguisu.stats().await.unwrap().damaged, 0);
 }
