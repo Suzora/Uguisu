@@ -440,6 +440,7 @@ async fn refresh_podcast(State(state): State<AppState>, Path(id): Path<i64>) -> 
 #[derive(Deserialize)]
 struct SettingsForm {
     include_removed: Option<String>,
+    keep_versions: Option<String>,
 }
 
 async fn update_settings(
@@ -450,7 +451,11 @@ async fn update_settings(
     state.app.podcast(id).await?.ok_or(AppError::NotFound)?;
     state
         .app
-        .set_include_removed(id, form.include_removed.is_some())
+        .set_options(
+            id,
+            form.include_removed.is_some(),
+            form.keep_versions.is_some(),
+        )
         .await?;
     Ok(see_other(&format!("/podcasts/{id}")))
 }

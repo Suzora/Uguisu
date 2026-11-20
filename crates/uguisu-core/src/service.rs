@@ -27,7 +27,9 @@ macro_rules! episode_view_sql {
     ($tail:literal) => {
         concat!(
             "SELECT e.*, m.path AS media_path, m.size AS media_size, \
-     m.mime AS media_mime, m.blake3 AS media_blake3 \
+     m.mime AS media_mime, m.blake3 AS media_blake3, \
+     (SELECT COUNT(*) FROM media_files WHERE episode_id = e.id) AS media_versions, \
+     (SELECT COUNT(*) FROM media_files WHERE episode_id = e.id AND status != 'ok') AS media_damaged \
      FROM episodes e LEFT JOIN media_files m ON m.id = \
      (SELECT MAX(id) FROM media_files WHERE episode_id = e.id AND status = 'ok')",
             " ",
@@ -59,6 +61,8 @@ pub struct Config {
     /// How often each feed is checked for changes.
     pub refresh_interval: Duration,
     pub download_concurrency: usize,
+    /// Every archived file is re-hashed at least this often. `None` disables the automatic check.
+    pub verify_interval: Option<Duration>,
 }
 
 impl Config {
@@ -70,6 +74,7 @@ impl Config {
                 .to_string(),
             refresh_interval: Duration::from_secs(3600),
             download_concurrency: 2,
+            verify_interval: Some(Duration::from_secs(30 * 24 * 3600)),
         }
     }
 }
@@ -128,6 +133,10 @@ fn header(response: &reqwest::Response, name: reqwest::header::HeaderName) -> Op
 
 fn iso_date(timestamp: i64) -> Option<String> {
     crate::util::rfc3339(timestamp)
+}
+
+fn without_query(url: &str) -> &str {
+    url.split(['?', '#']).next().unwrap_or(url)
 }
 
 fn episode_dir_name(item: &ParsedItem) -> String {
@@ -238,7 +247,9 @@ impl Uguisu {
             "SELECT (SELECT COUNT(*) FROM podcasts) AS podcasts, \
              (SELECT COUNT(*) FROM episodes) AS episodes, \
              (SELECT COUNT(DISTINCT episode_id) FROM media_files WHERE status = 'ok') AS archived, \
-             (SELECT COALESCE(SUM(size), 0) FROM media_files WHERE status = 'ok') AS bytes",
+             (SELECT COALESCE(SUM(size), 0) FROM media_files WHERE status = 'ok') AS bytes, \
+             (SELECT COUNT(*) FROM media_files WHERE status != 'ok') AS damaged, \
+             (SELECT MIN(verified_at) FROM media_files WHERE status = 'ok') AS oldest_check",
         )
         .fetch_one(self.pool())
         .await?)
@@ -534,8 +545,9 @@ impl Uguisu {
         let mut tx = self.pool().begin().await?;
         for item in &parsed.items {
             let meta_hash = item.meta_hash();
-            let existing: Option<(i64, String, String)> = sqlx::query_as(
-                "SELECT id, meta_hash, dir FROM episodes WHERE podcast_id = ? AND guid = ?",
+            let existing: Option<(i64, String, String, Option<String>)> = sqlx::query_as(
+                "SELECT id, meta_hash, dir, enclosure_url FROM episodes \
+                 WHERE podcast_id = ? AND guid = ?",
             )
             .bind(podcast_id)
             .bind(&item.guid)
@@ -572,8 +584,13 @@ impl Uguisu {
                     .await?;
                     (id, dir, true)
                 }
-                Some((id, old_hash, dir)) => {
+                Some((id, old_hash, dir, old_enclosure)) => {
                     let is_changed = old_hash != meta_hash;
+                    // A new address (ignoring its query string) means the source replaced the file.
+                    let replaced = podcast.keep_versions
+                        && item.enclosure_url.is_some()
+                        && old_enclosure.as_deref().map(without_query)
+                            != item.enclosure_url.as_deref().map(without_query);
                     if is_changed {
                         // A changed episode gets a fresh chance if its download had given up.
                         sqlx::query(
@@ -581,7 +598,8 @@ impl Uguisu {
                              published_at = ?, duration = ?, enclosure_url = ?, enclosure_type = ?, \
                              enclosure_length = ?, image_url = ?, season = ?, episode_no = ?, \
                              meta_hash = ?, last_seen_at = ?, removed_at = NULL, \
-                             download_attempts = 0, next_attempt_at = 0 WHERE id = ?",
+                             download_attempts = 0, next_attempt_at = 0, \
+                             refetch = MAX(refetch, ?) WHERE id = ?",
                         )
                         .bind(&item.title)
                         .bind(&item.description)
@@ -596,6 +614,7 @@ impl Uguisu {
                         .bind(item.episode_no)
                         .bind(&meta_hash)
                         .bind(now)
+                        .bind(replaced)
                         .bind(id)
                         .execute(&mut *tx)
                         .await?;
@@ -743,9 +762,15 @@ impl Uguisu {
         Ok(())
     }
 
-    pub async fn set_include_removed(&self, podcast_id: i64, include: bool) -> Result<()> {
-        sqlx::query("UPDATE podcasts SET include_removed = ? WHERE id = ?")
-            .bind(include)
+    pub async fn set_options(
+        &self,
+        podcast_id: i64,
+        include_removed: bool,
+        keep_versions: bool,
+    ) -> Result<()> {
+        sqlx::query("UPDATE podcasts SET include_removed = ?, keep_versions = ? WHERE id = ?")
+            .bind(include_removed)
+            .bind(keep_versions)
             .bind(podcast_id)
             .execute(self.pool())
             .await?;
@@ -803,7 +828,8 @@ impl Uguisu {
         Ok(sqlx::query_as(
             "SELECT e.*, p.dir AS podcast_dir FROM episodes e JOIN podcasts p ON p.id = e.podcast_id \
              WHERE e.enclosure_url IS NOT NULL AND e.download_attempts < ? AND e.next_attempt_at <= ? \
-             AND NOT EXISTS (SELECT 1 FROM media_files m WHERE m.episode_id = e.id AND m.status = 'ok') \
+             AND (e.refetch = 1 OR NOT EXISTS \
+               (SELECT 1 FROM media_files m WHERE m.episode_id = e.id AND m.status = 'ok')) \
              ORDER BY e.published_at DESC LIMIT 50",
         )
         .bind(MAX_DOWNLOAD_ATTEMPTS)
@@ -838,7 +864,7 @@ impl Uguisu {
         let outcome = match result {
             Ok(()) => {
                 tracing::info!(episode = %episode.title, "archived");
-                sqlx::query("UPDATE episodes SET download_error = NULL WHERE id = ?")
+                sqlx::query("UPDATE episodes SET download_error = NULL, refetch = 0 WHERE id = ?")
                     .bind(episode.id)
                     .execute(self.pool())
                     .await
@@ -901,12 +927,10 @@ impl Uguisu {
             .or_else(|| (!content_type.is_empty()).then(|| content_type.clone()))
             .unwrap_or_else(|| "application/octet-stream".to_string());
 
-        let file_name = format!("media.{ext}");
         let relative_dir = format!("{podcast_dir}/episodes/{}", episode.dir);
         let dir = self.archive_path(&relative_dir);
         tokio::fs::create_dir_all(&dir).await?;
-        let part = dir.join(format!("{file_name}.part"));
-        let target = dir.join(&file_name);
+        let part = dir.join("download.part");
 
         let mut file = tokio::fs::File::create(&part).await?;
         let mut hasher = blake3::Hasher::new();
@@ -929,9 +953,42 @@ impl Uguisu {
             let _ = tokio::fs::remove_file(&part).await;
             return Err(e);
         }
-        tokio::fs::rename(&part, &target).await?;
-
         let hash = hasher.finalize().to_hex().to_string();
+
+        // Decide where the copy goes. The first copy, and the repair of a damaged one, is
+        // `media.<ext>`. A copy with different content from a replaced source file is kept next
+        // to the earlier ones as `media.v2.<ext>`, `media.v3.<ext>`, ...
+        let existing: Vec<(String, String, String)> =
+            sqlx::query_as("SELECT path, blake3, status FROM media_files WHERE episode_id = ?")
+                .bind(episode.id)
+                .fetch_all(self.pool())
+                .await?;
+        if existing
+            .iter()
+            .any(|(_, b, status)| *b == hash && status == "ok")
+        {
+            // The source moved the file without changing it.
+            let _ = tokio::fs::remove_file(&part).await;
+            return Ok(());
+        }
+        let intact = existing.iter().filter(|(_, _, s)| s == "ok").count();
+        let file_name = if intact == 0 {
+            format!("media.{ext}")
+        } else {
+            let mut version = existing.len() + 1;
+            loop {
+                let candidate = format!("media.v{version}.{ext}");
+                let taken = existing
+                    .iter()
+                    .any(|(path, _, _)| path.rsplit('/').next() == Some(candidate.as_str()));
+                if !taken {
+                    break candidate;
+                }
+                version += 1;
+            }
+        };
+        tokio::fs::rename(&part, dir.join(&file_name)).await?;
+
         // Same format as `b3sum`, so the file can be checked with `b3sum -c` without Uguisu.
         write_atomic(
             &dir.join(format!("{file_name}.blake3")),
@@ -991,6 +1048,29 @@ impl Uguisu {
                 tokio::time::sleep(Duration::from_secs(60)).await;
             }
         });
+        if let Some(interval) = self.inner.cfg.verify_interval {
+            let this = self.clone();
+            tokio::spawn(async move {
+                loop {
+                    // Small batches keep the disk free for downloads and playback.
+                    match this.verify_due(interval, 25).await {
+                        Ok(report) if report.checked > 0 => {
+                            tracing::info!(
+                                checked = report.checked,
+                                damaged = report.corrupt.len() + report.missing.len(),
+                                "integrity check"
+                            );
+                            if report.checked == 25 {
+                                continue;
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(e) => tracing::error!("integrity check failed: {e:#}"),
+                    }
+                    tokio::time::sleep(Duration::from_secs(600)).await;
+                }
+            });
+        }
         let this = self.clone();
         tokio::spawn(async move {
             loop {
@@ -1014,6 +1094,24 @@ impl Uguisu {
             sqlx::query_as("SELECT id, path, blake3 FROM media_files ORDER BY path")
                 .fetch_all(self.pool())
                 .await?;
+        self.verify_files(files).await
+    }
+
+    /// Re-hashes up to `limit` intact files that have not been checked for `max_age`, oldest
+    /// check first. Called periodically, this spreads a full pass over the archive.
+    pub async fn verify_due(&self, max_age: Duration, limit: i64) -> Result<VerifyReport> {
+        let files: Vec<(i64, String, String)> = sqlx::query_as(
+            "SELECT id, path, blake3 FROM media_files WHERE status = 'ok' AND verified_at <= ? \
+             ORDER BY verified_at LIMIT ?",
+        )
+        .bind(now() - max_age.as_secs() as i64)
+        .bind(limit)
+        .fetch_all(self.pool())
+        .await?;
+        self.verify_files(files).await
+    }
+
+    async fn verify_files(&self, files: Vec<(i64, String, String)>) -> Result<VerifyReport> {
         let mut report = VerifyReport::default();
         for (id, relative, expected) in files {
             report.checked += 1;
@@ -1025,10 +1123,12 @@ impl Uguisu {
                     "ok"
                 }
                 Ok(_) => {
+                    tracing::error!(file = %relative, "archived file is damaged");
                     report.corrupt.push(relative);
                     "corrupt"
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    tracing::error!(file = %relative, "archived file is missing");
                     report.missing.push(relative);
                     "missing"
                 }

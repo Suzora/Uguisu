@@ -53,7 +53,9 @@ async fn start_source(body: FeedBody) -> String {
             "/audio/{file}",
             get(
                 |axum::extract::Path(file): axum::extract::Path<String>| async move {
-                    ([(CONTENT_TYPE, "audio/mpeg")], format!("fake audio {file}"))
+                    // `mirror-x.mp3` serves the same bytes as `x.mp3`: a moved but unchanged file.
+                    let name = file.trim_start_matches("mirror-");
+                    ([(CONTENT_TYPE, "audio/mpeg")], format!("fake audio {name}"))
                 },
             ),
         )
@@ -171,7 +173,7 @@ async fn archive_flow() {
     let podcast = uguisu.podcast(id).await.unwrap().unwrap();
     let with_removed = rss::build_feed(&podcast, &episodes, "https://archive.example");
     assert!(with_removed.contains("<guid isPermaLink=\"false\">ep-1</guid>"));
-    uguisu.set_include_removed(id, false).await.unwrap();
+    uguisu.set_options(id, false, false).await.unwrap();
     let podcast = uguisu.podcast(id).await.unwrap().unwrap();
     let without_removed = rss::build_feed(&podcast, &episodes, "https://archive.example");
     assert!(!without_removed.contains("ep-1</guid>"));
@@ -216,4 +218,134 @@ async fn private_addresses_are_refused_by_default() {
         .await
         .unwrap_err();
     assert!(error.to_string().contains("private or local"), "{error:#}");
+}
+
+fn item_with_file(n: u32, file: &str) -> String {
+    format!(
+        r#"<item><title>Episode {n}</title><guid>ep-{n}</guid>
+<pubDate>Mon, 0{n} Jan 2024 10:00:00 +0000</pubDate>
+<enclosure url="BASE/audio/{file}" type="audio/mpeg" length="10"/></item>"#
+    )
+}
+
+#[tokio::test]
+async fn replaced_media_is_kept_as_a_new_version() {
+    let source_feed: FeedBody = Arc::new(Mutex::new(feed(&format!(
+        "{}{}",
+        item_with_file(2, "2.mp3"),
+        item_with_file(1, "1.mp3")
+    ))));
+    let base = start_source(source_feed.clone()).await;
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = Config::new(data.path());
+    cfg.allow_private_networks = true;
+    let uguisu = Uguisu::open(cfg).await.unwrap();
+    let id = uguisu
+        .add_podcast(&format!("{base}/feed.xml"))
+        .await
+        .unwrap();
+    assert_eq!(uguisu.download_pending().await.unwrap(), 2);
+
+    // The source re-uploads episode 2 under a new name and merely moves episode 1.
+    let replaced = feed(&format!(
+        "{}{}",
+        item_with_file(2, "2-remastered.mp3"),
+        item_with_file(1, "mirror-1.mp3")
+    ));
+
+    // By default a new address does not trigger a second download.
+    *source_feed.lock().unwrap() = replaced.clone();
+    uguisu.refresh(id).await.unwrap();
+    assert_eq!(uguisu.download_pending().await.unwrap(), 0);
+
+    // With versions enabled, the next change of address does.
+    uguisu.set_options(id, true, true).await.unwrap();
+    *source_feed.lock().unwrap() = feed(&format!(
+        "{}{}",
+        item_with_file(2, "2-final.mp3"),
+        item_with_file(1, "mirror-mirror-1.mp3")
+    ));
+    uguisu.refresh(id).await.unwrap();
+    assert_eq!(uguisu.download_pending().await.unwrap(), 2);
+    assert_eq!(
+        uguisu.download_pending().await.unwrap(),
+        0,
+        "nothing is left queued"
+    );
+
+    let episodes = uguisu.episodes(id).await.unwrap();
+    let two = episodes.iter().find(|e| e.episode.guid == "ep-2").unwrap();
+    assert_eq!(two.media_versions, 2);
+    assert_eq!(
+        two.media_file_name(),
+        Some("media.v2.mp3"),
+        "the newest copy is published"
+    );
+    let newest = uguisu.archive_path(two.media_path.as_deref().unwrap());
+    assert_eq!(
+        std::fs::read_to_string(&newest).unwrap(),
+        "fake audio 2-final.mp3"
+    );
+    assert_eq!(
+        std::fs::read_to_string(newest.with_file_name("media.mp3")).unwrap(),
+        "fake audio 2.mp3",
+        "the first copy is still there"
+    );
+    assert!(newest.with_file_name("media.v2.mp3.blake3").exists());
+
+    // An unchanged file under a new address is not stored twice.
+    let one = episodes.iter().find(|e| e.episode.guid == "ep-1").unwrap();
+    assert_eq!(one.media_versions, 1);
+    assert_eq!(one.media_file_name(), Some("media.mp3"));
+    assert!(
+        !uguisu
+            .archive_path(one.media_path.as_deref().unwrap())
+            .with_file_name("download.part")
+            .exists()
+    );
+
+    assert_eq!(uguisu.verify().await.unwrap().ok, 3);
+}
+
+#[tokio::test]
+async fn files_are_rechecked_when_their_last_check_is_old() {
+    let source_feed: FeedBody = Arc::new(Mutex::new(feed(&format!(
+        "{}{}",
+        item_with_file(2, "2.mp3"),
+        item_with_file(1, "1.mp3")
+    ))));
+    let base = start_source(source_feed).await;
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = Config::new(data.path());
+    cfg.allow_private_networks = true;
+    let uguisu = Uguisu::open(cfg).await.unwrap();
+    let id = uguisu
+        .add_podcast(&format!("{base}/feed.xml"))
+        .await
+        .unwrap();
+    uguisu.download_pending().await.unwrap();
+    let day = std::time::Duration::from_secs(24 * 3600);
+
+    // Freshly downloaded files are not due.
+    assert_eq!(uguisu.verify_due(30 * day, 10).await.unwrap().checked, 0);
+    assert_eq!(uguisu.stats().await.unwrap().damaged, 0);
+
+    // One file was last checked long ago and has been damaged since.
+    let episodes = uguisu.episodes(id).await.unwrap();
+    let old = episodes[0].media_path.clone().unwrap();
+    sqlx::query("UPDATE media_files SET verified_at = verified_at - 40 * 86400 WHERE path = ?")
+        .bind(&old)
+        .execute(uguisu.pool())
+        .await
+        .unwrap();
+    std::fs::write(uguisu.archive_path(&old), "bit rot").unwrap();
+
+    let report = uguisu.verify_due(30 * day, 10).await.unwrap();
+    assert_eq!((report.checked, report.ok), (1, 0));
+    assert_eq!(report.corrupt, vec![old]);
+    let stats = uguisu.stats().await.unwrap();
+    assert_eq!((stats.damaged, stats.archived), (1, 1));
+    let episodes = uguisu.episodes(id).await.unwrap();
+    assert_eq!(episodes[0].media_damaged, 1);
+    assert!(episodes[0].media_path.is_none());
 }
