@@ -58,8 +58,8 @@ Each milestone ends with a release. Items are worked through one topic per pull 
 Everything a podcast offers ends up in the archive.
 
 - [x] Paged and archived feeds (RFC 5005).
-- [~] Atom and RSS 1.0 as source formats. The published feed stays RSS 2.0.
-- [ ] Find the feed when the user enters the address of a web page
+- [x] Atom and RSS 1.0 as source formats. The published feed stays RSS 2.0.
+- [~] Find the feed when the user enters the address of a web page
       (`<link rel="alternate">`), instead of reporting an error.
 - [ ] Archive images embedded in show notes and point the published show notes at the copies.
 - [ ] More Podcasting 2.0 files: `podcast:alternateEnclosure`, several transcript formats.
