@@ -94,6 +94,7 @@ pub fn router(state: AppState) -> Router {
         .route("/cover/{id}", get(cover))
         .route("/opml", get(opml_export).post(opml_import))
         .route("/logout", post(logout))
+        .route("/find", get(find))
         .route("/settings", get(settings_page))
         .route("/settings/password", post(change_password))
         .route("/settings/sessions", post(end_other_sessions))
@@ -335,6 +336,19 @@ async fn start_session(state: &AppState, headers: &HeaderMap) -> AppResult {
         ],
     )
         .into_response())
+}
+
+#[derive(Deserialize, Default)]
+struct FindQuery {
+    #[serde(default)]
+    q: String,
+}
+
+/// Search in the titles and show notes of the archive.
+async fn find(State(state): State<AppState>, Query(query): Query<FindQuery>) -> AppResult {
+    let q = query.q.trim();
+    let results = state.app.search_episodes(q, 100).await?;
+    Ok(page(ui::find_page(q, &results)).into_response())
 }
 
 #[derive(Deserialize, Default)]
@@ -1381,6 +1395,47 @@ mod tests {
         crate::auth::reset_password(pool).await.unwrap();
         assert!(!crate::auth::password_is_set(pool).await.unwrap());
         assert!(!crate::auth::session_is_valid(pool, &here).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn the_archive_can_be_searched_from_the_interface() {
+        let (data, router, _) = archive().await;
+        let app = uguisu_core::Uguisu::open(uguisu_core::Config::new(data.path()))
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO episodes (id, podcast_id, guid, title, description, published_at, dir, \
+             meta_hash, first_seen_at, last_seen_at) \
+             VALUES (3, 1, 'ep-3', 'Dawn chorus', '<p>Robins &amp; <i>wrens</i></p>', 0, 'e3', 'h', 0, 0)",
+        )
+        .execute(app.pool())
+        .await
+        .unwrap();
+        app.sync_search_index().await.unwrap();
+        let session = crate::auth::create_session(app.pool()).await.unwrap();
+        let get = |address: &'static str| {
+            let request = Request::get(address)
+                .header(header::COOKIE, format!("uguisu_session={session}"))
+                .body(Body::empty())
+                .unwrap();
+            let router = router.clone();
+            async move {
+                let response = router.oneshot(request).await.unwrap();
+                assert_eq!(response.status(), StatusCode::OK, "{address}");
+                let body = axum::body::to_bytes(response.into_body(), 1 << 20)
+                    .await
+                    .unwrap();
+                String::from_utf8_lossy(&body).into_owned()
+            }
+        };
+        let page = get("/find?q=wrens").await;
+        assert!(page.contains("/podcasts/1/episodes/3"));
+        assert!(page.contains("Dawn chorus"));
+        assert!(page.contains("Robins &amp; <mark>wrens</mark>"), "{page}");
+        assert!(get("/find?q=nothing-like-it").await.contains("No episode"));
+        // Nothing typed, and something that would be query syntax elsewhere.
+        get("/find").await;
+        get("/find?q=%22%3Cscript%3E+OR+*").await;
     }
 
     #[tokio::test]

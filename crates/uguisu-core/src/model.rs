@@ -169,3 +169,16 @@ pub struct Revision {
     pub meta_hash: String,
     pub raw_xml: String,
 }
+
+/// An episode found by the search in the archive.
+#[derive(Debug, Clone, FromRow)]
+pub struct SearchResult {
+    pub episode_id: i64,
+    pub podcast_id: i64,
+    pub podcast_title: String,
+    pub title: String,
+    pub published_at: Option<i64>,
+    /// Part of the show notes around the match. The matched words are enclosed in the control
+    /// characters U+0001 and U+0002.
+    pub snippet: String,
+}

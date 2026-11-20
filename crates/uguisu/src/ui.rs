@@ -188,6 +188,63 @@ pub fn setup_page(error: Option<&str>) -> Markup {
     )
 }
 
+/// Results of a search in the archive.
+pub fn find_page(query: &str, results: &[uguisu_core::model::SearchResult]) -> Markup {
+    shell(
+        "Search",
+        "library",
+        html! {
+            h1 { "Search the archive" }
+            form.inline.find method="get" action="/find" role="search" {
+                input type="search" name="q" value=(query) autofocus
+                    placeholder="Search titles and show notes…" aria-label="Search the archive";
+                button.button.is-primary type="submit" { "Search" }
+            }
+            @if query.is_empty() {
+                p.muted { "Every word has to occur in the title or the show notes of an episode. The last word may be the beginning of a word." }
+            } @else if results.is_empty() {
+                p.muted { "No episode matches “" (query) "”." }
+            } @else {
+                section.panel {
+                    p.muted.small {
+                        (results.len()) @if results.len() == 1 { " episode" } @else { " episodes" }
+                        @if results.len() >= 100 { " – the best 100 matches" }
+                    }
+                    ol.episode-list {
+                        @for hit in results {
+                            li.episode {
+                                div.episode-main {
+                                    a.episode-title href=(format!("/podcasts/{}/episodes/{}", hit.podcast_id, hit.episode_id)) { (hit.title) }
+                                    div.episode-meta {
+                                        span { (hit.podcast_title) }
+                                        @if let Some(date) = hit.published_at { span { (format_date(date)) } }
+                                    }
+                                    @if !hit.snippet.trim().is_empty() {
+                                        p.muted.small { (marked(&hit.snippet)) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    )
+}
+
+/// A search snippet with its matches highlighted. The text is escaped first; only the marks
+/// are markup.
+fn marked(snippet: &str) -> Markup {
+    // The escaping drops control characters, so the marks travel as private-use characters.
+    let carried = snippet
+        .replace('\u{1}', "\u{e000}")
+        .replace('\u{2}', "\u{e001}");
+    let escaped = uguisu_core::util::xml_escape(&carried)
+        .replace('\u{e000}', "<mark>")
+        .replace('\u{e001}', "</mark>");
+    maud::PreEscaped(escaped)
+}
+
 pub fn settings_page(sessions: i64, notice: Option<&str>, error: Option<&str>) -> Markup {
     shell(
         "Settings",
@@ -296,6 +353,10 @@ pub fn library_page(
                     a.button.is-primary href="/add" { "Add your first podcast" }
                 }
             } @else {
+                form.inline.find method="get" action="/find" role="search" {
+                    input type="search" name="q" placeholder="Search titles and show notes in your archive…" aria-label="Search the archive";
+                    button.button type="submit" { "Search" }
+                }
                 section.stats {
                     div.stat { span.stat-value { (stats.podcasts) } span.stat-label { "Podcasts" } }
                     div.stat {

@@ -16,7 +16,7 @@ use crate::feed::{self, ParsedFeed, ParsedItem, without_query};
 use crate::http::{build_client, check_url, lend_credentials, parse_user_url, redact};
 use crate::model::{
     Attachment, AttachmentDetail, Episode, EpisodeView, FeedEpisode, MediaFile, Podcast,
-    PodcastSummary, Revision, Stats,
+    PodcastSummary, Revision, SearchResult, Stats,
 };
 use crate::util::{now, random_token, short_hash, slugify};
 use crate::{db, search};
@@ -566,6 +566,90 @@ impl Uguisu {
             found.extend(rows);
         }
         Ok(found)
+    }
+
+    /// Brings the full-text index of one podcast in step with its episodes.
+    pub(crate) async fn index_podcast_text(&self, podcast_id: i64) -> Result<()> {
+        let rows: Vec<(i64, String, Option<String>)> =
+            sqlx::query_as("SELECT id, title, description FROM episodes WHERE podcast_id = ?")
+                .bind(podcast_id)
+                .fetch_all(self.pool())
+                .await?;
+        let mut tx = self.pool().begin().await?;
+        sqlx::query(
+            "DELETE FROM episode_search WHERE rowid IN \
+               (SELECT id FROM episodes WHERE podcast_id = ?)",
+        )
+        .bind(podcast_id)
+        .execute(&mut *tx)
+        .await?;
+        for (id, title, description) in rows {
+            sqlx::query("INSERT INTO episode_search (rowid, title, notes) VALUES (?, ?, ?)")
+                .bind(id)
+                .bind(title)
+                .bind(crate::util::html_to_text(
+                    description.as_deref().unwrap_or(""),
+                ))
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Rebuilds the full-text index if it does not cover exactly the episodes of the archive,
+    /// as after an upgrade, a rebuilt database or a removed podcast.
+    pub async fn sync_search_index(&self) -> Result<()> {
+        let (indexed, episodes, orphans): (i64, i64, i64) = sqlx::query_as(
+            "SELECT (SELECT COUNT(*) FROM episode_search), (SELECT COUNT(*) FROM episodes), \
+             (SELECT COUNT(*) FROM episode_search WHERE rowid NOT IN (SELECT id FROM episodes))",
+        )
+        .fetch_one(self.pool())
+        .await?;
+        if indexed == episodes && orphans == 0 {
+            return Ok(());
+        }
+        sqlx::query("DELETE FROM episode_search")
+            .execute(self.pool())
+            .await?;
+        let podcasts: Vec<i64> = sqlx::query_scalar("SELECT id FROM podcasts")
+            .fetch_all(self.pool())
+            .await?;
+        for id in podcasts {
+            self.index_podcast_text(id).await?;
+        }
+        tracing::info!(episodes, "search index rebuilt");
+        Ok(())
+    }
+
+    /// Searches titles and show notes of all archived podcasts. Every word has to occur; the
+    /// last one may be the beginning of a word. Best matches first.
+    pub async fn search_episodes(&self, query: &str, limit: i64) -> Result<Vec<SearchResult>> {
+        // The words are passed as quoted strings, so that nothing in them is read as part of
+        // the query language.
+        let words: Vec<String> = query
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|word| !word.is_empty())
+            .take(12)
+            .map(|word| format!("\"{word}\""))
+            .collect();
+        if words.is_empty() {
+            return Ok(Vec::new());
+        }
+        let expression = format!("{}*", words.join(" "));
+        Ok(sqlx::query_as(
+            "SELECT e.id AS episode_id, e.podcast_id, p.title AS podcast_title, e.title, \
+             e.published_at, \
+             snippet(episode_search, 1, char(1), char(2), '…', 24) AS snippet \
+             FROM episode_search JOIN episodes e ON e.id = episode_search.rowid \
+             JOIN podcasts p ON p.id = e.podcast_id \
+             WHERE episode_search MATCH ? \
+             ORDER BY bm25(episode_search, 4.0, 1.0), e.published_at DESC LIMIT ?",
+        )
+        .bind(expression)
+        .bind(limit)
+        .fetch_all(self.pool())
+        .await?)
     }
 
     /// Every copy of an episode's media file, oldest first.
@@ -1497,10 +1581,14 @@ impl Uguisu {
         tx.commit().await?;
 
         // 5. Sidecar files, so the archive explains itself without the database.
+        let texts_changed = !changed.is_empty();
         for (id, dir, item) in changed {
             let episode_dir = podcast_dir.join("episodes").join(dir);
             write_atomic(&episode_dir.join("item.xml"), item.raw_xml.as_bytes()).await?;
             self.write_episode_json(id).await?;
+        }
+        if texts_changed {
+            self.index_podcast_text(podcast_id).await?;
         }
         for id in status_changed {
             self.write_episode_json(id).await?;
@@ -1609,6 +1697,7 @@ impl Uguisu {
             .bind(podcast_id)
             .execute(self.pool())
             .await?;
+        self.sync_search_index().await?;
         tracing::info!(podcast = %podcast.title, delete_files, "podcast removed");
         if delete_files {
             // `dir` is generated by Uguisu as a single path segment; refuse anything else
@@ -2124,6 +2213,9 @@ impl Uguisu {
         tokio::spawn(async move {
             if let Err(e) = this.upgrade_archive().await {
                 tracing::error!("upgrading the archive failed: {e:#}");
+            }
+            if let Err(e) = this.sync_search_index().await {
+                tracing::error!("rebuilding the search index failed: {e:#}");
             }
         });
         let this = self.clone();

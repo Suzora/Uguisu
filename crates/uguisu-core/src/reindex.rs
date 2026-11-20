@@ -114,6 +114,7 @@ impl Uguisu {
                 report.problems.push(format!("{dir}: {error:#}"));
             }
         }
+        self.sync_search_index().await?;
         Ok(report)
     }
 

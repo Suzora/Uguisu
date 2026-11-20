@@ -31,6 +31,8 @@ Uguisu is not a player and does not sync listening progress. That is the job of 
   Podcasting 2.0 tags included – with the media address pointing at the archive. Range requests
   (seeking) are supported. Adding `?limit=50` to a feed address publishes only the newest 50
   episodes, for apps that struggle with very long feeds.
+- **Finds things again.** Titles and show notes of the whole archive can be searched, and every
+  episode has a page showing its files, checksums and what the publisher changed over time.
 - **Offers one feed for everything.** Besides the feed per podcast there is one feed with the
   newest episodes of all podcasts.
 - **Archives what an episode links to.** Transcripts, chapter files, episode images and the
