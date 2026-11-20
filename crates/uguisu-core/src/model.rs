@@ -76,6 +76,8 @@ pub struct EpisodeView {
     pub media_versions: i64,
     /// Copies that failed their last integrity check.
     pub media_damaged: i64,
+    /// Archived transcripts, chapter files and images of the episode.
+    pub attachment_count: i64,
 }
 
 /// An episode as needed to publish it: the view plus the raw `<item>` of its current revision.
@@ -84,6 +86,23 @@ pub struct FeedEpisode {
     #[sqlx(flatten)]
     pub view: EpisodeView,
     pub raw_xml: Option<String>,
+}
+
+/// An archived file an episode links to, as needed to publish and serve it.
+#[derive(Debug, Clone, FromRow)]
+pub struct Attachment {
+    pub id: i64,
+    pub episode_id: i64,
+    /// Source address without its query string; this is what links in the feed are matched by.
+    pub source_key: String,
+    pub path: String,
+    pub mime: String,
+}
+
+impl Attachment {
+    pub fn file_name(&self) -> &str {
+        self.path.rsplit('/').next().unwrap_or(&self.path)
+    }
 }
 
 impl EpisodeView {

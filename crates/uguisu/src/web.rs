@@ -102,7 +102,11 @@ pub fn router(state: AppState) -> Router {
         .route("/login", get(login_page).post(login))
         .route("/feed/{file}", get(feed))
         .route("/media/{token}/{file}", get(feed_cover))
-        .route("/media/{token}/{episode_id}/{file}", get(media));
+        .route("/media/{token}/{episode_id}/{file}", get(media))
+        .route(
+            "/media/{token}/{episode_id}/a/{attachment_id}/{file}",
+            get(attachment),
+        );
 
     protected
         .merge(public)
@@ -120,14 +124,21 @@ async fn security(request: Request, next: Next) -> Response {
     if !safe && !is_same_origin(request.headers()) {
         return (StatusCode::FORBIDDEN, "cross-site request refused").into_response();
     }
+    // Archived files come from third parties. Whatever they contain and whatever type they
+    // claim, a browser opening one must not run it with access to the interface.
+    let is_archived_file = ["/media/", "/cover/"]
+        .iter()
+        .any(|prefix| request.uri().path().starts_with(prefix));
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
     headers.insert(
         "content-security-policy",
-        HeaderValue::from_static(
+        HeaderValue::from_static(if is_archived_file {
+            "sandbox; default-src 'none'; media-src 'self'; img-src 'self'"
+        } else {
             "default-src 'self'; img-src 'self' https: data:; media-src 'self'; \
-             frame-ancestors 'none'; form-action 'self'; base-uri 'none'",
-        ),
+             frame-ancestors 'none'; form-action 'self'; base-uri 'none'"
+        }),
     );
     headers.insert(
         "x-content-type-options",
@@ -567,7 +578,13 @@ async fn feed(
         .await?
         .ok_or(AppError::NotFound)?;
     let episodes = state.app.feed_episodes(podcast.id).await?;
-    let xml = rss::build_feed(&podcast, &episodes, &base_url(&state, &headers));
+    let attachments = state.app.attachments(podcast.id).await?;
+    let xml = rss::build_feed(
+        &podcast,
+        &episodes,
+        &attachments,
+        &base_url(&state, &headers),
+    );
     Ok((
         [
             (CONTENT_TYPE, "application/rss+xml; charset=utf-8"),
@@ -610,6 +627,29 @@ async fn media(
         return Err(AppError::NotFound);
     };
     serve_file(&state.app.archive_path(path), mime, request).await
+}
+
+async fn attachment(
+    State(state): State<AppState>,
+    Path((token, episode_id, attachment_id, _file)): Path<(String, i64, i64, String)>,
+    request: Request,
+) -> AppResult {
+    let podcast = state
+        .app
+        .podcast_by_token(&token)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let attachment = state
+        .app
+        .attachment(podcast.id, episode_id, attachment_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    serve_file(
+        &state.app.archive_path(&attachment.path),
+        &attachment.mime,
+        request,
+    )
+    .await
 }
 
 async fn serve_cover(state: &AppState, podcast: &Podcast, request: Request) -> AppResult {

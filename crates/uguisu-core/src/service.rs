@@ -12,14 +12,15 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::Notify;
 
 use crate::archive::{self, write_atomic};
-use crate::feed::{self, ParsedFeed, ParsedItem};
+use crate::feed::{self, ParsedFeed, ParsedItem, without_query};
 use crate::http::{build_client, check_url, parse_user_url};
-use crate::model::{Episode, EpisodeView, FeedEpisode, Podcast, PodcastSummary, Stats};
+use crate::model::{Attachment, Episode, EpisodeView, FeedEpisode, Podcast, PodcastSummary, Stats};
 use crate::util::{now, random_token, short_hash, slugify};
 use crate::{db, search};
 
 const MAX_FEED_BYTES: usize = 64 * 1024 * 1024;
 const MAX_COVER_BYTES: usize = 32 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_DOWNLOAD_ATTEMPTS: i64 = 5;
 
 // A macro rather than a constant so that the complete statement stays a string literal.
@@ -29,7 +30,8 @@ macro_rules! episode_view_sql {
             "SELECT e.*, m.path AS media_path, m.size AS media_size, \
      m.mime AS media_mime, m.blake3 AS media_blake3, \
      (SELECT COUNT(*) FROM media_files WHERE episode_id = e.id) AS media_versions, \
-     (SELECT COUNT(*) FROM media_files WHERE episode_id = e.id AND status != 'ok') AS media_damaged \
+     (SELECT COUNT(*) FROM media_files WHERE episode_id = e.id AND status != 'ok') AS media_damaged, \
+     (SELECT COUNT(*) FROM attachments WHERE episode_id = e.id AND status = 'ok') AS attachment_count \
      FROM episodes e LEFT JOIN media_files m ON m.id = \
      (SELECT MAX(id) FROM media_files WHERE episode_id = e.id AND status = 'ok')",
             " ",
@@ -87,6 +89,15 @@ pub struct VerifyReport {
     pub missing: Vec<String>,
 }
 
+impl VerifyReport {
+    fn merge(&mut self, other: VerifyReport) {
+        self.checked += other.checked;
+        self.ok += other.ok;
+        self.corrupt.extend(other.corrupt);
+        self.missing.extend(other.missing);
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ImportReport {
     pub added: usize,
@@ -100,6 +111,24 @@ enum Fetched {
         etag: Option<String>,
         last_modified: Option<String>,
     },
+}
+
+#[derive(FromRow)]
+struct PendingAttachment {
+    id: i64,
+    kind: String,
+    source_key: String,
+    source_url: String,
+    attempts: i64,
+    episode_dir: String,
+    podcast_dir: String,
+}
+
+/// The two tables that hold archived files.
+#[derive(Clone, Copy)]
+enum Files {
+    Media,
+    Attachments,
 }
 
 #[derive(FromRow)]
@@ -133,10 +162,6 @@ fn header(response: &reqwest::Response, name: reqwest::header::HeaderName) -> Op
 
 fn iso_date(timestamp: i64) -> Option<String> {
     crate::util::rfc3339(timestamp)
-}
-
-fn without_query(url: &str) -> &str {
-    url.split(['?', '#']).next().unwrap_or(url)
 }
 
 fn episode_dir_name(item: &ParsedItem) -> String {
@@ -246,6 +271,35 @@ impl Uguisu {
         .await?)
     }
 
+    /// Archived attachments of all episodes of a podcast.
+    pub async fn attachments(&self, podcast_id: i64) -> Result<Vec<Attachment>> {
+        Ok(sqlx::query_as(
+            "SELECT a.id, a.episode_id, a.source_key, a.path, a.mime FROM attachments a \
+             JOIN episodes e ON e.id = a.episode_id WHERE e.podcast_id = ? AND a.status = 'ok'",
+        )
+        .bind(podcast_id)
+        .fetch_all(self.pool())
+        .await?)
+    }
+
+    pub async fn attachment(
+        &self,
+        podcast_id: i64,
+        episode_id: i64,
+        attachment_id: i64,
+    ) -> Result<Option<Attachment>> {
+        Ok(sqlx::query_as(
+            "SELECT a.id, a.episode_id, a.source_key, a.path, a.mime FROM attachments a \
+             JOIN episodes e ON e.id = a.episode_id \
+             WHERE e.podcast_id = ? AND a.episode_id = ? AND a.id = ? AND a.status = 'ok'",
+        )
+        .bind(podcast_id)
+        .bind(episode_id)
+        .bind(attachment_id)
+        .fetch_optional(self.pool())
+        .await?)
+    }
+
     pub async fn episode(&self, podcast_id: i64, episode_id: i64) -> Result<Option<EpisodeView>> {
         Ok(
             sqlx::query_as(episode_view_sql!("WHERE e.podcast_id = ? AND e.id = ?"))
@@ -262,7 +316,8 @@ impl Uguisu {
              (SELECT COUNT(*) FROM episodes) AS episodes, \
              (SELECT COUNT(DISTINCT episode_id) FROM media_files WHERE status = 'ok') AS archived, \
              (SELECT COALESCE(SUM(size), 0) FROM media_files WHERE status = 'ok') AS bytes, \
-             (SELECT COUNT(*) FROM media_files WHERE status != 'ok') AS damaged, \
+             (SELECT COUNT(*) FROM media_files WHERE status != 'ok') \
+               + (SELECT COUNT(*) FROM attachments WHERE status IN ('corrupt', 'missing')) AS damaged, \
              (SELECT MIN(verified_at) FROM media_files WHERE status = 'ok') AS oldest_check",
         )
         .fetch_one(self.pool())
@@ -647,6 +702,20 @@ impl Uguisu {
             };
 
             seen.insert(episode_id);
+            for link in &item.links {
+                // The address may carry a fresh token at every fetch; keep the latest.
+                sqlx::query(
+                    "INSERT INTO attachments (episode_id, kind, source_key, source_url) \
+                     VALUES (?, ?, ?, ?) ON CONFLICT (episode_id, source_key) \
+                     DO UPDATE SET source_url = excluded.source_url",
+                )
+                .bind(episode_id)
+                .bind(link.kind)
+                .bind(without_query(&link.url))
+                .bind(&link.url)
+                .execute(&mut *tx)
+                .await?;
+            }
             if is_new_revision {
                 sqlx::query(
                     "INSERT OR IGNORE INTO episode_revisions (episode_id, seen_at, meta_hash, raw_xml) \
@@ -858,16 +927,125 @@ impl Uguisu {
         let mut attempted = 0;
         loop {
             let pending = self.pending_downloads().await?;
-            if pending.is_empty() {
+            let attachments = self.pending_attachments().await?;
+            if pending.is_empty() && attachments.is_empty() {
                 return Ok(attempted);
             }
             attempted += pending.len();
+            let concurrency = self.inner.cfg.download_concurrency.max(1);
             futures_util::stream::iter(pending)
-                .for_each_concurrent(self.inner.cfg.download_concurrency.max(1), |p| async move {
+                .for_each_concurrent(concurrency, |p| async move {
                     self.download_one(p).await;
                 })
                 .await;
+            futures_util::stream::iter(attachments)
+                .for_each_concurrent(concurrency, |a| async move {
+                    self.download_attachment(a).await;
+                })
+                .await;
         }
+    }
+
+    async fn pending_attachments(&self) -> Result<Vec<PendingAttachment>> {
+        Ok(sqlx::query_as(
+            "SELECT a.id, a.kind, a.source_key, a.source_url, a.attempts, \
+             e.dir AS episode_dir, p.dir AS podcast_dir \
+             FROM attachments a JOIN episodes e ON e.id = a.episode_id \
+             JOIN podcasts p ON p.id = e.podcast_id \
+             WHERE a.status != 'ok' AND a.attempts < ? AND a.next_attempt_at <= ? LIMIT 50",
+        )
+        .bind(MAX_DOWNLOAD_ATTEMPTS)
+        .bind(now())
+        .fetch_all(self.pool())
+        .await?)
+    }
+
+    async fn download_attachment(&self, pending: PendingAttachment) {
+        let outcome = match self.fetch_attachment(&pending).await {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                tracing::warn!(url = %pending.source_key, "attachment download failed: {e:#}");
+                let delay = 300 * 4i64.pow(pending.attempts.clamp(0, 6) as u32);
+                sqlx::query(
+                    "UPDATE attachments SET attempts = attempts + 1, error = ?, \
+                     next_attempt_at = ? WHERE id = ?",
+                )
+                .bind(format!("{e:#}"))
+                .bind(now() + delay)
+                .bind(pending.id)
+                .execute(self.pool())
+                .await
+                .map(|_| ())
+            }
+        };
+        if let Err(e) = outcome {
+            tracing::error!("cannot record attachment result: {e:#}");
+        }
+    }
+
+    async fn fetch_attachment(&self, pending: &PendingAttachment) -> Result<()> {
+        let url = url::Url::parse(&pending.source_url).context("invalid address")?;
+        check_url(&url, self.inner.cfg.allow_private_networks)?;
+        let mut response = self
+            .inner
+            .client
+            .get(url)
+            .timeout(Duration::from_secs(120))
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            bail!("the server answered {}", response.status());
+        }
+        let content_type = header(&response, reqwest::header::CONTENT_TYPE)
+            .map(|c| {
+                c.split(';')
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .to_ascii_lowercase()
+            })
+            .unwrap_or_default();
+        let ext = archive::extension_from_url(&pending.source_key)
+            .or_else(|| archive::extension_from_mime(&content_type))
+            .unwrap_or("bin");
+        let mime = archive::mime_from_extension(ext)
+            .map(str::to_string)
+            .or_else(|| (!content_type.is_empty()).then(|| content_type.clone()))
+            .unwrap_or_else(|| "application/octet-stream".to_string());
+
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.context("download interrupted")? {
+            if bytes.len() + chunk.len() > MAX_ATTACHMENT_BYTES {
+                bail!("the file is larger than {} MiB", MAX_ATTACHMENT_BYTES >> 20);
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        if bytes.is_empty() {
+            bail!("the server sent an empty file");
+        }
+
+        // Several transcripts per episode are common, so the name carries a hash of the address.
+        let file_name = format!("{}-{}.{ext}", pending.kind, short_hash(&pending.source_key));
+        let relative = format!(
+            "{}/episodes/{}/{file_name}",
+            pending.podcast_dir, pending.episode_dir
+        );
+        write_atomic(&self.archive_path(&relative), &bytes).await?;
+        let now = now();
+        sqlx::query(
+            "UPDATE attachments SET path = ?, size = ?, blake3 = ?, mime = ?, downloaded_at = ?, \
+             verified_at = ?, status = 'ok', error = NULL WHERE id = ?",
+        )
+        .bind(&relative)
+        .bind(bytes.len() as i64)
+        .bind(blake3::hash(&bytes).to_hex().to_string())
+        .bind(&mime)
+        .bind(now)
+        .bind(now)
+        .bind(pending.id)
+        .execute(self.pool())
+        .await?;
+        Ok(())
     }
 
     async fn download_one(&self, pending: PendingDownload) {
@@ -1102,31 +1280,54 @@ impl Uguisu {
 
     // ── Fixity ─────────────────────────────────────────────────────────────────────────────
 
-    /// Re-hashes every archived media file and compares it with the hash recorded at download.
+    /// Re-hashes every archived file and compares it with the hash recorded at download.
     /// Damaged or missing files are flagged, which also queues them for a new download.
     pub async fn verify(&self) -> Result<VerifyReport> {
-        let files: Vec<(i64, String, String)> =
+        let media: Vec<(i64, String, String)> =
             sqlx::query_as("SELECT id, path, blake3 FROM media_files ORDER BY path")
                 .fetch_all(self.pool())
                 .await?;
-        self.verify_files(files).await
+        let attachments: Vec<(i64, String, String)> = sqlx::query_as(
+            "SELECT id, path, blake3 FROM attachments WHERE path IS NOT NULL ORDER BY path",
+        )
+        .fetch_all(self.pool())
+        .await?;
+        let mut report = self.verify_files(Files::Media, media).await?;
+        report.merge(self.verify_files(Files::Attachments, attachments).await?);
+        Ok(report)
     }
 
     /// Re-hashes up to `limit` intact files that have not been checked for `max_age`, oldest
     /// check first. Called periodically, this spreads a full pass over the archive.
     pub async fn verify_due(&self, max_age: Duration, limit: i64) -> Result<VerifyReport> {
-        let files: Vec<(i64, String, String)> = sqlx::query_as(
+        let cutoff = now() - max_age.as_secs() as i64;
+        let media: Vec<(i64, String, String)> = sqlx::query_as(
             "SELECT id, path, blake3 FROM media_files WHERE status = 'ok' AND verified_at <= ? \
              ORDER BY verified_at LIMIT ?",
         )
-        .bind(now() - max_age.as_secs() as i64)
+        .bind(cutoff)
         .bind(limit)
         .fetch_all(self.pool())
         .await?;
-        self.verify_files(files).await
+        let remaining = limit - media.len() as i64;
+        let attachments: Vec<(i64, String, String)> = sqlx::query_as(
+            "SELECT id, path, blake3 FROM attachments WHERE status = 'ok' AND verified_at <= ? \
+             ORDER BY verified_at LIMIT ?",
+        )
+        .bind(cutoff)
+        .bind(remaining.max(0))
+        .fetch_all(self.pool())
+        .await?;
+        let mut report = self.verify_files(Files::Media, media).await?;
+        report.merge(self.verify_files(Files::Attachments, attachments).await?);
+        Ok(report)
     }
 
-    async fn verify_files(&self, files: Vec<(i64, String, String)>) -> Result<VerifyReport> {
+    async fn verify_files(
+        &self,
+        table: Files,
+        files: Vec<(i64, String, String)>,
+    ) -> Result<VerifyReport> {
         let mut report = VerifyReport::default();
         for (id, relative, expected) in files {
             report.checked += 1;
@@ -1149,19 +1350,29 @@ impl Uguisu {
                 }
                 Err(e) => return Err(e).with_context(|| format!("cannot read {relative}")),
             };
-            if status == "ok" {
-                sqlx::query("UPDATE media_files SET status = 'ok', verified_at = ? WHERE id = ?")
-                    .bind(now())
-                    .bind(id)
-                    .execute(self.pool())
-                    .await?;
-            } else {
-                sqlx::query("UPDATE media_files SET status = ? WHERE id = ?")
-                    .bind(status)
-                    .bind(id)
-                    .execute(self.pool())
-                    .await?;
-            }
+            // An intact file gets a new check date; a damaged one keeps the date it was last good
+            // and, for attachments, a fresh set of download attempts.
+            let statement = match (table, status == "ok") {
+                (Files::Media, true) => {
+                    "UPDATE media_files SET status = ?, verified_at = ? WHERE id = ?"
+                }
+                (Files::Media, false) => {
+                    "UPDATE media_files SET status = ?, verified_at = MIN(verified_at, ?) WHERE id = ?"
+                }
+                (Files::Attachments, true) => {
+                    "UPDATE attachments SET status = ?, verified_at = ? WHERE id = ?"
+                }
+                (Files::Attachments, false) => {
+                    "UPDATE attachments SET status = ?, verified_at = MIN(verified_at, ?), \
+                     attempts = 0, next_attempt_at = 0 WHERE id = ?"
+                }
+            };
+            sqlx::query(statement)
+                .bind(status)
+                .bind(now())
+                .bind(id)
+                .execute(self.pool())
+                .await?;
         }
         if !report.corrupt.is_empty() || !report.missing.is_empty() {
             self.inner.wake_downloader.notify_one();

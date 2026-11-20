@@ -26,9 +26,11 @@ Uguisu is not a player and does not sync listening progress. That is the job of 
   published. A file that only moved to a new address is not stored twice.
 - **Publishes the archive as feeds.** One feed per podcast behind a secret address. Episodes are
   published as the original feed entries – show notes, chapters, transcripts and other
-  Podcasting 2.0 tags included – with only the media address pointing at the archive. Range
-  requests (seeking) are supported. An OPML export lists all
-  archive feeds for import into a podcast app.
+  Podcasting 2.0 tags included – with the media address pointing at the archive. Range requests
+  (seeking) are supported.
+- **Archives what an episode links to.** Transcripts, chapter files and episode images are
+  stored next to the media file, checked like it, and the published feed points at the archived
+  copies.
 - **Takes input the easy way.** Search podcast directories (iTunes and fyyd), paste a feed
   address, or import an OPML file from your current app.
 - **Keeps the archive readable without Uguisu.** The database is only an index. Everything needed
@@ -49,6 +51,8 @@ data/
         item.xml                         raw <item> element from the feed
         media.mp3                        the episode
         media.mp3.blake3                 checksum, usable with `b3sum -c`
+        transcript-<hash>.vtt            files the episode links to: transcripts,
+        chapters-<hash>.json             chapters and its own image
 ```
 
 ## Running with Docker
@@ -124,9 +128,8 @@ CI additionally runs [`cargo deny check`](https://github.com/EmbarkStudios/cargo
 
 ## Not there yet
 
-Podcast Index search (needs an API key), Atom feeds, paged feeds (RFC 5005), and archiving the
-files an episode links to (transcripts, chapters, show-note images): the published feed passes
-those links through, but they still point at the original servers.
+Podcast Index search (needs an API key), Atom feeds, paged feeds (RFC 5005), and archiving images
+embedded in show notes.
 
 ## License
 

@@ -40,41 +40,96 @@ pub struct ParsedItem {
     pub image_url: Option<String>,
     pub season: Option<i64>,
     pub episode_no: Option<i64>,
+    /// Files the item links to besides its enclosure.
+    pub links: Vec<ItemLink>,
+    /// Hash over the whole item, see [`content_hash`].
+    pub hash: String,
     pub raw_xml: String,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ItemLink {
+    /// `transcript`, `chapters` or `image`.
+    pub kind: &'static str,
+    pub url: String,
+}
+
 impl ParsedItem {
-    /// Hash over the indexed metadata. The query string of the enclosure URL is left out because
-    /// many hosts put per-request tracking tokens there, which would create a revision per fetch.
+    /// Identifies this state of the item; a different value means a new revision.
     pub fn meta_hash(&self) -> String {
-        let enclosure = self
-            .enclosure_url
-            .as_deref()
-            .map(|u| u.split(['?', '#']).next().unwrap_or(u));
-        let mut hasher = blake3::Hasher::new();
-        let mut field = |value: Option<&str>| {
-            match value {
-                Some(v) => {
-                    hasher.update(&(v.len() as u64).to_le_bytes());
-                    hasher.update(v.as_bytes());
-                }
-                None => {
-                    hasher.update(&u64::MAX.to_le_bytes());
-                }
-            };
-        };
-        field(Some(&self.title));
-        field(self.description.as_deref());
-        field(self.link.as_deref());
-        field(self.published_at.map(|v| v.to_string()).as_deref());
-        field(self.duration.map(|v| v.to_string()).as_deref());
-        field(enclosure);
-        field(self.enclosure_type.as_deref());
-        field(self.image_url.as_deref());
-        field(self.season.map(|v| v.to_string()).as_deref());
-        field(self.episode_no.map(|v| v.to_string()).as_deref());
-        hasher.finalize().to_hex().to_string()
+        self.hash.clone()
     }
+}
+
+/// Addresses are compared without query string and fragment: many hosts put per-request
+/// tracking tokens there, which would otherwise look like a change at every fetch.
+pub fn without_query(url: &str) -> &str {
+    url.split(['?', '#']).next().unwrap_or(url)
+}
+
+/// Hash over everything in the item: element names, attributes and text. Any change a publisher
+/// makes, also to tags Uguisu does not index, therefore produces a new revision. Only the query
+/// strings of addresses in attributes are left out.
+fn content_hash(item: Node) -> String {
+    let mut hasher = blake3::Hasher::new();
+    let mut put = |text: &str| {
+        hasher.update(&(text.len() as u64).to_le_bytes());
+        hasher.update(text.as_bytes());
+    };
+    for node in item.descendants() {
+        if node.is_element() {
+            put("<");
+            put(node.tag_name().namespace().unwrap_or(""));
+            put(node.tag_name().name());
+            for attribute in node.attributes() {
+                put("@");
+                put(attribute.namespace().unwrap_or(""));
+                put(attribute.name());
+                let value = attribute.value();
+                let is_address = value.starts_with("http://") || value.starts_with("https://");
+                put(if is_address {
+                    without_query(value)
+                } else {
+                    value
+                });
+            }
+        } else if node.is_text() {
+            let text = node.text().unwrap_or("").trim();
+            if !text.is_empty() {
+                put("#");
+                put(text);
+            }
+        }
+    }
+    hasher.finalize().to_hex().to_string()
+}
+
+fn item_links(item: Node) -> Vec<ItemLink> {
+    let mut links: Vec<ItemLink> = Vec::new();
+    for node in item.children().filter(|n| n.is_element()) {
+        let namespace = node.tag_name().namespace();
+        let found = match node.tag_name().name() {
+            "transcript" if ns_matches(namespace, Some(NS_PODCAST)) => {
+                attr(node, "url").map(|url| ("transcript", url))
+            }
+            "chapters" if ns_matches(namespace, Some(NS_PODCAST)) => {
+                attr(node, "url").map(|url| ("chapters", url))
+            }
+            "image" if ns_matches(namespace, Some(NS_ITUNES)) => {
+                attr(node, "href").map(|url| ("image", url))
+            }
+            _ => None,
+        };
+        if let Some((kind, url)) = found
+            && (url.starts_with("http://") || url.starts_with("https://"))
+            && !links
+                .iter()
+                .any(|l| without_query(&l.url) == without_query(&url))
+        {
+            links.push(ItemLink { kind, url });
+        }
+    }
+    links
 }
 
 fn ns_matches(actual: Option<&str>, wanted: Option<&str>) -> bool {
@@ -207,7 +262,7 @@ fn parse_item(item: Node, source: &str) -> ParsedItem {
         .or_else(|| {
             enclosure_url
                 .as_deref()
-                .map(|u| u.split(['?', '#']).next().unwrap_or(u).to_string())
+                .map(|u| without_query(u).to_string())
         })
         .or_else(|| link.clone())
         .unwrap_or_else(|| format!("{title}|{}", published_raw.as_deref().unwrap_or("")));
@@ -232,6 +287,8 @@ fn parse_item(item: Node, source: &str) -> ParsedItem {
         image_url: child(item, Some(NS_ITUNES), "image").and_then(|n| attr(n, "href")),
         season: child_text(item, Some(NS_ITUNES), "season").and_then(|v| v.parse().ok()),
         episode_no: child_text(item, Some(NS_ITUNES), "episode").and_then(|v| v.parse().ok()),
+        links: item_links(item),
+        hash: content_hash(item),
         raw_xml: source[item.range()].to_string(),
     }
 }
@@ -315,14 +372,50 @@ mod tests {
     }
 
     #[test]
-    fn meta_hash_ignores_enclosure_query() {
-        let feed = parse(FEED.as_bytes()).unwrap();
-        let mut item = feed.items[0].clone();
-        let before = item.meta_hash();
-        item.enclosure_url = Some("https://cdn.example.org/ep2.mp3?token=other".into());
-        assert_eq!(before, item.meta_hash());
-        item.title.push('!');
-        assert_ne!(before, item.meta_hash());
+    fn hash_covers_the_whole_item_but_not_query_strings() {
+        let hash = |text: &str| parse(text.as_bytes()).unwrap().items[0].meta_hash();
+        let original = hash(FEED);
+        assert_eq!(
+            original,
+            hash(&FEED.replace("ep2.mp3?token=abc", "ep2.mp3?token=other"))
+        );
+        assert_ne!(original, hash(&FEED.replace("Episode 2", "Episode 2!")));
+        // A tag Uguisu does not index still makes a new revision.
+        assert_ne!(
+            original,
+            hash(&FEED.replace(
+                "<itunes:season>1</itunes:season>",
+                "<itunes:season>1</itunes:season><podcast:person>Someone</podcast:person>"
+            ))
+        );
+    }
+
+    #[test]
+    fn finds_linked_files() {
+        let feed = FEED.replace(
+            "<itunes:season>1</itunes:season>",
+            r#"<podcast:transcript url="https://cdn.example.org/2.vtt?t=1" type="text/vtt"/>
+               <podcast:transcript url="https://cdn.example.org/2.vtt?t=2" type="text/vtt"/>
+               <podcast:transcript url="https://cdn.example.org/2.srt" type="application/srt"/>
+               <podcast:chapters url="https://cdn.example.org/2.json" type="application/json+chapters"/>
+               <itunes:image href="https://cdn.example.org/2.jpg"/>
+               <podcast:transcript url="/relative.vtt"/>"#,
+        );
+        let item = &parse(feed.as_bytes()).unwrap().items[0];
+        let found: Vec<(&str, &str)> = item
+            .links
+            .iter()
+            .map(|l| (l.kind, l.url.as_str()))
+            .collect();
+        assert_eq!(
+            found,
+            [
+                ("transcript", "https://cdn.example.org/2.vtt?t=1"),
+                ("transcript", "https://cdn.example.org/2.srt"),
+                ("chapters", "https://cdn.example.org/2.json"),
+                ("image", "https://cdn.example.org/2.jpg"),
+            ]
+        );
     }
 
     #[test]
