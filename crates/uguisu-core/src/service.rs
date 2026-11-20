@@ -594,7 +594,7 @@ impl Uguisu {
             .get(url)
             .header(
                 reqwest::header::ACCEPT,
-                "application/rss+xml, application/xml;q=0.9, */*;q=0.5",
+                "application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.5",
             )
             .timeout(Duration::from_secs(120));
         if let Some(etag) = etag {

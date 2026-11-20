@@ -33,7 +33,8 @@ Uguisu is not a player and does not sync listening progress. That is the job of 
   stored next to the media file, checked like it, and the published feed points at the archived
   copies.
 - **Takes input the easy way.** Search podcast directories (iTunes and fyyd), paste a feed
-  address, or import an OPML file from your current app.
+  address, or import an OPML file from your current app. Source feeds may be RSS 2.0, Atom or
+  RSS 1.0; the published feed is always RSS 2.0.
 - **Keeps the archive readable without Uguisu.** The database is only an index. Everything needed
   to understand the archive is on disk as plain files.
 

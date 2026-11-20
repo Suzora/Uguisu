@@ -304,7 +304,7 @@ pub fn add_page(error: Option<&str>, url: &str) -> Markup {
             div.columns {
                 section.panel {
                     h2 { "Feed address" }
-                    p.muted { "Paste the RSS address of a podcast, including private feeds with a token in the address." }
+                    p.muted { "Paste the feed address of a podcast, including private feeds with a token in the address." }
                     form.inline method="post" action="/podcasts" {
                         input type="text" name="url" value=(url) placeholder="https://example.org/feed.xml" required inputmode="url";
                         button.button.is-primary type="submit" { "Archive" }

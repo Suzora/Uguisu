@@ -1,4 +1,4 @@
-//! Tolerant RSS 2.0 parser for podcast feeds.
+//! Tolerant parser for podcast feeds: RSS 2.0 (and its 0.9x predecessors), Atom and RSS 1.0.
 //!
 //! Only the fields Uguisu indexes are extracted. Nothing is lost by that: the complete feed is
 //! stored byte for byte as a snapshot, and the raw `<item>` XML is kept with every revision.
@@ -10,6 +10,11 @@ const NS_ITUNES: &str = "http://www.itunes.com/dtds/podcast-1.0.dtd";
 const NS_PODCAST: &str = "https://podcastindex.org/namespace/1.0";
 const NS_CONTENT: &str = "http://purl.org/rss/1.0/modules/content/";
 const NS_ATOM: &str = "http://www.w3.org/2005/Atom";
+const NS_RSS1: &str = "http://purl.org/rss/1.0/";
+const NS_RDF: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
+const NS_DC: &str = "http://purl.org/dc/elements/1.1/";
+const NS_ENC: &str = "http://purl.oclc.org/net/rss_2.0/enc#";
+const NS_XML: &str = "http://www.w3.org/XML/1998/namespace";
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ParsedFeed {
@@ -195,6 +200,13 @@ fn attr(node: Node, name: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+fn ns_attr(node: Node, namespace: &str, name: &str) -> Option<String> {
+    node.attribute((namespace, name))
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_string)
+}
+
 /// Parses RFC 2822 dates (the RSS standard) and, as a fallback, RFC 3339.
 ///
 /// The optional weekday is dropped first: real feeds contain dates whose weekday does not match
@@ -234,56 +246,81 @@ pub fn parse(bytes: &[u8]) -> Result<ParsedFeed> {
     };
     let doc = Document::parse_with_options(text, options).context("the feed is not valid XML")?;
     let root = doc.root_element();
-    match root.tag_name().name() {
-        "rss" => {}
-        "feed" => bail!("Atom feeds are not supported yet"),
+    let namespace = root.tag_name().namespace();
+    let mut feed = match root.tag_name().name() {
+        "rss" => {
+            let channel = child(root, None, "channel").context("the feed has no <channel>")?;
+            parse_rss(channel, channel, None, text)
+        }
+        "RDF" if ns_matches(namespace, Some(NS_RDF)) => {
+            // RSS 1.0: the items are siblings of the channel, not its children.
+            let channel =
+                child(root, Some(NS_RSS1), "channel").context("the feed has no <channel>")?;
+            parse_rss(channel, root, Some(NS_RSS1), text)
+        }
+        "feed" if ns_matches(namespace, Some(NS_ATOM)) => parse_atom(root, text),
         "html" => bail!("this URL points to a web page, not to a podcast feed"),
-        other => bail!("not an RSS feed (root element <{other}>)"),
-    }
-    let channel = child(root, None, "channel").context("the feed has no <channel>")?;
-
-    let image_url = child(channel, Some(NS_ITUNES), "image")
-        .and_then(|n| attr(n, "href"))
-        .or_else(|| child(channel, None, "image").and_then(|n| child_text(n, None, "url")));
-
-    let mut feed = ParsedFeed {
-        title: child_text(channel, None, "title").unwrap_or_else(|| "Untitled podcast".into()),
-        author: child_text(channel, Some(NS_ITUNES), "author"),
-        description: child_text(channel, None, "description")
-            .or_else(|| child_text(channel, Some(NS_ITUNES), "summary")),
-        link: child_text(channel, None, "link"),
-        image_url,
-        language: child_text(channel, None, "language"),
-        podcast_guid: child_text(channel, Some(NS_PODCAST), "guid"),
-        new_feed_url: child_text(channel, Some(NS_ITUNES), "new-feed-url"),
-        next_page: next_page(channel),
-        namespaces: root
-            .namespaces()
-            .filter(|ns| ns.name() != Some("xml"))
-            .map(|ns| (ns.name().unwrap_or("").to_string(), ns.uri().to_string()))
-            .collect(),
-        items: Vec::new(),
+        other => bail!("not a podcast feed (root element <{other}>)"),
     };
-
-    for item in channel.children().filter(|c| {
-        c.is_element() && c.tag_name().name() == "item" && c.tag_name().namespace().is_none()
-    }) {
-        feed.items.push(parse_item(item, text));
-    }
+    feed.namespaces = root
+        .namespaces()
+        .filter(|ns| ns.name() != Some("xml"))
+        .map(|ns| (ns.name().unwrap_or("").to_string(), ns.uri().to_string()))
+        .collect();
     Ok(feed)
 }
 
-fn parse_item(item: Node, source: &str) -> ParsedItem {
-    let enclosure = child(item, None, "enclosure");
-    let enclosure_url = enclosure.and_then(|n| attr(n, "url"));
-    let link = child_text(item, None, "link");
-    let title = child_text(item, None, "title")
+/// RSS 2.0 and RSS 1.0. `core` is the namespace of the format's own elements: none for RSS 2.0,
+/// [`NS_RSS1`] for RSS 1.0. `items_in` is the element whose children are the items.
+fn parse_rss(channel: Node, items_in: Node, core: Option<&str>, source: &str) -> ParsedFeed {
+    let image_url = child(channel, Some(NS_ITUNES), "image")
+        .and_then(|n| attr(n, "href"))
+        .or_else(|| child(channel, core, "image").and_then(|n| child_text(n, core, "url")))
+        .or_else(|| child(items_in, core, "image").and_then(|n| child_text(n, core, "url")));
+
+    ParsedFeed {
+        title: child_text(channel, core, "title").unwrap_or_else(|| "Untitled podcast".into()),
+        author: child_text(channel, Some(NS_ITUNES), "author")
+            .or_else(|| child_text(channel, Some(NS_DC), "creator")),
+        description: child_text(channel, core, "description")
+            .or_else(|| child_text(channel, Some(NS_ITUNES), "summary")),
+        link: child_text(channel, core, "link"),
+        image_url,
+        language: child_text(channel, core, "language")
+            .or_else(|| child_text(channel, Some(NS_DC), "language")),
+        podcast_guid: child_text(channel, Some(NS_PODCAST), "guid"),
+        new_feed_url: child_text(channel, Some(NS_ITUNES), "new-feed-url"),
+        next_page: next_page(channel),
+        namespaces: Vec::new(),
+        items: items_in
+            .children()
+            .filter(|c| {
+                c.is_element()
+                    && c.tag_name().name() == "item"
+                    && ns_matches(c.tag_name().namespace(), core)
+            })
+            .map(|item| parse_item(item, core, source))
+            .collect(),
+    }
+}
+
+fn parse_item(item: Node, core: Option<&str>, source: &str) -> ParsedItem {
+    // RSS 1.0 has no enclosure of its own; feeds use the RSS 2.0 element or mod_enclosure.
+    let enclosure = child(item, core, "enclosure").or_else(|| child(item, None, "enclosure"));
+    let rdf_enclosure = child(item, Some(NS_ENC), "enclosure");
+    let enclosure_url = enclosure
+        .and_then(|n| attr(n, "url"))
+        .or_else(|| rdf_enclosure.and_then(|n| ns_attr(n, NS_RDF, "resource")));
+    let link = child_text(item, core, "link");
+    let title = child_text(item, core, "title")
         .or_else(|| child_text(item, Some(NS_ITUNES), "title"))
         .unwrap_or_else(|| "Untitled episode".into());
-    let published_raw = child_text(item, None, "pubDate");
+    let published_raw =
+        child_text(item, core, "pubDate").or_else(|| child_text(item, Some(NS_DC), "date"));
 
     // Feeds without <guid> exist. Fall back to something that stays stable between fetches.
-    let guid = child_text(item, None, "guid")
+    let guid = child_text(item, core, "guid")
+        .or_else(|| ns_attr(item, NS_RDF, "about"))
         .or_else(|| {
             enclosure_url
                 .as_deref()
@@ -296,25 +333,136 @@ fn parse_item(item: Node, source: &str) -> ParsedItem {
         guid,
         title,
         description: child_text(item, Some(NS_CONTENT), "encoded")
-            .or_else(|| child_text(item, None, "description"))
+            .or_else(|| child_text(item, core, "description"))
             .or_else(|| child_text(item, Some(NS_ITUNES), "summary")),
         link,
         published_at: published_raw.as_deref().and_then(parse_date),
+        enclosure_type: enclosure
+            .and_then(|n| attr(n, "type"))
+            .or_else(|| rdf_enclosure.and_then(|n| ns_attr(n, NS_ENC, "type"))),
+        enclosure_length: enclosure
+            .and_then(|n| attr(n, "length"))
+            .or_else(|| rdf_enclosure.and_then(|n| ns_attr(n, NS_ENC, "length")))
+            .and_then(|v| v.parse().ok())
+            .filter(|v| *v > 0),
+        enclosure_url,
+        ..common_fields(item, source)
+    }
+}
+
+/// The fields that are read the same way in every format: the iTunes and Podcasting 2.0 tags,
+/// the hash and the raw XML.
+fn common_fields(item: Node, source: &str) -> ParsedItem {
+    ParsedItem {
         duration: child_text(item, Some(NS_ITUNES), "duration")
             .as_deref()
             .and_then(parse_duration),
-        enclosure_url,
-        enclosure_type: enclosure.and_then(|n| attr(n, "type")),
-        enclosure_length: enclosure
-            .and_then(|n| attr(n, "length"))
-            .and_then(|v| v.parse().ok())
-            .filter(|v| *v > 0),
         image_url: child(item, Some(NS_ITUNES), "image").and_then(|n| attr(n, "href")),
         season: child_text(item, Some(NS_ITUNES), "season").and_then(|v| v.parse().ok()),
         episode_no: child_text(item, Some(NS_ITUNES), "episode").and_then(|v| v.parse().ok()),
         links: item_links(item),
         hash: content_hash(item),
         raw_xml: source[item.range()].to_string(),
+        ..ParsedItem::default()
+    }
+}
+
+/// Atom links of a feed or entry with the given relation. A link without `rel` is an
+/// `alternate` link.
+fn atom_links<'a, 'i: 'a>(node: Node<'a, 'i>, rel: &'a str) -> impl Iterator<Item = Node<'a, 'i>> {
+    node.children().filter(move |c| {
+        c.is_element()
+            && c.tag_name().name() == "link"
+            && ns_matches(c.tag_name().namespace(), Some(NS_ATOM))
+            && c.attribute("rel")
+                .unwrap_or("alternate")
+                .trim()
+                .eq_ignore_ascii_case(rel)
+    })
+}
+
+/// Text of an Atom text construct. For `type="xhtml"` the markup inside is kept as written.
+fn atom_text(node: Node, source: &str) -> Option<String> {
+    if node.attribute("type") == Some("xhtml")
+        && let Some(div) = node.children().find(|c| c.is_element())
+        && let (Some(first), Some(last)) = (div.first_child(), div.last_child())
+    {
+        let inner = source[first.range().start..last.range().end].trim();
+        return (!inner.is_empty()).then(|| inner.to_string());
+    }
+    text_of(node)
+}
+
+fn parse_atom(root: Node, source: &str) -> ParsedFeed {
+    let atom = Some(NS_ATOM);
+    ParsedFeed {
+        title: child_text(root, atom, "title").unwrap_or_else(|| "Untitled podcast".into()),
+        author: child_text(root, Some(NS_ITUNES), "author")
+            .or_else(|| child(root, atom, "author").and_then(|a| child_text(a, atom, "name"))),
+        description: child(root, atom, "subtitle")
+            .and_then(|n| atom_text(n, source))
+            .or_else(|| child_text(root, Some(NS_ITUNES), "summary")),
+        link: atom_links(root, "alternate")
+            .next()
+            .and_then(|n| attr(n, "href")),
+        image_url: child(root, Some(NS_ITUNES), "image")
+            .and_then(|n| attr(n, "href"))
+            .or_else(|| child_text(root, atom, "logo"))
+            .or_else(|| child_text(root, atom, "icon")),
+        language: ns_attr(root, NS_XML, "lang"),
+        podcast_guid: child_text(root, Some(NS_PODCAST), "guid"),
+        new_feed_url: child_text(root, Some(NS_ITUNES), "new-feed-url"),
+        next_page: next_page(root),
+        namespaces: Vec::new(),
+        items: root
+            .children()
+            .filter(|c| {
+                c.is_element()
+                    && c.tag_name().name() == "entry"
+                    && ns_matches(c.tag_name().namespace(), atom)
+            })
+            .map(|entry| parse_atom_entry(entry, source))
+            .collect(),
+    }
+}
+
+fn parse_atom_entry(entry: Node, source: &str) -> ParsedItem {
+    let atom = Some(NS_ATOM);
+    let enclosure = atom_links(entry, "enclosure").next();
+    let enclosure_url = enclosure.and_then(|n| attr(n, "href"));
+    let link = atom_links(entry, "alternate")
+        .next()
+        .and_then(|n| attr(n, "href"));
+    let title = child(entry, atom, "title")
+        .and_then(text_of)
+        .unwrap_or_else(|| "Untitled episode".into());
+    let published_raw =
+        child_text(entry, atom, "published").or_else(|| child_text(entry, atom, "updated"));
+    let guid = child_text(entry, atom, "id")
+        .or_else(|| {
+            enclosure_url
+                .as_deref()
+                .map(|u| without_query(u).to_string())
+        })
+        .or_else(|| link.clone())
+        .unwrap_or_else(|| format!("{title}|{}", published_raw.as_deref().unwrap_or("")));
+
+    ParsedItem {
+        guid,
+        title,
+        description: child(entry, atom, "content")
+            .and_then(|n| atom_text(n, source))
+            .or_else(|| child(entry, atom, "summary").and_then(|n| atom_text(n, source)))
+            .or_else(|| child_text(entry, Some(NS_ITUNES), "summary")),
+        link,
+        published_at: published_raw.as_deref().and_then(parse_date),
+        enclosure_type: enclosure.and_then(|n| attr(n, "type")),
+        enclosure_length: enclosure
+            .and_then(|n| attr(n, "length"))
+            .and_then(|v| v.parse().ok())
+            .filter(|v| *v > 0),
+        enclosure_url,
+        ..common_fields(entry, source)
     }
 }
 
@@ -466,9 +614,117 @@ mod tests {
     }
 
     #[test]
+    fn parses_atom() {
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="de"
+      xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+  <title>Atom Cast</title>
+  <subtitle>Spoken &amp; sung</subtitle>
+  <link rel="self" href="https://example.org/atom.xml"/>
+  <link href="https://example.org/"/>
+  <link rel="next" href="https://example.org/atom.xml?page=2"/>
+  <author><name>A. Warbler</name></author>
+  <logo>https://example.org/logo.png</logo>
+  <entry>
+    <id>urn:uuid:1</id>
+    <title type="html">One &amp;amp; only</title>
+    <published>2024-01-02T10:00:00Z</published>
+    <updated>2024-02-01T00:00:00Z</updated>
+    <link rel="alternate" href="https://example.org/1"/>
+    <link rel="enclosure" href="https://cdn.example.org/1.mp3?t=1" type="audio/mpeg" length="42"/>
+    <content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml"><p>Hello <b>you</b></p></div></content>
+    <itunes:duration>61</itunes:duration>
+  </entry>
+  <entry>
+    <title>No id</title>
+    <updated>2024-01-01T10:00:00+01:00</updated>
+    <summary>Short</summary>
+    <link rel="enclosure" href="https://cdn.example.org/0.mp3"/>
+  </entry>
+</feed>"#;
+        let feed = parse(xml.as_bytes()).unwrap();
+        assert_eq!(feed.title, "Atom Cast");
+        assert_eq!(feed.description.as_deref(), Some("Spoken & sung"));
+        assert_eq!(feed.link.as_deref(), Some("https://example.org/"));
+        assert_eq!(feed.author.as_deref(), Some("A. Warbler"));
+        assert_eq!(feed.language.as_deref(), Some("de"));
+        assert_eq!(
+            feed.image_url.as_deref(),
+            Some("https://example.org/logo.png")
+        );
+        assert_eq!(
+            feed.next_page.as_deref(),
+            Some("https://example.org/atom.xml?page=2")
+        );
+        assert_eq!(feed.items.len(), 2);
+        let first = &feed.items[0];
+        assert_eq!(first.guid, "urn:uuid:1");
+        assert_eq!(first.title, "One &amp; only");
+        assert_eq!(first.published_at, Some(1_704_189_600));
+        assert_eq!(first.link.as_deref(), Some("https://example.org/1"));
+        assert_eq!(
+            first.enclosure_url.as_deref(),
+            Some("https://cdn.example.org/1.mp3?t=1")
+        );
+        assert_eq!(first.enclosure_type.as_deref(), Some("audio/mpeg"));
+        assert_eq!(first.enclosure_length, Some(42));
+        assert_eq!(
+            first.description.as_deref(),
+            Some("<p>Hello <b>you</b></p>")
+        );
+        assert_eq!(first.duration, Some(61));
+        assert!(first.raw_xml.starts_with("<entry>"));
+        let second = &feed.items[1];
+        assert_eq!(second.guid, "https://cdn.example.org/0.mp3");
+        assert_eq!(second.published_at, Some(1_704_099_600));
+        assert_eq!(second.description.as_deref(), Some("Short"));
+    }
+
+    #[test]
+    fn parses_rss_1() {
+        let xml = r#"<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns="http://purl.org/rss/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/"
+         xmlns:enc="http://purl.oclc.org/net/rss_2.0/enc#">
+  <channel rdf:about="https://example.org/rss">
+    <title>Old Cast</title>
+    <link>https://example.org</link>
+    <description>From 2003</description>
+    <dc:language>en</dc:language>
+  </channel>
+  <image><url>https://example.org/old.png</url></image>
+  <item rdf:about="https://example.org/ep/1">
+    <title>First</title>
+    <link>https://example.org/ep/1</link>
+    <description>Notes</description>
+    <dc:date>2003-05-01T12:00:00Z</dc:date>
+    <enc:enclosure rdf:resource="https://example.org/1.mp3" enc:type="audio/mpeg" enc:length="7"/>
+  </item>
+</rdf:RDF>"#;
+        let feed = parse(xml.as_bytes()).unwrap();
+        assert_eq!(feed.title, "Old Cast");
+        assert_eq!(feed.language.as_deref(), Some("en"));
+        assert_eq!(
+            feed.image_url.as_deref(),
+            Some("https://example.org/old.png")
+        );
+        assert_eq!(feed.items.len(), 1);
+        let item = &feed.items[0];
+        assert_eq!(item.guid, "https://example.org/ep/1");
+        assert_eq!(item.title, "First");
+        assert_eq!(item.published_at, Some(1_051_790_400));
+        assert_eq!(
+            item.enclosure_url.as_deref(),
+            Some("https://example.org/1.mp3")
+        );
+        assert_eq!(item.enclosure_type.as_deref(), Some("audio/mpeg"));
+        assert_eq!(item.enclosure_length, Some(7));
+    }
+
+    #[test]
     fn rejects_non_feeds() {
         assert!(parse(b"<html><body>hi</body></html>").is_err());
-        assert!(parse(b"<feed xmlns=\"http://www.w3.org/2005/Atom\"/>").is_err());
+        assert!(parse(b"<opml version=\"2.0\"><body/></opml>").is_err());
         assert!(parse(b"not xml").is_err());
     }
 
