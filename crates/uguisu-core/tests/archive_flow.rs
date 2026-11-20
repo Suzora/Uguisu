@@ -1066,17 +1066,95 @@ async fn the_archive_states_its_format() {
     drop(Uguisu::open(Config::new(data.path())).await.unwrap());
     let content: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&marker).unwrap()).unwrap();
-    assert_eq!(content["format"], 1);
+    assert_eq!(content["format"], 2);
     // Opening again is fine and leaves the marker alone.
     drop(Uguisu::open(Config::new(data.path())).await.unwrap());
 
-    std::fs::write(&marker, r#"{ "format": 2, "software": "Uguisu" }"#).unwrap();
+    std::fs::write(&marker, r#"{ "format": 99, "software": "Uguisu" }"#).unwrap();
     let error = Uguisu::open(Config::new(data.path()))
         .await
         .err()
         .expect("a newer archive must be refused");
     assert!(
-        format!("{error:#}").contains("format version 2"),
+        format!("{error:#}").contains("format version 99"),
         "{error:#}"
     );
+}
+
+/// `episode.json` records the episode's files with their checksums and whether the episode is
+/// still in the feed; an archive from before that is brought up to date.
+#[tokio::test]
+async fn episode_files_describe_the_archive() {
+    let two = format!(
+        "{}{}",
+        item(2, "Second").replace(
+            "<guid>",
+            "<podcast:transcript xmlns:podcast=\"https://podcastindex.org/namespace/1.0\" \
+             url=\"BASE/files/two.vtt\" type=\"text/vtt\"/><guid>"
+        ),
+        item(1, "First")
+    );
+    let source: FeedBody = Arc::new(Mutex::new(feed(&two)));
+    let base = start_source(source.clone()).await;
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = Config::new(data.path());
+    cfg.allow_private_networks = true;
+    cfg.host_pause = std::time::Duration::ZERO;
+    let uguisu = Uguisu::open(cfg).await.unwrap();
+    let id = uguisu
+        .add_podcast(&format!("{base}/feed.xml"))
+        .await
+        .unwrap();
+    uguisu.download_pending().await.unwrap();
+
+    let read = |uguisu: &Uguisu, view: &uguisu_core::model::EpisodeView| -> serde_json::Value {
+        let path = uguisu
+            .archive_path(view.media_path.as_deref().unwrap())
+            .with_file_name("episode.json");
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    };
+    let episodes = uguisu.episodes(id).await.unwrap();
+    let second = read(&uguisu, &episodes[0]);
+    assert_eq!(second["guid"], "ep-2");
+    assert_eq!(second["hash"], episodes[0].episode.meta_hash.as_str());
+    assert!(second["removed"].is_null());
+    assert!(second["first_seen"].is_string());
+    let files = second["files"].as_array().unwrap();
+    assert_eq!(files.len(), 2);
+    assert_eq!(files[0]["kind"], "media");
+    assert_eq!(files[0]["name"], "media.mp3");
+    assert_eq!(files[0]["type"], "audio/mpeg");
+    assert_eq!(
+        files[0]["blake3"],
+        blake3::hash(b"fake audio 2.mp3").to_hex().as_str()
+    );
+    assert_eq!(files[0]["size"], 16);
+    assert_eq!(files[1]["kind"], "transcript");
+    assert_eq!(
+        files[1]["blake3"],
+        blake3::hash(b"content of two.vtt").to_hex().as_str()
+    );
+    assert_eq!(files[1]["source"], format!("{base}/files/two.vtt"));
+
+    // An episode that leaves the feed is marked in its file, and unmarked when it returns.
+    *source.lock().unwrap() = feed(&item(1, "First"));
+    uguisu.refresh(id).await.unwrap();
+    assert!(read(&uguisu, &episodes[0])["removed"].is_string());
+    *source.lock().unwrap() = feed(&two);
+    uguisu.refresh(id).await.unwrap();
+    assert!(read(&uguisu, &episodes[0])["removed"].is_null());
+
+    // An archive in the first format: its episode files are rewritten once.
+    let marker = data.path().join("archive/archive.json");
+    std::fs::write(&marker, r#"{ "format": 1, "software": "Uguisu" }"#).unwrap();
+    let old = uguisu
+        .archive_path(episodes[1].media_path.as_deref().unwrap())
+        .with_file_name("episode.json");
+    std::fs::write(&old, r#"{ "guid": "ep-1", "title": "First" }"#).unwrap();
+    assert_eq!(uguisu.upgrade_archive().await.unwrap(), 2);
+    assert_eq!(read(&uguisu, &episodes[1])["files"][0]["name"], "media.mp3");
+    assert_eq!(uguisu.upgrade_archive().await.unwrap(), 0);
+    let content: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&marker).unwrap()).unwrap();
+    assert_eq!(content["format"], 2);
 }

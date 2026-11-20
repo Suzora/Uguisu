@@ -1,6 +1,6 @@
 # The Uguisu archive format
 
-Format version: **1** (early development – may still change before Uguisu 1.0)
+Format version: **2** (early development – may still change before Uguisu 1.0)
 
 An Uguisu archive is a directory of ordinary files. This document describes it so that an
 archive can be read, checked and used without Uguisu – today or in twenty years.
@@ -36,11 +36,17 @@ All text files are UTF-8. JSON files are pretty-printed. Times are in UTC.
 ## `archive.json`
 
 ```json
-{ "format": 1, "software": "Uguisu" }
+{ "format": 2, "software": "Uguisu" }
 ```
 
 `format` is the version of this document. Uguisu refuses to open an archive with a higher
-format version than it knows, so that an older program never damages a newer archive.
+format version than it knows, so that an older program never damages a newer archive. An
+archive in an older format is brought up to date in the background after the start.
+
+| Version | Change |
+| --- | --- |
+| 1 | First format |
+| 2 | `episode.json` also holds `hash`, `first_seen`, `removed` and `files` |
 
 ## Directory names
 
@@ -93,6 +99,24 @@ found in the feed snapshots.
 | `enclosure.url`, `.type`, `.length` | Source address, media type and size of the media file as the feed states them |
 | `image` | Source address of the episode's own image |
 | `season`, `episode` | Numbers, if the feed gives them |
+| `hash` | Identifies this state of the feed entry; it changes when the publisher changes anything |
+| `first_seen` | When the episode first appeared in the source feed |
+| `removed` | When the episode was found missing from the source feed; `null` while it is listed |
+| `files` | The archived files of the episode, see below |
+
+Each entry of `files` describes one file in the episode's directory:
+
+| Field | Meaning |
+| --- | --- |
+| `name` | File name |
+| `kind` | `media`, `transcript`, `chapters`, `image` or `notes-image` |
+| `source` | Address the file was downloaded from, without user name and password |
+| `blake3` | BLAKE3 checksum, 64 hexadecimal characters |
+| `size` | Size in bytes |
+| `type` | Media type |
+| `downloaded` | Time of the download |
+
+Media files come first, the oldest version first.
 
 ## Media files and checksums
 
@@ -117,7 +141,7 @@ newest.
 
 Transcripts, chapter files, the episode's own image and the images shown in its show notes are
 stored next to the media file. The name is the kind of file and a short hash of its source
-address. These files have no checksum file of their own yet; their checksums are in the database.
+address. Their checksums are in the `files` list of `episode.json`.
 
 ## Temporary files
 
@@ -126,9 +150,9 @@ They can be deleted at any time while Uguisu is not running.
 
 ## What is only in the database
 
-Known gaps of format version 1, to be closed before 1.0:
+Known gaps of format version 2, to be closed before 1.0:
 
-- which episodes were removed from the source feed, and when;
-- the checksums of linked files;
+- earlier states of an episode's feed entry (they can be found in the feed snapshots, but not
+  per episode);
 - the time each file was last verified;
 - settings per podcast and the secret addresses of the published feeds.
