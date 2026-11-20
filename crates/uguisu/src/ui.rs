@@ -419,6 +419,23 @@ pub fn podcast_page(
             }
 
             (episode_list(p, episodes, downloading))
+
+            details.panel.danger {
+                summary { "Remove this podcast" }
+                p.muted {
+                    "Uguisu stops checking the source feed and the archive feed stops working. The archived files stay in "
+                    code { "archive/" (p.dir) }
+                    " unless you choose to delete them."
+                }
+                form.actions method="post" action=(format!("/podcasts/{}/remove", p.id))
+                    data-confirm="Remove this podcast from Uguisu?" {
+                    label.check {
+                        input type="checkbox" name="delete_files";
+                        "Also delete the archived files (" (format_bytes(summary.archived_bytes)) ")"
+                    }
+                    button.button.is-danger type="submit" { "Remove podcast" }
+                }
+            }
         },
     )
 }

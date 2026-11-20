@@ -87,6 +87,7 @@ pub fn router(state: AppState) -> Router {
         .route("/podcasts/{id}/refresh", post(refresh_podcast))
         .route("/podcasts/{id}/settings", post(update_settings))
         .route("/podcasts/{id}/token", post(regenerate_token))
+        .route("/podcasts/{id}/remove", post(remove_podcast))
         .route("/cover/{id}", get(cover))
         .route("/opml", get(opml_export).post(opml_import))
         .route("/logout", post(logout))
@@ -450,6 +451,24 @@ async fn regenerate_token(State(state): State<AppState>, Path(id): Path<i64>) ->
     state.app.podcast(id).await?.ok_or(AppError::NotFound)?;
     state.app.regenerate_token(id).await?;
     Ok(see_other(&format!("/podcasts/{id}")))
+}
+
+#[derive(Deserialize)]
+struct RemoveForm {
+    delete_files: Option<String>,
+}
+
+async fn remove_podcast(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Form(form): Form<RemoveForm>,
+) -> AppResult {
+    state.app.podcast(id).await?.ok_or(AppError::NotFound)?;
+    state
+        .app
+        .remove_podcast(id, form.delete_files.is_some())
+        .await?;
+    Ok(see_other("/"))
 }
 
 async fn cover(State(state): State<AppState>, Path(id): Path<i64>, request: Request) -> AppResult {

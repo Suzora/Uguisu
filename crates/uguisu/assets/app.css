@@ -323,6 +323,12 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 .actions form { margin: 0; display: flex; align-items: center; gap: 10px; }
 .panel .small { overflow-wrap: anywhere; }
 
+details.danger > summary { cursor: pointer; font-weight: 600; color: var(--muted); }
+details.danger[open] > summary { color: var(--text); }
+details.danger code { font-family: var(--mono); font-size: 0.85em; overflow-wrap: anywhere; }
+.button.is-danger { background: var(--error); border-color: var(--error); color: var(--bg); }
+.button.is-danger:hover { filter: brightness(1.1); color: var(--bg); }
+
 .episodes h2 { display: flex; align-items: center; gap: 10px; }
 .episode-list { list-style: none; margin: 0 -10px; padding: 0; }
 .episode {

@@ -192,6 +192,19 @@ async fn archive_flow() {
         "fake audio 1.mp3"
     );
     assert_eq!(uguisu.verify().await.unwrap().ok, 3);
+
+    // Removing keeps the files by default; deleting them is an explicit choice.
+    uguisu.remove_podcast(id, false).await.unwrap();
+    assert!(uguisu.podcast(id).await.unwrap().is_none());
+    assert_eq!(uguisu.stats().await.unwrap().episodes, 0);
+    assert!(podcast_dir.join("podcast.json").exists());
+    assert!(damaged.exists());
+    let id = uguisu
+        .add_podcast(&format!("{base}/feed.xml"))
+        .await
+        .unwrap();
+    uguisu.remove_podcast(id, true).await.unwrap();
+    assert!(!podcast_dir.exists());
 }
 
 #[tokio::test]
