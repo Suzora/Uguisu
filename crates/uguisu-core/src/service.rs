@@ -23,6 +23,31 @@ const MAX_COVER_BYTES: usize = 32 * 1024 * 1024;
 const MAX_ATTACHMENT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_DOWNLOAD_ATTEMPTS: i64 = 5;
 
+/// All podcasts with their numbers. Unlike `podcast_summary_sql`, which looks the numbers up per
+/// podcast and suits a single one, this counts every podcast in one pass over the episodes; with
+/// tens of thousands of episodes the per-podcast form took seconds for the library.
+const PODCAST_LIST_SQL: &str = "SELECT p.*, \
+     COALESCE(ec.episode_count, 0) AS episode_count, \
+     COALESCE(mc.archived_count, 0) AS archived_count, \
+     COALESCE(mc.archived_bytes, 0) AS archived_bytes, \
+     COALESCE(ec.removed_count, 0) AS removed_count, \
+     COALESCE(ec.pending_count, 0) AS pending_count \
+     FROM podcasts p \
+     LEFT JOIN (SELECT e.podcast_id, COUNT(*) AS episode_count, \
+         SUM(e.removed_at IS NOT NULL) AS removed_count, \
+         SUM(e.enclosure_url IS NOT NULL AND e.download_attempts < 5 AND (e.refetch = 1 OR NOT EXISTS \
+           (SELECT 1 FROM media_files m WHERE m.episode_id = e.id AND m.status = 'ok'))) \
+           AS pending_count \
+       FROM episodes e GROUP BY e.podcast_id) ec ON ec.podcast_id = p.id \
+     LEFT JOIN (SELECT e.podcast_id, COUNT(DISTINCT m.episode_id) AS archived_count, \
+         SUM(m.size) AS archived_bytes \
+       FROM media_files m JOIN episodes e ON e.id = m.episode_id \
+       WHERE m.status = 'ok' GROUP BY e.podcast_id) mc ON mc.podcast_id = p.id \
+     ORDER BY p.title COLLATE NOCASE";
+
+/// Number of episodes the interface shows at a time.
+pub const EPISODES_PER_PAGE: i64 = 100;
+
 // A macro rather than a constant so that the complete statement stays a string literal.
 macro_rules! episode_view_sql {
     ($tail:literal) => {
@@ -48,7 +73,13 @@ macro_rules! podcast_summary_sql {
      (SELECT COUNT(DISTINCT m.episode_id) FROM media_files m JOIN episodes e ON e.id = m.episode_id \
        WHERE e.podcast_id = p.id AND m.status = 'ok') AS archived_count, \
      (SELECT COALESCE(SUM(m.size), 0) FROM media_files m JOIN episodes e ON e.id = m.episode_id \
-       WHERE e.podcast_id = p.id AND m.status = 'ok') AS archived_bytes \
+       WHERE e.podcast_id = p.id AND m.status = 'ok') AS archived_bytes, \
+     (SELECT COUNT(*) FROM episodes e WHERE e.podcast_id = p.id AND e.removed_at IS NOT NULL) \
+       AS removed_count, \
+     (SELECT COUNT(*) FROM episodes e WHERE e.podcast_id = p.id AND e.enclosure_url IS NOT NULL \
+       AND e.download_attempts < 5 AND (e.refetch = 1 OR NOT EXISTS \
+         (SELECT 1 FROM media_files m WHERE m.episode_id = e.id AND m.status = 'ok'))) \
+       AS pending_count \
      FROM podcasts p", " ", $tail)
     };
 }
@@ -216,11 +247,9 @@ impl Uguisu {
     // ── Queries ────────────────────────────────────────────────────────────────────────────
 
     pub async fn podcasts(&self) -> Result<Vec<PodcastSummary>> {
-        Ok(
-            sqlx::query_as(podcast_summary_sql!("ORDER BY p.title COLLATE NOCASE"))
-                .fetch_all(self.pool())
-                .await?,
-        )
+        Ok(sqlx::query_as(PODCAST_LIST_SQL)
+            .fetch_all(self.pool())
+            .await?)
     }
 
     pub async fn podcast_summary(&self, id: i64) -> Result<Option<PodcastSummary>> {
@@ -267,6 +296,19 @@ impl Uguisu {
              ORDER BY v.published_at IS NULL, v.published_at DESC, v.id DESC"
         ))
         .bind(podcast_id)
+        .fetch_all(self.pool())
+        .await?)
+    }
+
+    /// One page of a podcast's episodes, newest first. Pages are numbered from 1.
+    pub async fn episodes_page(&self, podcast_id: i64, page: i64) -> Result<Vec<EpisodeView>> {
+        Ok(sqlx::query_as(episode_view_sql!(
+            "WHERE e.podcast_id = ? \
+             ORDER BY e.published_at IS NULL, e.published_at DESC, e.id DESC LIMIT ? OFFSET ?"
+        ))
+        .bind(podcast_id)
+        .bind(EPISODES_PER_PAGE)
+        .bind((page.max(1) - 1) * EPISODES_PER_PAGE)
         .fetch_all(self.pool())
         .await?)
     }
@@ -702,7 +744,14 @@ impl Uguisu {
             };
 
             seen.insert(episode_id);
-            for link in &item.links {
+            // An episode image that merely repeats the podcast's cover is not worth a copy per
+            // episode; real feeds do this for thousands of episodes.
+            let cover = parsed.image_url.as_deref().map(without_query);
+            for link in item
+                .links
+                .iter()
+                .filter(|l| !(l.kind == "image" && Some(without_query(&l.url)) == cover))
+            {
                 // The address may carry a fresh token at every fetch; keep the latest.
                 sqlx::query(
                     "INSERT INTO attachments (episode_id, kind, source_key, source_url) \

@@ -408,9 +408,15 @@ async fn add_podcast(State(state): State<AppState>, Form(form): Form<AddForm>) -
 
 // ── Podcast pages ──────────────────────────────────────────────────────────────────────────
 
+#[derive(Deserialize, Default)]
+struct PageQuery {
+    page: Option<i64>,
+}
+
 async fn podcast_page(
     State(state): State<AppState>,
     Path(id): Path<i64>,
+    Query(query): Query<PageQuery>,
     headers: HeaderMap,
 ) -> AppResult {
     let summary = state
@@ -418,24 +424,36 @@ async fn podcast_page(
         .podcast_summary(id)
         .await?
         .ok_or(AppError::NotFound)?;
-    let episodes = state.app.episodes(id).await?;
+    let page_number = query.page.unwrap_or(1).max(1);
+    let episodes = state.app.episodes_page(id, page_number).await?;
     let feed_url = rss::feed_url(&base_url(&state, &headers), &summary.podcast.feed_token);
     Ok(page(ui::podcast_page(
         &summary,
         &episodes,
         &state.app.downloading(),
         &feed_url,
+        page_number,
     ))
     .into_response())
 }
 
-async fn episodes_fragment(State(state): State<AppState>, Path(id): Path<i64>) -> AppResult {
-    let podcast = state.app.podcast(id).await?.ok_or(AppError::NotFound)?;
-    let episodes = state.app.episodes(id).await?;
+async fn episodes_fragment(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Query(query): Query<PageQuery>,
+) -> AppResult {
+    let summary = state
+        .app
+        .podcast_summary(id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let page_number = query.page.unwrap_or(1).max(1);
+    let episodes = state.app.episodes_page(id, page_number).await?;
     Ok(page(ui::episode_list(
-        &podcast,
+        &summary,
         &episodes,
         &state.app.downloading(),
+        page_number,
     ))
     .into_response())
 }
@@ -659,7 +677,13 @@ async fn serve_cover(state: &AppState, podcast: &Podcast, request: Request) -> A
         .and_then(|(_, ext)| uguisu_core::archive::mime_from_extension(ext))
         .unwrap_or("image/jpeg");
     let path = state.app.archive_path(&podcast.dir).join(file);
-    serve_file(&path, mime, request).await
+    // Covers are often several megabytes and the library shows all of them.
+    let mut response = serve_file(&path, mime, request).await?;
+    response.headers_mut().insert(
+        CACHE_CONTROL,
+        HeaderValue::from_static("private, max-age=86400"),
+    );
+    Ok(response)
 }
 
 /// Streams a file with support for range requests, which podcast apps need for seeking.
