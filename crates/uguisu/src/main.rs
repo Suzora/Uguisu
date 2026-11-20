@@ -4,6 +4,7 @@ mod auth;
 mod ui;
 mod web;
 
+use std::io::IsTerminal;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -71,6 +72,9 @@ enum Command {
     Serve,
     /// Re-hash every archived file and report damaged or missing ones.
     Verify,
+    /// Ask the running instance whether it answers; exits with 0 if it does. Used by the
+    /// container health check, where no other HTTP client is available.
+    Healthcheck,
 }
 
 #[tokio::main]
@@ -78,6 +82,8 @@ async fn main() -> ExitCode {
     // Logs go to stderr so that command output on stdout stays clean.
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
+        // No colour codes in `docker logs` and log files.
+        .with_ansi(std::io::stderr().is_terminal())
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "info,sqlx=warn".into()),
@@ -99,7 +105,30 @@ async fn run(cli: Cli) -> Result<ExitCode> {
     cfg.download_concurrency = cli.download_concurrency.max(1);
     cfg.verify_interval =
         (cli.verify_days > 0).then(|| Duration::from_secs(cli.verify_days * 24 * 3600));
-    let app = Uguisu::open(cfg).await?;
+    if matches!(cli.command, Some(Command::Healthcheck)) {
+        return Ok(if healthcheck(cli.listen).await {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        });
+    }
+    let app = Uguisu::open(cfg).await.map_err(|error| {
+        let denied = error.chain().any(|cause| {
+            cause
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|e| e.kind() == std::io::ErrorKind::PermissionDenied)
+        });
+        if denied {
+            error.context(format!(
+                "the data directory {} is not writable for this process; in a container that \
+                 runs as uid 65532, make a mounted directory writable with \
+                 `chown 65532:65532 <directory>`",
+                cli.data_dir.display()
+            ))
+        } else {
+            error
+        }
+    })?;
 
     match cli.command.unwrap_or(Command::Serve) {
         Command::Serve => {
@@ -118,6 +147,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 .await?;
             Ok(ExitCode::SUCCESS)
         }
+        Command::Healthcheck => unreachable!("handled before the archive is opened"),
         Command::Verify => {
             let report = app.verify().await?;
             for path in &report.corrupt {
@@ -140,6 +170,31 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             })
         }
     }
+}
+
+/// Requests `/healthz` from the instance listening on `listen`.
+async fn healthcheck(listen: SocketAddr) -> bool {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut target = listen;
+    if target.ip().is_unspecified() {
+        target.set_ip(match target {
+            SocketAddr::V4(_) => std::net::Ipv4Addr::LOCALHOST.into(),
+            SocketAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
+        });
+    }
+    let request = async {
+        let mut stream = tokio::net::TcpStream::connect(target).await?;
+        stream
+            .write_all(b"GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            .await?;
+        let mut response = Vec::new();
+        stream.read_to_end(&mut response).await?;
+        Ok::<_, std::io::Error>(response.starts_with(b"HTTP/1.1 200"))
+    };
+    matches!(
+        tokio::time::timeout(Duration::from_secs(5), request).await,
+        Ok(Ok(true))
+    )
 }
 
 async fn shutdown_signal() {
