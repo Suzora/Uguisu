@@ -1920,7 +1920,26 @@ impl Uguisu {
                 version += 1;
             }
         };
-        tokio::fs::rename(&part, dir.join(&file_name)).await?;
+        // A damaged copy is only replaced by the very file it once was. If the source now
+        // offers something else, the damaged copy may still be the only trace of the
+        // original, so it is set aside instead of overwritten.
+        let target = dir.join(&file_name);
+        let damaged = existing.iter().find(|(path, _, status)| {
+            status == "corrupt" && path.rsplit('/').next() == Some(file_name.as_str())
+        });
+        if let Some((_, recorded, _)) = damaged
+            && *recorded != hash
+            && tokio::fs::try_exists(&target).await.unwrap_or(false)
+        {
+            let aside = format!("media.damaged-{}.{ext}", &recorded[..recorded.len().min(8)]);
+            tracing::warn!(
+                episode = %episode.title,
+                kept = %aside,
+                "the source no longer offers the file that was archived; the damaged copy is kept"
+            );
+            tokio::fs::rename(&target, dir.join(aside)).await?;
+        }
+        tokio::fs::rename(&part, &target).await?;
 
         // Same format as `b3sum`, so the file can be checked with `b3sum -c` without Uguisu.
         write_atomic(

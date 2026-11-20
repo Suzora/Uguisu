@@ -1384,3 +1384,64 @@ async fn the_database_is_copied() {
     assert_eq!(podcasts.len(), 1);
     assert_eq!(podcasts[0].episode_count, 1);
 }
+
+/// Repairing a damaged file: the same file from the source simply replaces it; if the source
+/// has something else by now, the damaged copy is kept beside the new file.
+#[tokio::test]
+async fn a_damaged_file_is_not_lost_to_a_different_one() {
+    let source: FeedBody = Arc::new(Mutex::new(feed(&item(1, "First"))));
+    let base = start_source(source.clone()).await;
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = Config::new(data.path());
+    cfg.allow_private_networks = true;
+    cfg.min_free_space = 0;
+    cfg.host_pause = std::time::Duration::ZERO;
+    let uguisu = Uguisu::open(cfg).await.unwrap();
+    let id = uguisu
+        .add_podcast(&format!("{base}/feed.xml"))
+        .await
+        .unwrap();
+    uguisu.download_pending().await.unwrap();
+    let media = uguisu.archive_path(
+        uguisu.episodes(id).await.unwrap()[0]
+            .media_path
+            .as_deref()
+            .unwrap(),
+    );
+    let names = |media: &std::path::Path| -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(media.parent().unwrap())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .filter(|name| name.starts_with("media"))
+            .collect();
+        names.sort();
+        names
+    };
+
+    // The source still has the same file: a plain repair.
+    std::fs::write(&media, "bit rot").unwrap();
+    assert_eq!(uguisu.verify().await.unwrap().corrupt.len(), 1);
+    uguisu.download_pending().await.unwrap();
+    assert_eq!(std::fs::read_to_string(&media).unwrap(), "fake audio 1.mp3");
+    assert_eq!(names(&media), ["media.mp3", "media.mp3.blake3"]);
+
+    // The source has replaced the file in the meantime.
+    std::fs::write(&media, "bit rot again").unwrap();
+    assert_eq!(uguisu.verify().await.unwrap().corrupt.len(), 1);
+    *source.lock().unwrap() = feed(&item(1, "First").replace("audio/1.mp3", "audio/9.mp3"));
+    uguisu.refresh(id).await.unwrap();
+    uguisu.download_pending().await.unwrap();
+    assert_eq!(std::fs::read_to_string(&media).unwrap(), "fake audio 9.mp3");
+    let kept = names(&media);
+    assert_eq!(kept.len(), 3, "{kept:?}");
+    let aside = kept
+        .iter()
+        .find(|name| name.starts_with("media.damaged-"))
+        .expect("the damaged copy is kept");
+    assert_eq!(
+        std::fs::read_to_string(media.with_file_name(aside)).unwrap(),
+        "bit rot again"
+    );
+    let verified = uguisu.verify().await.unwrap();
+    assert_eq!(verified.ok, verified.checked);
+}

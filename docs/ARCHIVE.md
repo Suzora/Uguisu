@@ -160,6 +160,11 @@ When a podcast is set to keep replaced files, a file the publisher replaced is k
 one is stored as `media.v2.<ext>`, then `media.v3.<ext>` and so on. The highest number is the
 newest.
 
+A file named `media.damaged-<hash>.<ext>` is a copy that no longer matched its checksum and
+could not be repaired, because the source by then offered a different file. It is kept because
+it may be the only trace of the original; `<hash>` is the start of the checksum it should have.
+It is not listed in `episode.json`.
+
 ## Linked files
 
 Transcripts, chapter files, the episode's own image and the images shown in its show notes are
