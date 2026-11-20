@@ -26,6 +26,8 @@ const MAX_ANNOUNCED_FEEDS: usize = 8;
 const MAX_COVER_BYTES: usize = 32 * 1024 * 1024;
 const MAX_ATTACHMENT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_DOWNLOAD_ATTEMPTS: i64 = 5;
+/// How often an interrupted download is continued within one attempt.
+const MAX_RESUMES: u32 = 5;
 
 /// All podcasts with their numbers. Unlike `podcast_summary_sql`, which looks the numbers up per
 /// podcast and suits a single one, this counts every podcast in one pass over the episodes; with
@@ -1271,6 +1273,139 @@ impl Uguisu {
         }
     }
 
+    /// Downloads `url` into `part` and returns hash, size and content type of the complete file.
+    ///
+    /// An interrupted download is continued instead of started again, within this call and at
+    /// the next attempt: the partial file stays on disk together with the validator (ETag or
+    /// Last-Modified) the server gave for it, and the rest is requested with `Range` and
+    /// `If-Range`. A server that does not support this, or whose file has changed, answers with
+    /// the whole file, and the download starts over.
+    async fn fetch_media(&self, url: &url::Url, part: &Path) -> Result<(String, u64, String)> {
+        let note = part.with_extension("part.json");
+        let source = without_query(url.as_str()).to_string();
+        let mut resumes = 0;
+        loop {
+            // What is already there, if it belongs to this source and can be continued.
+            let kept: Option<(u64, String)> = async {
+                let stored: serde_json::Value =
+                    serde_json::from_slice(&tokio::fs::read(&note).await.ok()?).ok()?;
+                let size = tokio::fs::metadata(part).await.ok()?.len();
+                (stored["source"].as_str() == Some(source.as_str()) && size > 0)
+                    .then(|| Some((size, stored["validator"].as_str()?.to_string())))?
+            }
+            .await;
+
+            let mut request = self.inner.client.get(url.clone());
+            if let Some((size, validator)) = &kept {
+                request = request
+                    .header(reqwest::header::RANGE, format!("bytes={size}-"))
+                    .header(reqwest::header::IF_RANGE, validator);
+            }
+            let mut response = request.send().await?;
+            let continued = match (&kept, response.status()) {
+                (Some((size, _)), reqwest::StatusCode::PARTIAL_CONTENT)
+                    if header(&response, reqwest::header::CONTENT_RANGE)
+                        .is_some_and(|range| range.starts_with(&format!("bytes {size}-"))) =>
+                {
+                    true
+                }
+                // The partial file is longer than the file on the server: start over.
+                (Some(_), reqwest::StatusCode::RANGE_NOT_SATISFIABLE) => {
+                    let _ = tokio::fs::remove_file(&note).await;
+                    continue;
+                }
+                (_, status) if status == reqwest::StatusCode::OK => false,
+                (_, status) => bail!("the media server answered {status}"),
+            };
+            let content_type = header(&response, reqwest::header::CONTENT_TYPE)
+                .map(|c| {
+                    c.split(';')
+                        .next()
+                        .unwrap_or("")
+                        .trim()
+                        .to_ascii_lowercase()
+                })
+                .unwrap_or_default();
+            if content_type == "text/html" {
+                bail!("the media server returned a web page instead of a media file");
+            }
+
+            let mut hasher = blake3::Hasher::new();
+            let mut size = 0u64;
+            let mut file = if continued {
+                // The hash covers the whole file, so the part on disk is read once more.
+                let mut existing = tokio::fs::File::open(part).await?;
+                let mut buffer = vec![0u8; 1 << 16];
+                loop {
+                    let read = tokio::io::AsyncReadExt::read(&mut existing, &mut buffer).await?;
+                    if read == 0 {
+                        break;
+                    }
+                    hasher.update(&buffer[..read]);
+                    size += read as u64;
+                }
+                tokio::fs::OpenOptions::new()
+                    .append(true)
+                    .open(part)
+                    .await?
+            } else {
+                // Only a strong validator guarantees that the rest fits the part on disk.
+                let validator = header(&response, reqwest::header::ETAG)
+                    .filter(|etag| !etag.starts_with("W/"))
+                    .or_else(|| header(&response, reqwest::header::LAST_MODIFIED));
+                match validator {
+                    Some(validator) => {
+                        let stored =
+                            serde_json::json!({ "source": source, "validator": validator });
+                        write_atomic(&note, &serde_json::to_vec(&stored)?).await?;
+                    }
+                    None => {
+                        let _ = tokio::fs::remove_file(&note).await;
+                    }
+                }
+                tokio::fs::File::create(part).await?
+            };
+            let before = size;
+
+            let streamed: Result<()> = async {
+                while let Some(chunk) = response.chunk().await.context("download interrupted")? {
+                    hasher.update(&chunk);
+                    file.write_all(&chunk).await?;
+                    size += chunk.len() as u64;
+                }
+                file.sync_all().await?;
+                Ok(())
+            }
+            .await;
+            drop(file);
+            match streamed {
+                Ok(()) if size == 0 => {
+                    let _ = tokio::fs::remove_file(part).await;
+                    let _ = tokio::fs::remove_file(&note).await;
+                    bail!("the media server sent an empty file");
+                }
+                Ok(()) => {
+                    let _ = tokio::fs::remove_file(&note).await;
+                    return Ok((hasher.finalize().to_hex().to_string(), size, content_type));
+                }
+                Err(error) => {
+                    let resumable = tokio::fs::try_exists(&note).await.unwrap_or(false);
+                    if !resumable {
+                        let _ = tokio::fs::remove_file(part).await;
+                        return Err(error);
+                    }
+                    // Continue right away while the transfer makes progress; otherwise the part
+                    // stays for the next attempt.
+                    if size == before || resumes >= MAX_RESUMES {
+                        return Err(error);
+                    }
+                    resumes += 1;
+                    tracing::debug!(%url, at = size, "download interrupted, continuing");
+                }
+            }
+        }
+    }
+
     async fn download(&self, episode: &Episode, podcast_dir: &str) -> Result<()> {
         let source = episode
             .enclosure_url
@@ -1279,22 +1414,12 @@ impl Uguisu {
         let url = url::Url::parse(source).context("invalid enclosure URL")?;
         check_url(&url, self.inner.cfg.allow_private_networks)?;
 
-        let mut response = self.inner.client.get(url).send().await?;
-        if !response.status().is_success() {
-            bail!("the media server answered {}", response.status());
-        }
-        let content_type = header(&response, reqwest::header::CONTENT_TYPE)
-            .map(|c| {
-                c.split(';')
-                    .next()
-                    .unwrap_or("")
-                    .trim()
-                    .to_ascii_lowercase()
-            })
-            .unwrap_or_default();
-        if content_type == "text/html" {
-            bail!("the media server returned a web page instead of a media file");
-        }
+        let relative_dir = format!("{podcast_dir}/episodes/{}", episode.dir);
+        let dir = self.archive_path(&relative_dir);
+        tokio::fs::create_dir_all(&dir).await?;
+        let part = dir.join("download.part");
+        let (hash, size, content_type) = self.fetch_media(&url, &part).await?;
+
         let declared = episode
             .enclosure_type
             .as_deref()
@@ -1308,34 +1433,6 @@ impl Uguisu {
             .or_else(|| archive::mime_from_extension(ext).map(str::to_string))
             .or_else(|| (!content_type.is_empty()).then(|| content_type.clone()))
             .unwrap_or_else(|| "application/octet-stream".to_string());
-
-        let relative_dir = format!("{podcast_dir}/episodes/{}", episode.dir);
-        let dir = self.archive_path(&relative_dir);
-        tokio::fs::create_dir_all(&dir).await?;
-        let part = dir.join("download.part");
-
-        let mut file = tokio::fs::File::create(&part).await?;
-        let mut hasher = blake3::Hasher::new();
-        let mut size = 0u64;
-        let streamed: Result<()> = async {
-            while let Some(chunk) = response.chunk().await.context("download interrupted")? {
-                hasher.update(&chunk);
-                file.write_all(&chunk).await?;
-                size += chunk.len() as u64;
-            }
-            if size == 0 {
-                bail!("the media server sent an empty file");
-            }
-            file.sync_all().await?;
-            Ok(())
-        }
-        .await;
-        drop(file);
-        if let Err(e) = streamed {
-            let _ = tokio::fs::remove_file(&part).await;
-            return Err(e);
-        }
-        let hash = hasher.finalize().to_hex().to_string();
 
         // Decide where the copy goes. The first copy, and the repair of a damaged one, is
         // `media.<ext>`. A copy with different content from a replaced source file is kept next

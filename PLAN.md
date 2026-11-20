@@ -59,11 +59,11 @@ Everything a podcast offers ends up in the archive.
 
 - [x] Paged and archived feeds (RFC 5005).
 - [x] Atom and RSS 1.0 as source formats. The published feed stays RSS 2.0.
-- [~] Find the feed when the user enters the address of a web page
+- [x] Find the feed when the user enters the address of a web page
       (`<link rel="alternate">`), instead of reporting an error.
 - [ ] Archive images embedded in show notes and point the published show notes at the copies.
 - [ ] More Podcasting 2.0 files: `podcast:alternateEnclosure`, several transcript formats.
-- [ ] Resume interrupted downloads with range requests.
+- [~] Resume interrupted downloads with range requests.
 - [ ] Be polite to sources: a pause between requests per host, respect `Retry-After`.
 - [ ] Feeds that need credentials (HTTP Basic, for example paid feeds). Credentials never appear
       in logs or published feeds.

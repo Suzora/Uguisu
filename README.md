@@ -18,7 +18,8 @@ Uguisu is not a player and does not sync listening progress. That is the job of 
   Feeds that are split into pages (RFC 5005) are read to the last page.
   Episodes that disappear from a feed stay in the archive and are marked, not deleted. Changes to
   titles and show notes are kept as revisions together with the raw `<item>` XML.
-- **Verifies its files.** Each media file is hashed with BLAKE3 while it is downloaded. In the
+- **Verifies its files.** Each media file is hashed with BLAKE3 while it is downloaded; a
+  download that breaks off is continued where it stopped. In the
   background every file is re-hashed at least once in 30 days; the library shows whether the
   archive is intact. `uguisu verify` checks everything at once. Damaged or missing files are
   reported and queued for a new download.

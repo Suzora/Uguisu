@@ -701,3 +701,122 @@ async fn the_feed_is_found_from_the_web_page() {
         .unwrap_err();
     assert!(format!("{error:#}").contains("not valid XML"), "{error:#}");
 }
+
+/// A download that breaks off is continued where it stopped, not started again.
+#[tokio::test]
+async fn interrupted_downloads_are_continued() {
+    use axum::body::{Body, Bytes};
+    use axum::http::{HeaderMap, StatusCode, header};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const AUDIO: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+    // What each request asked for, as the `Range` header or "-" without one.
+    let requests: Arc<Mutex<Vec<String>>> = Arc::default();
+    let failures = Arc::new(AtomicUsize::new(2));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let feed_xml = feed(&item(1, "First")).replace("BASE", &base);
+    let app = Router::new()
+        .route(
+            "/feed.xml",
+            get(move || {
+                let xml = feed_xml.clone();
+                async move { ([(CONTENT_TYPE, "application/rss+xml")], xml) }
+            }),
+        )
+        .route(
+            "/audio/{file}",
+            get({
+                let requests = requests.clone();
+                let failures = failures.clone();
+                move |headers: HeaderMap| {
+                    let requests = requests.clone();
+                    let failures = failures.clone();
+                    async move {
+                        let range = headers
+                            .get(header::RANGE)
+                            .map(|v| v.to_str().unwrap().to_string());
+                        requests
+                            .lock()
+                            .unwrap()
+                            .push(range.clone().unwrap_or_else(|| "-".into()));
+                        let start: usize = match &range {
+                            Some(range) => {
+                                assert_eq!(headers[header::IF_RANGE], "\"v1\"");
+                                range
+                                    .trim_start_matches("bytes=")
+                                    .trim_end_matches('-')
+                                    .parse()
+                                    .unwrap()
+                            }
+                            None => 0,
+                        };
+                        // The first two answers break off after ten bytes.
+                        let fail = failures
+                            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+                            .is_ok();
+                        let end = if fail { start + 10 } else { AUDIO.len() };
+                        let mut chunks: Vec<Result<Bytes, std::io::Error>> =
+                            vec![Ok(Bytes::from_static(&AUDIO[start..end]))];
+                        if fail {
+                            chunks.push(Err(std::io::Error::other("connection lost")));
+                        }
+                        let mut response = axum::response::Response::new(Body::from_stream(
+                            // The pause lets the bytes reach the client before the break.
+                            futures_util::StreamExt::then(
+                                futures_util::stream::iter(chunks),
+                                |chunk| async move {
+                                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                                    chunk
+                                },
+                            ),
+                        ));
+                        let headers = response.headers_mut();
+                        headers.insert(CONTENT_TYPE, "audio/mpeg".parse().unwrap());
+                        headers.insert(header::ETAG, "\"v1\"".parse().unwrap());
+                        if range.is_some() {
+                            *response.status_mut() = StatusCode::PARTIAL_CONTENT;
+                            let value =
+                                format!("bytes {start}-{}/{}", AUDIO.len() - 1, AUDIO.len());
+                            response
+                                .headers_mut()
+                                .insert(header::CONTENT_RANGE, value.parse().unwrap());
+                        }
+                        response
+                    }
+                }
+            }),
+        )
+        .route(
+            "/cover.png",
+            get(|| async { ([(CONTENT_TYPE, "image/png")], "fake png") }),
+        );
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = Config::new(data.path());
+    cfg.allow_private_networks = true;
+    let uguisu = Uguisu::open(cfg).await.unwrap();
+    let id = uguisu
+        .add_podcast(&format!("{base}/feed.xml"))
+        .await
+        .unwrap();
+    assert_eq!(uguisu.download_pending().await.unwrap(), 1);
+
+    assert_eq!(
+        *requests.lock().unwrap(),
+        ["-", "bytes=10-", "bytes=20-"],
+        "each request continues after the bytes already received"
+    );
+    let episodes = uguisu.episodes(id).await.unwrap();
+    let path = uguisu.archive_path(episodes[0].media_path.as_deref().expect("archived"));
+    assert_eq!(std::fs::read(&path).unwrap(), AUDIO);
+    assert_eq!(
+        episodes[0].media_blake3.as_deref(),
+        Some(blake3::hash(AUDIO).to_hex().as_str())
+    );
+    assert!(!path.with_file_name("download.part").exists());
+    assert!(!path.with_file_name("download.part.json").exists());
+    assert!(uguisu.verify().await.unwrap().corrupt.is_empty());
+}
