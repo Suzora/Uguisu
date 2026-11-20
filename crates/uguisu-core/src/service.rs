@@ -14,7 +14,10 @@ use tokio::sync::Notify;
 use crate::archive::{self, write_atomic};
 use crate::feed::{self, ParsedFeed, ParsedItem, without_query};
 use crate::http::{build_client, check_url, lend_credentials, parse_user_url, redact};
-use crate::model::{Attachment, Episode, EpisodeView, FeedEpisode, Podcast, PodcastSummary, Stats};
+use crate::model::{
+    Attachment, AttachmentDetail, Episode, EpisodeView, FeedEpisode, MediaFile, Podcast,
+    PodcastSummary, Revision, Stats,
+};
 use crate::util::{now, random_token, short_hash, slugify};
 use crate::{db, search};
 
@@ -563,6 +566,38 @@ impl Uguisu {
             found.extend(rows);
         }
         Ok(found)
+    }
+
+    /// Every copy of an episode's media file, oldest first.
+    pub async fn media_files(&self, episode_id: i64) -> Result<Vec<MediaFile>> {
+        Ok(
+            sqlx::query_as("SELECT * FROM media_files WHERE episode_id = ? ORDER BY id")
+                .bind(episode_id)
+                .fetch_all(self.pool())
+                .await?,
+        )
+    }
+
+    /// The files an episode links to, archived or not.
+    pub async fn episode_attachments(&self, episode_id: i64) -> Result<Vec<AttachmentDetail>> {
+        Ok(sqlx::query_as(
+            "SELECT id, episode_id, kind, source_url, path, size, mime, status, error \
+             FROM attachments WHERE episode_id = ? ORDER BY kind, id",
+        )
+        .bind(episode_id)
+        .fetch_all(self.pool())
+        .await?)
+    }
+
+    /// Every recorded state of an episode's feed entry, oldest first.
+    pub async fn revisions(&self, episode_id: i64) -> Result<Vec<Revision>> {
+        Ok(sqlx::query_as(
+            "SELECT seen_at, meta_hash, raw_xml FROM episode_revisions WHERE episode_id = ? \
+             ORDER BY seen_at, id",
+        )
+        .bind(episode_id)
+        .fetch_all(self.pool())
+        .await?)
     }
 
     /// Episodes of a podcast, newest first.

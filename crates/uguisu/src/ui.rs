@@ -554,6 +554,343 @@ fn status_of<'a>(
     }
 }
 
+/// Splits a feed entry so that every element starts a line of its own. Feeds are often written
+/// without line breaks, and a comparison by lines would then show the whole entry as changed.
+fn entry_lines(xml: &str) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    let mut chars = xml.chars().peekable();
+    while let Some(c) = chars.next() {
+        // A closing tag stays with the text it closes, but not with another element.
+        let closes_text = chars.peek() == Some(&'/') && !current.trim_end().ends_with('>');
+        if c == '<' && !closes_text && !current.trim().is_empty() {
+            lines.push(current.trim().to_string());
+            current.clear();
+        }
+        current.push(c);
+    }
+    if !current.trim().is_empty() {
+        lines.push(current.trim().to_string());
+    }
+    lines
+}
+
+/// What changed between two states of a feed entry: `(added, line)` for every line that is
+/// only in one of them, in the order of the entry. `None` if the entries are too long to
+/// compare at a reasonable cost.
+fn entry_changes(old: &str, new: &str) -> Option<Vec<(bool, String)>> {
+    let (a, b) = (entry_lines(old), entry_lines(new));
+    if a.len() * b.len() > 4_000_000 {
+        return None;
+    }
+    // Longest common subsequence, by the table of suffix lengths.
+    let mut table = vec![vec![0u32; b.len() + 1]; a.len() + 1];
+    for i in (0..a.len()).rev() {
+        for j in (0..b.len()).rev() {
+            table[i][j] = if a[i] == b[j] {
+                table[i + 1][j + 1] + 1
+            } else {
+                table[i + 1][j].max(table[i][j + 1])
+            };
+        }
+    }
+    let (mut i, mut j) = (0, 0);
+    let mut changes = Vec::new();
+    while i < a.len() && j < b.len() {
+        if a[i] == b[j] {
+            i += 1;
+            j += 1;
+        } else if table[i + 1][j] >= table[i][j + 1] {
+            changes.push((false, a[i].clone()));
+            i += 1;
+        } else {
+            changes.push((true, b[j].clone()));
+            j += 1;
+        }
+    }
+    changes.extend(a[i..].iter().map(|line| (false, line.clone())));
+    changes.extend(b[j..].iter().map(|line| (true, line.clone())));
+    Some(changes)
+}
+
+/// Show notes as readable text: paragraphs, line breaks and list items become lines, all other
+/// markup is dropped. The notes come from the publisher, so they are never shown as HTML.
+fn notes_text(html: &str, max_chars: usize) -> String {
+    let mut text = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(start) = rest.find('<') {
+        text.push_str(&rest[..start]);
+        let Some(end) = rest[start..].find('>') else {
+            rest = "";
+            break;
+        };
+        let tag = rest[start + 1..start + end].trim().to_ascii_lowercase();
+        let name = tag
+            .trim_start_matches('/')
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .next()
+            .unwrap_or("");
+        match name {
+            "br" | "tr" => text.push('\n'),
+            "li" if !tag.starts_with('/') => text.push('\n'),
+            "p" | "div" | "ul" | "ol" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "blockquote" => {
+                text.push_str("\n\n");
+            }
+            _ => {}
+        }
+        if name == "li" && !tag.starts_with('/') {
+            text.push_str("• ");
+        }
+        rest = &rest[start + end + 1..];
+    }
+    text.push_str(rest);
+
+    // Character references, named and numeric.
+    let mut decoded = String::with_capacity(text.len());
+    let mut rest = text.as_str();
+    while let Some(start) = rest.find('&') {
+        decoded.push_str(&rest[..start]);
+        let tail = &rest[start + 1..];
+        let end = tail.find(';').filter(|end| *end <= 8);
+        let replacement = end.and_then(|end| {
+            let name = &tail[..end];
+            let character = match name {
+                "amp" => Some('&'),
+                "lt" => Some('<'),
+                "gt" => Some('>'),
+                "quot" => Some('"'),
+                "apos" => Some('\''),
+                "nbsp" => Some(' '),
+                _ => {
+                    let number = name.strip_prefix('#')?;
+                    let code = match number.strip_prefix(['x', 'X']) {
+                        Some(hex) => u32::from_str_radix(hex, 16).ok()?,
+                        None => number.parse().ok()?,
+                    };
+                    char::from_u32(code)
+                }
+            }?;
+            Some((character, end))
+        });
+        match replacement {
+            Some((character, end)) => {
+                decoded.push(character);
+                rest = &tail[end + 1..];
+            }
+            None => {
+                decoded.push('&');
+                rest = tail;
+            }
+        }
+    }
+    decoded.push_str(rest);
+
+    // Tidy: single spaces within a line, at most one empty line in a row.
+    let mut out = String::new();
+    let mut empty = 0;
+    for line in decoded.lines() {
+        let line = line.split_whitespace().collect::<Vec<_>>().join(" ");
+        if line.is_empty() || line == "•" {
+            empty += 1;
+            continue;
+        }
+        if !out.is_empty() {
+            out.push_str(if empty > 0 { "\n\n" } else { "\n" });
+        }
+        empty = 0;
+        out.push_str(&line);
+    }
+    shorten(&out, max_chars)
+}
+
+fn shorten(text: &str, max_chars: usize) -> String {
+    if text.chars().count() > max_chars {
+        let cut: String = text.chars().take(max_chars).collect();
+        format!("{cut}…")
+    } else {
+        text.to_string()
+    }
+}
+
+/// Everything the archive holds about one episode.
+pub fn episode_page(
+    podcast: &Podcast,
+    view: &EpisodeView,
+    media: &[uguisu_core::model::MediaFile],
+    attachments: &[uguisu_core::model::AttachmentDetail],
+    revisions: &[uguisu_core::model::Revision],
+    downloading: &HashSet<i64>,
+) -> Markup {
+    let e = &view.episode;
+    let file_name = |path: &str| path.rsplit('/').next().unwrap_or(path).to_string();
+    let newest_ok = media.iter().rev().find(|m| m.status == "ok").map(|m| m.id);
+    let skipped = matches!(
+        status_of(view, downloading, podcast.archive_from),
+        Status::Skipped
+    );
+    shell(
+        &e.title,
+        "library",
+        html! {
+            p.muted.small { a href=(format!("/podcasts/{}", podcast.id)) { "← " (podcast.title) } }
+            section.panel {
+                h1 { (e.title) }
+                div.episode-meta {
+                    @if let Some(date) = e.published_at { span { (format_date(date)) } }
+                    @if let Some(duration) = e.duration { span { (format_duration(duration)) } }
+                    @if let (Some(season), Some(number)) = (e.season, e.episode_no) {
+                        span { "Season " (season) ", episode " (number) }
+                    } @else if let Some(number) = e.episode_no {
+                        span { "Episode " (number) }
+                    }
+                    @if let Some(removed) = e.removed_at {
+                        span.tag title="This episode is no longer listed in the source feed" {
+                            "Gone from feed since " (format_date(removed))
+                        }
+                    }
+                    @match status_of(view, downloading, podcast.archive_from) {
+                        Status::Archived(size) => span.pill.is-ok { "Archived · " (format_bytes(size)) },
+                        Status::Damaged => span.pill.is-error { "Damaged" },
+                        Status::Downloading => span.pill.is-busy { "Downloading" },
+                        Status::Queued => span.pill { "Queued" },
+                        Status::Skipped => span.pill { "Not archived" },
+                        Status::Retrying(_) => span.pill.is-warn { "Retrying" },
+                        Status::Failed(_) => span.pill.is-error { "Failed" },
+                        Status::NoMedia => span.pill { "No media" },
+                    }
+                }
+                @if let Some(error) = &e.download_error {
+                    p.notice.is-error { "Last download attempt: " (error) }
+                }
+                @if let Some(link) = e.link.as_deref().filter(|l| l.starts_with("http")) {
+                    p.small { a href=(link) rel="noreferrer noopener" { (link) } }
+                }
+                p.muted.small { "First seen " (format_datetime(e.first_seen_at)) " · identifier " code { (shorten(&e.guid, 80)) } }
+            }
+
+            section.panel {
+                h2 { "Files" }
+                @if media.is_empty() && attachments.is_empty() {
+                    p.muted { "Nothing is archived for this episode yet." }
+                }
+                ul.file-list {
+                    @for m in media {
+                        @let name = file_name(&m.path);
+                        li {
+                            div {
+                                @if m.status == "ok" {
+                                    @if Some(m.id) == newest_ok {
+                                        a href=(media_url("", &podcast.feed_token, e.id, &name)) { (name) }
+                                    } @else {
+                                        span { (name) }
+                                    }
+                                } @else {
+                                    span { (name) }
+                                }
+                                span.muted.small {
+                                    " · " (format_bytes(m.size)) " · " (m.mime)
+                                    " · downloaded " (format_datetime(m.downloaded_at))
+                                }
+                                div.muted.small {
+                                    "BLAKE3 " code { (m.blake3) }
+                                    " · last verified " (format_datetime(m.verified_at))
+                                }
+                            }
+                            @match m.status.as_str() {
+                                "ok" if Some(m.id) == newest_ok => span.pill.is-ok { "Published" },
+                                "ok" => span.pill { "Earlier version" },
+                                "missing" => span.pill.is-error { "Missing" },
+                                _ => span.pill.is-error { "Damaged" },
+                            }
+                        }
+                    }
+                    @for a in attachments {
+                        li {
+                            div {
+                                @if let (Some(path), "ok") = (&a.path, a.status.as_str()) {
+                                    @let name = file_name(path);
+                                    a href=(format!("/media/{}/{}/a/{}/{}", podcast.feed_token, e.id, a.id, name)) { (name) }
+                                } @else {
+                                    span { (shorten(&uguisu_core::http::redact(&a.source_url), 90)) }
+                                }
+                                span.muted.small {
+                                    " · " (a.kind)
+                                    @if let Some(size) = a.size { " · " (format_bytes(size)) }
+                                    @if let Some(mime) = &a.mime { " · " (mime) }
+                                }
+                                @if let Some(error) = &a.error {
+                                    div.muted.small { (error) }
+                                }
+                            }
+                            @match a.status.as_str() {
+                                "ok" => span.pill.is-ok { "Archived" },
+                                "pending" if a.error.is_some() => span.pill.is-warn { "Not archived" },
+                                "pending" if skipped => span.pill { "Not archived" },
+                                "pending" => span.pill { "Queued" },
+                                "missing" => span.pill.is-error { "Missing" },
+                                _ => span.pill.is-error { "Damaged" },
+                            }
+                        }
+                    }
+                }
+            }
+
+            @if let Some(description) = e.description.as_deref().filter(|d| !d.trim().is_empty()) {
+                section.panel {
+                    h2 { "Show notes" }
+                    p.muted.small { "As text. The published feed carries the original formatting." }
+                    p.show-notes { (notes_text(description, 20_000)) }
+                }
+            }
+
+            section.panel {
+                h2 { "History of the feed entry" }
+                @if revisions.len() <= 1 {
+                    p.muted { "The publisher has not changed this entry since it was first seen." }
+                } @else {
+                    p.muted.small {
+                        "The publisher changed this entry " (revisions.len() - 1)
+                        @if revisions.len() == 2 { " time" } @else { " times" }
+                        ". Every state is kept in the archive."
+                    }
+                }
+                ol.revision-list {
+                    @for (index, revision) in revisions.iter().enumerate().rev() {
+                        li {
+                            strong { (format_datetime(revision.seen_at)) }
+                            @if revision.meta_hash == e.meta_hash { " " span.tag { "Current" } }
+                            @if index == 0 {
+                                span.muted.small { " · first seen" }
+                            } @else {
+                                @match entry_changes(&revisions[index - 1].raw_xml, &revision.raw_xml) {
+                                    Some(changes) if changes.is_empty() => {
+                                        p.muted.small { "Only spacing or the order of attributes changed." }
+                                    }
+                                    Some(changes) => {
+                                        pre.diff {
+                                            @for (added, line) in changes.iter().take(60) {
+                                                @if *added {
+                                                    span.diff-add { "+ " (shorten(line, 400)) "\n" }
+                                                } @else {
+                                                    span.diff-del { "− " (shorten(line, 400)) "\n" }
+                                                }
+                                            }
+                                            @if changes.len() > 60 {
+                                                span.muted { "… and " (changes.len() - 60) " more lines\n" }
+                                            }
+                                        }
+                                    }
+                                    None => p.muted.small { "Too long to compare here; both states are in the archive." },
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    )
+}
+
 /// The episode list. While downloads are outstanding it reloads itself every few seconds.
 pub fn episode_list(
     summary: &PodcastSummary,
@@ -611,11 +948,7 @@ pub fn episode_list(
                     @let e = &view.episode;
                     li.episode {
                         div.episode-main {
-                            @if let Some(file) = view.media_file_name() {
-                                a.episode-title href=(media_url("", &podcast.feed_token, e.id, file)) { (e.title) }
-                            } @else {
-                                span.episode-title { (e.title) }
-                            }
+                            a.episode-title href=(format!("/podcasts/{}/episodes/{}", podcast.id, e.id)) { (e.title) }
                             div.episode-meta {
                                 @if let Some(date) = e.published_at { span { (format_date(date)) } }
                                 @if let Some(duration) = e.duration { span { (format_duration(duration)) } }
@@ -660,6 +993,46 @@ pub fn episode_list(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn changes_between_feed_entries() {
+        let old = "<item><title>One</title><guid>1</guid><enclosure url=\"a\"/></item>";
+        let new =
+            "<item><title>One, corrected</title><guid>1</guid><enclosure url=\"a\"/><x:y/></item>";
+        let changes: Vec<String> = entry_changes(old, new)
+            .unwrap()
+            .into_iter()
+            .map(|(added, line)| format!("{} {line}", if added { '+' } else { '-' }))
+            .collect();
+        assert_eq!(
+            changes,
+            [
+                "- <title>One</title>",
+                "+ <title>One, corrected</title>",
+                "+ <x:y/>",
+            ]
+        );
+        assert!(entry_changes(old, old).unwrap().is_empty());
+        // Line breaks and indentation alone are no change.
+        let spaced =
+            "<item>\n  <title>One</title>\n  <guid>1</guid>\n  <enclosure url=\"a\"/></item>";
+        assert!(entry_changes(old, spaced).unwrap().is_empty());
+    }
+
+    #[test]
+    fn show_notes_become_readable_text() {
+        let html = "<p>First &amp; <b>bold</b>&#8211;dash&#x21;</p>\n<p>Second<br/>line</p>\
+                    <ul><li>one</li><li>two &lt;3</li></ul><script>alert(1)</script>";
+        assert_eq!(
+            notes_text(html, 1000),
+            "First & bold–dash!\n\nSecond\nline\n\n• one\n• two <3\n\nalert(1)"
+        );
+        assert_eq!(
+            notes_text("AT&T & co; 5 &unknown; x", 100),
+            "AT&T & co; 5 &unknown; x"
+        );
+        assert_eq!(notes_text("<p>abcdef</p>", 3), "abc…");
+    }
 
     #[test]
     fn formatting() {

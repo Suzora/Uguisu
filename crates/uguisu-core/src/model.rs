@@ -145,3 +145,27 @@ pub struct Stats {
     /// The longest any intact file has gone without a check.
     pub oldest_check: Option<i64>,
 }
+
+/// A file an episode links to, in whatever state its download is.
+#[derive(Debug, Clone, FromRow)]
+pub struct AttachmentDetail {
+    pub id: i64,
+    pub episode_id: i64,
+    /// `transcript`, `chapters`, `image` or `notes-image`.
+    pub kind: String,
+    pub source_url: String,
+    pub path: Option<String>,
+    pub size: Option<i64>,
+    pub mime: Option<String>,
+    /// `pending`, `ok`, `corrupt` or `missing`.
+    pub status: String,
+    pub error: Option<String>,
+}
+
+/// One recorded state of an episode's feed entry.
+#[derive(Debug, Clone, FromRow)]
+pub struct Revision {
+    pub seen_at: i64,
+    pub meta_hash: String,
+    pub raw_xml: String,
+}

@@ -110,7 +110,7 @@ The promise "readable without Uguisu" is made good and tested.
 - [x] Very large feeds: `?limit=N` on a feed address publishes only the newest N episodes.
 - [ ] Very large feeds, continued: publish in pages (RFC 5005) – only if an app turns out to
       need it.
-- [~] Cover thumbnails for the web interface. Originals stay untouched in the archive.
+- [x] Cover thumbnails for the web interface. Originals stay untouched in the archive.
 - [x] One combined feed over all podcasts.
 - [ ] Access to removed episodes and earlier media versions through the published feed.
 - [ ] Compatibility check with real apps – AntennaPod, PinePods, Apple Podcasts, Pocket Casts,
@@ -119,7 +119,7 @@ The promise "readable without Uguisu" is made good and tested.
 
 ### 0.5 – Web interface
 
-- [ ] Episode page: show notes, attachments, media versions, revisions with their differences.
+- [~] Episode page: show notes, attachments, media versions, revisions with their differences.
 - [ ] History per podcast: feed snapshots, changes, errors.
 - [ ] Full-text search in the archive over titles, show notes and transcripts (SQLite FTS5).
 - [ ] Overview: running, waiting and failed downloads, state of verification, disk usage.
