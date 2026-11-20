@@ -390,10 +390,16 @@ async fn search_provider(
 #[derive(Deserialize)]
 struct AddForm {
     url: String,
+    /// Checked: only episodes published from today on are downloaded.
+    only_new: Option<String>,
 }
 
 async fn add_podcast(State(state): State<AppState>, Form(form): Form<AddForm>) -> AppResult {
-    match state.app.add_podcast(&form.url).await {
+    let archive_from = form.only_new.is_some().then(|| {
+        let now = uguisu_core::util::now();
+        now - now.rem_euclid(86_400)
+    });
+    match state.app.add_podcast_from(&form.url, archive_from).await {
         Ok(id) => Ok(see_other(&format!("/podcasts/{id}"))),
         Err(e) => {
             tracing::info!("cannot add {}: {e:#}", form.url);
@@ -472,6 +478,8 @@ async fn refresh_podcast(State(state): State<AppState>, Path(id): Path<i64>) -> 
 struct SettingsForm {
     include_removed: Option<String>,
     keep_versions: Option<String>,
+    /// `YYYY-MM-DD`, or empty for no start date.
+    archive_from: Option<String>,
 }
 
 async fn update_settings(
@@ -488,6 +496,13 @@ async fn update_settings(
             form.keep_versions.is_some(),
         )
         .await?;
+    let archive_from = form
+        .archive_from
+        .as_deref()
+        .map(str::trim)
+        .filter(|date| !date.is_empty())
+        .and_then(|date| uguisu_core::util::parse_rfc3339(&format!("{date}T00:00:00Z")));
+    state.app.set_archive_from(id, archive_from).await?;
     Ok(see_other(&format!("/podcasts/{id}")))
 }
 

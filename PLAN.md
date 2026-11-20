@@ -88,15 +88,20 @@ The promise "readable without Uguisu" is made good and tested.
 - [x] `uguisu reindex`: rebuild the database completely from the archive on disk. Test: delete
       the database, reindex, the published feeds are identical.
 - [ ] `uguisu import <directory>`: take over an existing collection of files with its feed.
-- [~] Repair: re-download a damaged file and keep the damaged copy until the new one is
+- [x] Repair: re-download a damaged file and keep the damaged copy until the new one is
       verified; show clearly when the source no longer offers the file.
 - [x] Disk space: check the reserve before downloading, fail with a clear message instead of
       leaving half files.
 - [x] Regular consistent backup of the database into the data directory.
-- [ ] Optional rules per podcast: archive only from a date on, or only new episodes. The
+- [~] Optional rules per podcast: archive only from a date on, or only new episodes. The
       default stays "everything".
-- [ ] Load test with a large archive (100 podcasts, 50,000 episodes): start-up, queries, memory.
-      Known today: about 8 KB of database per episode.
+- [x] Load test with a large archive: 100 podcasts with 500 episodes each, tiny media files,
+      on a development machine. Library page query 0.19 s, one page of episodes 6 ms, publishing
+      a feed of 500 episodes 32 ms, checking an unchanged feed 51 ms, verifying 50,000 files
+      12 s, copying the database 0.5 s, rebuilding the index from the archive 19 s. Database
+      4.5 KB per episode (223 MB), peak memory 67 MB. Adding a podcast costs about 1.2 s per
+      500 episodes, spent on writing the files safely. Nothing here needs work before 1.0; the
+      library query is the first candidate should archives grow much larger.
 
 ### 0.4 – Feeds that work everywhere
 

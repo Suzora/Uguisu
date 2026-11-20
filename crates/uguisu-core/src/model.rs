@@ -17,6 +17,8 @@ pub struct Podcast {
     pub feed_token: String,
     pub include_removed: bool,
     pub keep_versions: bool,
+    /// Episodes published before this time are indexed but not downloaded.
+    pub archive_from: Option<i64>,
     /// JSON list of `[prefix, uri]` pairs declared on the source feed's root element.
     pub namespaces: Option<String>,
     pub etag: Option<String>,

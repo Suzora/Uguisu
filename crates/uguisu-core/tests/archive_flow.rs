@@ -1445,3 +1445,66 @@ async fn a_damaged_file_is_not_lost_to_a_different_one() {
     let verified = uguisu.verify().await.unwrap();
     assert_eq!(verified.ok, verified.checked);
 }
+
+/// A start date: earlier episodes are listed but not downloaded, do not count as outstanding,
+/// and are fetched after all once the date is cleared.
+#[tokio::test]
+async fn episodes_before_the_start_date_are_not_downloaded() {
+    let three = format!(
+        "{}{}{}",
+        item(3, "Third"),
+        item(2, "Second"),
+        item(1, "First")
+    );
+    let base = start_source(Arc::new(Mutex::new(feed(&three)))).await;
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = Config::new(data.path());
+    cfg.allow_private_networks = true;
+    cfg.min_free_space = 0;
+    cfg.host_pause = std::time::Duration::ZERO;
+    let uguisu = Uguisu::open(cfg).await.unwrap();
+
+    // The episodes are from 1, 2 and 3 January 2024; start with the third.
+    let from = uguisu_core::util::parse_rfc3339("2024-01-03T00:00:00Z").unwrap();
+    let id = uguisu
+        .add_podcast_from(&format!("{base}/feed.xml"), Some(from))
+        .await
+        .unwrap();
+    assert_eq!(uguisu.download_pending().await.unwrap(), 1);
+    let archived = |episodes: Vec<uguisu_core::model::EpisodeView>| -> Vec<bool> {
+        episodes.iter().map(|e| e.media_path.is_some()).collect()
+    };
+    assert_eq!(
+        archived(uguisu.episodes(id).await.unwrap()),
+        [true, false, false]
+    );
+    let summary = uguisu.podcast_summary(id).await.unwrap().unwrap();
+    assert_eq!((summary.episode_count, summary.pending_count), (3, 0));
+    assert_eq!(uguisu.podcasts().await.unwrap()[0].pending_count, 0);
+
+    // Moving the date back lets one more in; clearing it, the rest.
+    uguisu
+        .set_archive_from(id, Some(from - 86_400))
+        .await
+        .unwrap();
+    assert_eq!(uguisu.download_pending().await.unwrap(), 1);
+    uguisu.set_archive_from(id, None).await.unwrap();
+    assert_eq!(uguisu.download_pending().await.unwrap(), 1);
+    assert_eq!(
+        archived(uguisu.episodes(id).await.unwrap()),
+        [true, true, true]
+    );
+    // A later date removes nothing.
+    uguisu
+        .set_archive_from(id, Some(from + 86_400))
+        .await
+        .unwrap();
+    assert_eq!(
+        archived(uguisu.episodes(id).await.unwrap()),
+        [true, true, true]
+    );
+    assert_eq!(
+        uguisu.podcast(id).await.unwrap().unwrap().archive_from,
+        Some(from + 86_400)
+    );
+}

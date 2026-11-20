@@ -318,6 +318,10 @@ pub fn add_page(error: Option<&str>, url: &str) -> Markup {
                     form.inline method="post" action="/podcasts" {
                         input type="text" name="url" value=(url) placeholder="https://example.org/feed.xml" required inputmode="url";
                         button.button.is-primary type="submit" { "Archive" }
+                        label.check title="Earlier episodes are listed, but their files are not downloaded. This can be changed later." {
+                            input type="checkbox" name="only_new";
+                            "Only episodes from today on"
+                        }
                     }
                 }
                 section.panel {
@@ -459,6 +463,11 @@ pub fn podcast_page(
                             input type="checkbox" name="keep_versions" checked[p.keep_versions] data-autosubmit;
                             "Keep a new copy when the source replaces a file"
                         }
+                        label.check title="Episodes published before this day are listed, but their files are not downloaded. Leave empty to archive everything. Files already archived are never removed." {
+                            "Archive episodes from "
+                            input type="date" name="archive_from" data-autosubmit
+                                value=[p.archive_from.and_then(|t| uguisu_core::util::format_utc(t, "%Y-%m-%d"))];
+                        }
                         noscript { button.button type="submit" { "Save" } }
                     }
                     form method="post" action=(format!("/podcasts/{}/token", p.id))
@@ -497,12 +506,18 @@ enum Status<'a> {
     Damaged,
     Downloading,
     Queued,
+    /// Published before the podcast's start date.
+    Skipped,
     Retrying(&'a str),
     Failed(&'a str),
     NoMedia,
 }
 
-fn status_of<'a>(view: &'a EpisodeView, downloading: &HashSet<i64>) -> Status<'a> {
+fn status_of<'a>(
+    view: &'a EpisodeView,
+    downloading: &HashSet<i64>,
+    archive_from: Option<i64>,
+) -> Status<'a> {
     let e = &view.episode;
     if let Some(size) = view.media_size {
         Status::Archived(size)
@@ -512,6 +527,10 @@ fn status_of<'a>(view: &'a EpisodeView, downloading: &HashSet<i64>) -> Status<'a
         Status::Damaged
     } else if e.enclosure_url.is_none() {
         Status::NoMedia
+    } else if let (Some(from), Some(published)) = (archive_from, e.published_at)
+        && published < from
+    {
+        Status::Skipped
     } else if e.download_attempts >= 5 {
         Status::Failed(e.download_error.as_deref().unwrap_or("unknown error"))
     } else if let Some(error) = e.download_error.as_deref() {
@@ -529,7 +548,10 @@ pub fn episode_list(
     page: i64,
 ) -> Markup {
     let podcast = &summary.podcast;
-    let statuses: Vec<Status> = episodes.iter().map(|v| status_of(v, downloading)).collect();
+    let statuses: Vec<Status> = episodes
+        .iter()
+        .map(|v| status_of(v, downloading, podcast.archive_from))
+        .collect();
     // A replaced source file is fetched while the earlier copy stays published.
     let refetching =
         |view: &EpisodeView| view.episode.refetch && view.episode.download_attempts < 5;
@@ -609,6 +631,7 @@ pub fn episode_list(
                             Status::Damaged => span.pill.is-error title="The archived file failed its integrity check and could not be downloaded again" { "Damaged" },
                             Status::Downloading => span.pill.is-busy { "Downloading" },
                             Status::Queued => span.pill { "Queued" },
+                            Status::Skipped => span.pill title="Published before this podcast's start date; the file is not downloaded" { "Not archived" },
                             Status::Retrying(error) => span.pill.is-warn title=(error) { "Retrying" },
                             Status::Failed(error) => span.pill.is-error title=(error) { "Failed" },
                             Status::NoMedia => span.pill title="The feed lists no media file for this episode" { "No media" },

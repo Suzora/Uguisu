@@ -87,6 +87,7 @@ decided about the podcast:
 | `feed_token` | The secret part of the address under which Uguisu publishes this podcast |
 | `include_removed` | Whether episodes removed from the source feed are still published |
 | `keep_versions` | Whether replaced media files are kept as versions |
+| `archive_from` | Start date: files of episodes published before it are not downloaded; `null` for none |
 | `added` | When the podcast was added to the archive |
 
 Leave this file out when you pass an archive on: whoever knows the token can read the published

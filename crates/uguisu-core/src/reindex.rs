@@ -138,8 +138,8 @@ impl Uguisu {
         let podcast_id: i64 = sqlx::query_scalar(
             "INSERT INTO podcasts (feed_url, original_feed_url, podcast_guid, title, author, \
              description, link, image_url, language, dir, cover_file, feed_token, include_removed, \
-             keep_versions, namespaces, created_at, last_fetched_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+             keep_versions, archive_from, namespaces, created_at, last_fetched_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
         )
         .bind(&feed_url)
         .bind(text(&podcast["original_feed_url"]).unwrap_or_else(|| feed_url.clone()))
@@ -155,6 +155,7 @@ impl Uguisu {
         .bind(text(&settings["feed_token"]).unwrap_or_else(|| random_token(24)))
         .bind(settings["include_removed"].as_bool().unwrap_or(true))
         .bind(settings["keep_versions"].as_bool().unwrap_or(false))
+        .bind(time(&settings["archive_from"]))
         .bind(namespaces)
         .bind(
             time(&settings["added"])
