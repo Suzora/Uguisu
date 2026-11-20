@@ -62,6 +62,8 @@ data/
         notes-image-<hash>.png           in its show notes
 ```
 
+The format is described in [docs/ARCHIVE.md](docs/ARCHIVE.md).
+
 ## Running with Docker
 
 ```bash

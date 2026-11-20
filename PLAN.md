@@ -62,20 +62,24 @@ Everything a podcast offers ends up in the archive.
 - [x] Find the feed when the user enters the address of a web page
       (`<link rel="alternate">`), instead of reporting an error.
 - [x] Archive images embedded in show notes and point the published show notes at the copies.
-- [ ] More Podcasting 2.0 files: `podcast:alternateEnclosure`, several transcript formats.
+- [x] Several transcripts per episode, in whatever formats the feed offers.
+- [ ] `podcast:alternateEnclosure`: further versions of an episode (other formats, video). These
+      can be large, so this becomes an option per podcast.
 - [x] Resume interrupted downloads with range requests.
 - [x] Be polite to sources: a pause between requests per host, respect `Retry-After`.
-- [~] Feeds that need credentials (HTTP Basic, for example paid feeds). Credentials never appear
+- [x] Feeds that need credentials (HTTP Basic, for example paid feeds). Credentials never appear
       in logs or published feeds.
 - [!] Podcast Index search. Needs an API key; registration is closed at the moment.
 - [ ] Verify the fyyd search from a real instance (so far only the response format is verified).
-- [ ] Find out why single hosts answer 403 to media requests (seen with the BBC).
+- [x] Find out why single hosts answer 403 to media requests (seen with the BBC). It was the
+      development environment: its network refuses plain `http` to that host. Over `https` the
+      same file is served to Uguisu without complaint.
 
 ### 0.3 – A dependable archive
 
 The promise "readable without Uguisu" is made good and tested.
 
-- [ ] Write down the archive format (`docs/ARCHIVE.md`) and give it a version number
+- [~] Write down the archive format (`docs/ARCHIVE.md`) and give it a version number
       (`archive.json` in the archive root).
 - [ ] Close the gaps in the files on disk: revisions, attachments, media versions and removal
       marks must all be recoverable from them.
