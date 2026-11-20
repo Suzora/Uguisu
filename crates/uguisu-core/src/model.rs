@@ -34,6 +34,10 @@ pub struct PodcastSummary {
     pub episode_count: i64,
     pub archived_count: i64,
     pub archived_bytes: i64,
+    /// Episodes that are no longer listed in the source feed.
+    pub removed_count: i64,
+    /// Episodes whose download is outstanding and will still be attempted.
+    pub pending_count: i64,
 }
 
 #[derive(Debug, Clone, FromRow)]

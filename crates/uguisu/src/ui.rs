@@ -389,12 +389,10 @@ pub fn podcast_page(
     episodes: &[EpisodeView],
     downloading: &HashSet<i64>,
     feed_url: &str,
+    page: i64,
 ) -> Markup {
     let p = &summary.podcast;
-    let removed = episodes
-        .iter()
-        .filter(|e| e.episode.removed_at.is_some())
-        .count();
+    let removed = summary.removed_count;
     shell(
         &p.title,
         "library",
@@ -461,7 +459,7 @@ pub fn podcast_page(
                 p.muted.small { "Source: " a href=(p.feed_url) rel="noreferrer noopener" { (p.feed_url) } }
             }
 
-            (episode_list(p, episodes, downloading))
+            (episode_list(summary, episodes, downloading, page))
 
             details.panel.danger {
                 summary { "Remove this podcast" }
@@ -514,29 +512,52 @@ fn status_of<'a>(view: &'a EpisodeView, downloading: &HashSet<i64>) -> Status<'a
 
 /// The episode list. While downloads are outstanding it reloads itself every few seconds.
 pub fn episode_list(
-    podcast: &Podcast,
+    summary: &PodcastSummary,
     episodes: &[EpisodeView],
     downloading: &HashSet<i64>,
+    page: i64,
 ) -> Markup {
+    let podcast = &summary.podcast;
     let statuses: Vec<Status> = episodes.iter().map(|v| status_of(v, downloading)).collect();
     // A replaced source file is fetched while the earlier copy stays published.
     let refetching =
         |view: &EpisodeView| view.episode.refetch && view.episode.download_attempts < 5;
-    let busy = statuses.iter().any(|s| {
-        matches!(
-            s,
-            Status::Downloading | Status::Queued | Status::Retrying(_)
-        )
-    }) || episodes.iter().any(refetching);
-    let poll_url = format!("/podcasts/{}/episodes", podcast.id);
+    // Work may be going on for episodes on other pages, so this is counted for the podcast.
+    let busy = summary.pending_count > 0;
+    let poll_url = format!("/podcasts/{}/episodes?page={page}", podcast.id);
+    let per_page = uguisu_core::service::EPISODES_PER_PAGE;
+    let pages = ((summary.episode_count + per_page - 1) / per_page).max(1);
+    let first = (page - 1) * per_page + 1;
+    let page_link = |number: i64| format!("/podcasts/{}?page={number}#episodes", podcast.id);
     html! {
         section #episodes .panel.episodes
             hx-get=[busy.then_some(poll_url.as_str())]
             hx-trigger=[busy.then_some("every 4s")]
             hx-swap=[busy.then_some("outerHTML")] {
-            h2 { "Episodes" @if busy { span.pill.is-busy { "Archiving…" } } }
-            @if episodes.is_empty() {
+            h2 {
+                "Episodes"
+                @if busy { span.pill.is-busy { "Archiving · " (summary.pending_count) " left" } }
+            }
+            @if summary.episode_count == 0 {
                 p.muted { "The feed has no episodes yet." }
+            } @else if episodes.is_empty() {
+                p.muted { "There is no page " (page) "." }
+            }
+            @if pages > 1 {
+                nav.pager aria-label="Episode pages" {
+                    @if page > 1 {
+                        a.button href=(page_link(page - 1)) rel="prev" { "Newer" }
+                    }
+                    span.muted {
+                        @if !episodes.is_empty() {
+                            (first) "–" (first + episodes.len() as i64 - 1) " of "
+                        }
+                        (summary.episode_count)
+                    }
+                    @if page < pages {
+                        a.button href=(page_link(page + 1)) rel="next" { "Older" }
+                    }
+                }
             }
             ol.episode-list {
                 @for (view, status) in episodes.iter().zip(&statuses) {

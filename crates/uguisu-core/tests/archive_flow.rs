@@ -372,6 +372,7 @@ async fn published_feed_keeps_the_original_items() {
 <channel>
   <title>Rich Cast</title>
   <description>A feed with extensions</description>
+  <itunes:image href="BASE/cover.png"/>
   <item>
     <title>Chapters &amp; people</title>
     <guid isPermaLink="false">rich-1</guid>
@@ -385,6 +386,13 @@ async fn published_feed_keeps_the_original_items() {
     <custom:mood>calm</custom:mood>
     <description><![CDATA[<p>Show notes with <a href="https://example.org">a link</a></p>]]></description>
   </item>
+  <item>
+    <title>Older, with the cover repeated as its image</title>
+    <guid>rich-0</guid>
+    <pubDate>Fri, 01 Dec 2023 10:00:00 +0000</pubDate>
+    <enclosure url="BASE/audio/0.mp3" type="audio/mpeg" length="10"/>
+    <itunes:image href="BASE/cover.png?size=small"/>
+  </item>
 </channel>
 </rss>"#;
     let base = start_source(Arc::new(Mutex::new(source.to_string()))).await;
@@ -396,9 +404,10 @@ async fn published_feed_keeps_the_original_items() {
         .add_podcast(&format!("{base}/feed.xml"))
         .await
         .unwrap();
-    assert_eq!(uguisu.download_pending().await.unwrap(), 1);
+    assert_eq!(uguisu.download_pending().await.unwrap(), 2);
 
-    // The files the episode links to are archived next to its media.
+    // The files the episode links to are archived next to its media. The second episode's
+    // image only repeats the podcast cover and is not stored again.
     let attachments = uguisu.attachments(id).await.unwrap();
     let mut names: Vec<&str> = attachments.iter().map(|a| a.file_name()).collect();
     names.sort();
@@ -417,6 +426,9 @@ async fn published_feed_keeps_the_original_items() {
     );
     let episodes = uguisu.episodes(id).await.unwrap();
     assert_eq!(episodes[0].attachment_count, 3);
+    assert_eq!(episodes[1].attachment_count, 0);
+    assert_eq!(uguisu.episodes_page(id, 1).await.unwrap().len(), 2);
+    assert!(uguisu.episodes_page(id, 2).await.unwrap().is_empty());
     assert!(
         uguisu
             .archive_path(&transcript.path)
@@ -449,12 +461,12 @@ async fn published_feed_keeps_the_original_items() {
         ("<itunes:image href=\"", names[1]),
         ("<podcast:transcript url=\"", names[2]),
     ] {
-        let start = xml.find(&format!("{tag}{archive}")).unwrap_or_else(|| {
-            panic!("{tag} does not point at the archive in\n{xml}");
+        let prefix = format!("{tag}{archive}");
+        let found = xml.match_indices(&prefix).any(|(start, _)| {
+            let value = &xml[start + tag.len()..];
+            value[..value.find('"').unwrap()].ends_with(name)
         });
-        let value = &xml[start + tag.len()..];
-        let value = &value[..value.find('"').unwrap()];
-        assert!(value.ends_with(name), "{value} should end with {name}");
+        assert!(found, "no {tag} pointing at archived {name} in\n{xml}");
     }
     assert!(xml.contains(&format!(
         r#"<podcast:transcript url="{base}/files/missing.srt""#
@@ -463,8 +475,9 @@ async fn published_feed_keeps_the_original_items() {
     assert!(!xml.contains("session=abc"));
 
     let republished = uguisu_core::feed::parse(xml.as_bytes()).expect("published feed is valid");
-    assert_eq!(republished.items.len(), 1);
+    assert_eq!(republished.items.len(), 2);
     let item = &republished.items[0];
+    assert_eq!(item.guid, "rich-1");
     assert!(item.enclosure_url.as_deref().unwrap().starts_with(&archive));
     assert_eq!(item.enclosure_length, Some("fake audio 1.mp3".len() as i64));
     assert!(
@@ -475,13 +488,13 @@ async fn published_feed_keeps_the_original_items() {
 
     // Attachments are part of the integrity check and are fetched again when damaged.
     let report = uguisu.verify().await.unwrap();
-    assert_eq!((report.checked, report.ok), (4, 4));
+    assert_eq!((report.checked, report.ok), (5, 5));
     std::fs::write(uguisu.archive_path(&transcript.path), "bit rot").unwrap();
     let report = uguisu.verify().await.unwrap();
     assert_eq!(report.corrupt, vec![transcript.path.clone()]);
     assert_eq!(uguisu.stats().await.unwrap().damaged, 1);
     assert_eq!(uguisu.attachments(id).await.unwrap().len(), 2);
     uguisu.download_pending().await.unwrap();
-    assert_eq!(uguisu.verify().await.unwrap().ok, 4);
+    assert_eq!(uguisu.verify().await.unwrap().ok, 5);
     assert_eq!(uguisu.stats().await.unwrap().damaged, 0);
 }
