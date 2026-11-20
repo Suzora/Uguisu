@@ -20,6 +20,9 @@ pub struct ParsedFeed {
     pub language: Option<String>,
     pub podcast_guid: Option<String>,
     pub new_feed_url: Option<String>,
+    /// Namespace declarations of the root element as `(prefix, uri)`; the default namespace
+    /// has an empty prefix.
+    pub namespaces: Vec<(String, String)>,
     pub items: Vec<ParsedItem>,
 }
 
@@ -174,6 +177,11 @@ pub fn parse(bytes: &[u8]) -> Result<ParsedFeed> {
         language: child_text(channel, None, "language"),
         podcast_guid: child_text(channel, Some(NS_PODCAST), "guid"),
         new_feed_url: child_text(channel, Some(NS_ITUNES), "new-feed-url"),
+        namespaces: root
+            .namespaces()
+            .filter(|ns| ns.name() != Some("xml"))
+            .map(|ns| (ns.name().unwrap_or("").to_string(), ns.uri().to_string()))
+            .collect(),
         items: Vec::new(),
     };
 
@@ -285,6 +293,11 @@ mod tests {
             Some("917393e3-1b1e-5cef-ace4-edaa54e1f810")
         );
         assert_eq!(feed.items.len(), 2);
+        assert!(feed.namespaces.contains(&(
+            "podcast".to_string(),
+            "https://podcastindex.org/namespace/1.0".to_string()
+        )));
+        assert_eq!(feed.namespaces.len(), 4);
 
         let two = &feed.items[0];
         assert_eq!(two.guid, "ep-2");

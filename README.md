@@ -20,8 +20,10 @@ Uguisu is not a player and does not sync listening progress. That is the job of 
 - **Keeps replaced audio.** Optionally per podcast: when the source replaces an episode's media
   file, the new one is archived next to the earlier copies (`media.v2.mp3`, …) and the newest is
   published. A file that only moved to a new address is not stored twice.
-- **Publishes the archive as feeds.** One feed per podcast behind a secret address, with the
-  original episode GUIDs and support for range requests (seeking). An OPML export lists all
+- **Publishes the archive as feeds.** One feed per podcast behind a secret address. Episodes are
+  published as the original feed entries – show notes, chapters, transcripts and other
+  Podcasting 2.0 tags included – with only the media address pointing at the archive. Range
+  requests (seeking) are supported. An OPML export lists all
   archive feeds for import into a podcast app.
 - **Takes input the easy way.** Search podcast directories (iTunes and fyyd), paste a feed
   address, or import an OPML file from your current app.
@@ -118,9 +120,9 @@ CI additionally runs [`cargo deny check`](https://github.com/EmbarkStudios/cargo
 
 ## Not there yet
 
-Podcast Index search (needs an API key), Atom feeds, paged feeds (RFC 5005), transcripts and chapters, show-note images,
-and passing through Podcasting 2.0
-tags in the published feeds.
+Podcast Index search (needs an API key), Atom feeds, paged feeds (RFC 5005), and archiving the
+files an episode links to (transcripts, chapters, show-note images): the published feed passes
+those links through, but they still point at the original servers.
 
 ## License
 

@@ -127,7 +127,8 @@ async fn archive_flow() {
     );
 
     // Re-publish: original GUIDs, enclosures pointing at the archive.
-    let xml = rss::build_feed(&podcast, &episodes, "https://archive.example");
+    let published = uguisu.feed_episodes(id).await.unwrap();
+    let xml = rss::build_feed(&podcast, &published, "https://archive.example");
     let republished = uguisu_core::feed::parse(xml.as_bytes()).unwrap();
     assert_eq!(republished.items.len(), 2);
     assert_eq!(republished.items[0].guid, "ep-2");
@@ -171,11 +172,12 @@ async fn archive_flow() {
 
     // Removed episodes are published or hidden depending on the podcast setting.
     let podcast = uguisu.podcast(id).await.unwrap().unwrap();
-    let with_removed = rss::build_feed(&podcast, &episodes, "https://archive.example");
-    assert!(with_removed.contains("<guid isPermaLink=\"false\">ep-1</guid>"));
+    let published = uguisu.feed_episodes(id).await.unwrap();
+    let with_removed = rss::build_feed(&podcast, &published, "https://archive.example");
+    assert!(with_removed.contains("<guid>ep-1</guid>"));
     uguisu.set_options(id, false, false).await.unwrap();
     let podcast = uguisu.podcast(id).await.unwrap().unwrap();
-    let without_removed = rss::build_feed(&podcast, &episodes, "https://archive.example");
+    let without_removed = rss::build_feed(&podcast, &published, "https://archive.example");
     assert!(!without_removed.contains("ep-1</guid>"));
 
     // Fixity: intact files pass, a damaged file is detected and queued again.
@@ -348,4 +350,70 @@ async fn files_are_rechecked_when_their_last_check_is_old() {
     let episodes = uguisu.episodes(id).await.unwrap();
     assert_eq!(episodes[0].media_damaged, 1);
     assert!(episodes[0].media_path.is_none());
+}
+
+#[tokio::test]
+async fn published_feed_keeps_the_original_items() {
+    let source = r#"<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+     xmlns:podcast="https://podcastindex.org/namespace/1.0" xmlns:custom="https://example.org/ns">
+<channel>
+  <title>Rich Cast</title>
+  <description>A feed with extensions</description>
+  <item>
+    <title>Chapters &amp; people</title>
+    <guid isPermaLink="false">rich-1</guid>
+    <pubDate>Mon, 01 Jan 2024 10:00:00 +0000</pubDate>
+    <enclosure url="BASE/audio/1.mp3?session=abc" type="audio/mpeg" length="10"/>
+    <podcast:chapters url="https://example.org/1/chapters.json" type="application/json+chapters"/>
+    <podcast:transcript url="https://example.org/1/transcript.vtt" type="text/vtt"/>
+    <podcast:person role="host">Mika Tanabe</podcast:person>
+    <custom:mood>calm</custom:mood>
+    <description><![CDATA[<p>Show notes with <a href="https://example.org">a link</a></p>]]></description>
+  </item>
+</channel>
+</rss>"#;
+    let base = start_source(Arc::new(Mutex::new(source.to_string()))).await;
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = Config::new(data.path());
+    cfg.allow_private_networks = true;
+    let uguisu = Uguisu::open(cfg).await.unwrap();
+    let id = uguisu
+        .add_podcast(&format!("{base}/feed.xml"))
+        .await
+        .unwrap();
+    uguisu.download_pending().await.unwrap();
+
+    let podcast = uguisu.podcast(id).await.unwrap().unwrap();
+    let published = uguisu.feed_episodes(id).await.unwrap();
+    let xml = rss::build_feed(&podcast, &published, "https://archive.example");
+
+    // Everything the publisher put into the item is still there, byte for byte.
+    for original in [
+        r#"<podcast:chapters url="https://example.org/1/chapters.json" type="application/json+chapters"/>"#,
+        r#"<podcast:transcript url="https://example.org/1/transcript.vtt" type="text/vtt"/>"#,
+        r#"<podcast:person role="host">Mika Tanabe</podcast:person>"#,
+        "<custom:mood>calm</custom:mood>",
+        r#"<![CDATA[<p>Show notes with <a href="https://example.org">a link</a></p>]]>"#,
+        r#"<guid isPermaLink="false">rich-1</guid>"#,
+    ] {
+        assert!(xml.contains(original), "missing {original} in\n{xml}");
+    }
+    // Only the enclosure changed: it points at the archive, with the real size.
+    assert!(!xml.contains("session=abc"));
+    let republished = uguisu_core::feed::parse(xml.as_bytes()).expect("published feed is valid");
+    assert_eq!(republished.items.len(), 1);
+    let item = &republished.items[0];
+    assert!(
+        item.enclosure_url
+            .as_deref()
+            .unwrap()
+            .starts_with("https://archive.example/media/")
+    );
+    assert_eq!(item.enclosure_length, Some("fake audio 1.mp3".len() as i64));
+    assert!(
+        republished
+            .namespaces
+            .contains(&("custom".to_string(), "https://example.org/ns".to_string()))
+    );
 }

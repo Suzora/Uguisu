@@ -565,7 +565,7 @@ async fn feed(
         .podcast_by_token(token)
         .await?
         .ok_or(AppError::NotFound)?;
-    let episodes = state.app.episodes(podcast.id).await?;
+    let episodes = state.app.feed_episodes(podcast.id).await?;
     let xml = rss::build_feed(&podcast, &episodes, &base_url(&state, &headers));
     Ok((
         [

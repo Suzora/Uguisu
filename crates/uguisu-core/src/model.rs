@@ -17,6 +17,8 @@ pub struct Podcast {
     pub feed_token: String,
     pub include_removed: bool,
     pub keep_versions: bool,
+    /// JSON list of `[prefix, uri]` pairs declared on the source feed's root element.
+    pub namespaces: Option<String>,
     pub etag: Option<String>,
     pub last_modified: Option<String>,
     pub created_at: i64,
@@ -74,6 +76,14 @@ pub struct EpisodeView {
     pub media_versions: i64,
     /// Copies that failed their last integrity check.
     pub media_damaged: i64,
+}
+
+/// An episode as needed to publish it: the view plus the raw `<item>` of its current revision.
+#[derive(Debug, Clone, FromRow)]
+pub struct FeedEpisode {
+    #[sqlx(flatten)]
+    pub view: EpisodeView,
+    pub raw_xml: Option<String>,
 }
 
 impl EpisodeView {

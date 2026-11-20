@@ -14,7 +14,7 @@ use tokio::sync::Notify;
 use crate::archive::{self, write_atomic};
 use crate::feed::{self, ParsedFeed, ParsedItem};
 use crate::http::{build_client, check_url, parse_user_url};
-use crate::model::{Episode, EpisodeView, Podcast, PodcastSummary, Stats};
+use crate::model::{Episode, EpisodeView, FeedEpisode, Podcast, PodcastSummary, Stats};
 use crate::util::{now, random_token, short_hash, slugify};
 use crate::{db, search};
 
@@ -226,6 +226,20 @@ impl Uguisu {
         Ok(sqlx::query_as(episode_view_sql!(
             "WHERE e.podcast_id = ? \
              ORDER BY e.published_at IS NULL, e.published_at DESC, e.id DESC"
+        ))
+        .bind(podcast_id)
+        .fetch_all(self.pool())
+        .await?)
+    }
+
+    /// Episodes of a podcast with the raw `<item>` of their current revision, newest first.
+    pub async fn feed_episodes(&self, podcast_id: i64) -> Result<Vec<FeedEpisode>> {
+        Ok(sqlx::query_as(concat!(
+            "SELECT v.*, (SELECT r.raw_xml FROM episode_revisions r \
+               WHERE r.episode_id = v.id AND r.meta_hash = v.meta_hash) AS raw_xml FROM (",
+            episode_view_sql!(""),
+            ") v WHERE v.podcast_id = ? \
+             ORDER BY v.published_at IS NULL, v.published_at DESC, v.id DESC"
         ))
         .bind(podcast_id)
         .fetch_all(self.pool())
@@ -521,8 +535,8 @@ impl Uguisu {
         // 3. Podcast metadata. After a move the cache validators belong to the old URL.
         sqlx::query(
             "UPDATE podcasts SET feed_url = ?, podcast_guid = COALESCE(?, podcast_guid), title = ?, \
-             author = ?, description = ?, link = ?, image_url = ?, language = ?, etag = ?, \
-             last_modified = ?, last_fetched_at = ?, last_fetch_error = NULL WHERE id = ?",
+             author = ?, description = ?, link = ?, image_url = ?, language = ?, namespaces = ?, \
+             etag = ?, last_modified = ?, last_fetched_at = ?, last_fetch_error = NULL WHERE id = ?",
         )
         .bind(&feed_url)
         .bind(&parsed.podcast_guid)
@@ -532,6 +546,7 @@ impl Uguisu {
         .bind(&parsed.link)
         .bind(&parsed.image_url)
         .bind(&parsed.language)
+        .bind(serde_json::to_string(&parsed.namespaces)?)
         .bind(if moved { None } else { etag })
         .bind(if moved { None } else { last_modified })
         .bind(now)
