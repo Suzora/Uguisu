@@ -87,13 +87,13 @@ The promise "readable without Uguisu" is made good and tested.
       feed addresses per podcast.
 - [x] `uguisu reindex`: rebuild the database completely from the archive on disk. Test: delete
       the database, reindex, the published feeds are identical.
-- [ ] `uguisu import <directory>`: take over an existing collection of files with its feed.
+- [~] `uguisu import <directory>`: take over an existing collection of files with its feed.
 - [x] Repair: re-download a damaged file and keep the damaged copy until the new one is
       verified; show clearly when the source no longer offers the file.
 - [x] Disk space: check the reserve before downloading, fail with a clear message instead of
       leaving half files.
 - [x] Regular consistent backup of the database into the data directory.
-- [~] Optional rules per podcast: archive only from a date on, or only new episodes. The
+- [x] Optional rules per podcast: archive only from a date on, or only new episodes. The
       default stays "everything".
 - [x] Load test with a large archive: 100 podcasts with 500 episodes each, tiny media files,
       on a development machine. Library page query 0.19 s, one page of episodes 6 ms, publishing

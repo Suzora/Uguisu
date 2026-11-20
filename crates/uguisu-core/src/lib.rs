@@ -7,6 +7,7 @@ pub mod archive;
 pub mod db;
 pub mod feed;
 pub mod http;
+pub mod import;
 pub mod model;
 pub mod opml;
 pub mod reindex;

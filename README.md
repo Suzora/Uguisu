@@ -112,11 +112,26 @@ cargo run -p uguisu
 | `--backups` | `UGUISU_BACKUPS` | `7` | Daily copies of the database kept in `backups/`; `0` turns them off |
 | `--allow-private-networks` | `UGUISU_ALLOW_PRIVATE_NETWORKS` | off | Allow sources on local and private addresses |
 
-Commands: `uguisu serve` (default), `uguisu verify` and `uguisu reindex`. `verify` exits with a
+Commands: `uguisu serve` (default), `uguisu verify`, `uguisu reindex` and `uguisu import`. `verify` exits with a
 non-zero status if any file is damaged or missing, so it can be used from cron or a monitoring
 job. `reindex` rebuilds a lost or damaged database from the archive; the published feeds keep
 their addresses. Feed passwords and the login are not part of the archive and have to be entered
 again.
+
+### Importing files you already have
+
+Episodes downloaded earlier by a podcast app can be taken into the archive:
+
+```bash
+uguisu import /path/to/files --feed https://example.org/feed.xml --keep-unmatched
+```
+
+A file is matched to an episode by the file name in the episode's media address, or else by the
+episode's title in the file name. With `--keep-unmatched`, files that fit no episode of the feed –
+typically episodes the feed no longer lists – become episodes of their own. Files are copied and
+checked; the directory is left as it is. With Docker the directory has to be mounted into the
+container, for example
+`docker compose run --rm -v /path/to/files:/import:ro uguisu import /import --feed …`.
 
 ### The database
 
