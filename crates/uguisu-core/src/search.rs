@@ -339,7 +339,7 @@ mod tests {
              "layoutImageURL":"https:\/\/img-1.fyyd.de\/pd\/layout\/82022.jpg",
              "language":"en","categories":[205,208],"rank":2,"subtitle":"Long text",
              "episode_count":37,"iflags":null,"paymentURL":null,"author":"Charles Band"},
-            {"title":"SmartHütte","id":90243,"xmlURL":"https:\/\/feeds.transistor.fm\/smarthuette",
+            {"title":"SmartH\u00fctte","id":90243,"xmlURL":"https:\/\/feeds.transistor.fm\/smarthuette",
              "layoutImageURL":"https:\/\/img-1.fyyd.de\/pd\/layout\/90243.jpg","categories":[203],
              "rank":8,"iflags":"99","author":"Andrej Friesen, Thomas Wiebe"},
             {"title":"Freak Show","id":85,"xmlURL":"https:\/\/feeds.metaebene.me\/freakshow\/mp3",
