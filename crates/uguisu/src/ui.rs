@@ -2,12 +2,15 @@
 
 use std::collections::HashSet;
 
-use maud::{DOCTYPE, Markup, PreEscaped, html};
+use maud::{DOCTYPE, Markup, html};
 use uguisu_core::model::{EpisodeView, Podcast, PodcastSummary, Stats};
 use uguisu_core::rss::media_url;
 use uguisu_core::search::{Provider, SearchHit};
 
-const LOGO: &str = include_str!("../assets/logo.svg");
+/// The emblem without the wordmark. Decorative: the name is always written next to it.
+fn icon() -> Markup {
+    html! { img.logo src="/assets/icon.webp" alt="" width="256" height="256"; }
+}
 
 // ── Formatting helpers ─────────────────────────────────────────────────────────────────────
 
@@ -96,7 +99,7 @@ fn document(title: &str, body_class: &str, content: Markup) -> Markup {
                 meta name="color-scheme" content="light dark";
                 meta name="htmx-config" content=r#"{"includeIndicatorStyles":false}"#;
                 title { (title) " · Uguisu" }
-                link rel="icon" href="/assets/favicon.svg" type="image/svg+xml";
+                link rel="icon" href="/assets/favicon.png" type="image/png";
                 link rel="stylesheet" href="/assets/app.css";
                 script src="/assets/htmx.min.js" defer {}
                 script src="/assets/app.js" defer {}
@@ -121,7 +124,7 @@ fn shell(title: &str, active: &str, content: Markup) -> Markup {
         html! {
             header.topbar {
                 div.topbar-inner {
-                    a.brand href="/" { (PreEscaped(LOGO)) span { "Uguisu" } }
+                    a.brand href="/" { (icon()) span { "Uguisu" } }
                     nav {
                         a class=(nav_class("library")) href="/" { "Library" }
                         a class=(nav_class("add")) href="/add" { "Add podcast" }
@@ -146,7 +149,7 @@ fn card_page(title: &str, content: Markup) -> Markup {
         "centered",
         html! {
             main.auth-card {
-                div.auth-brand { (PreEscaped(LOGO)) span { "Uguisu" } }
+                div.auth-brand { (icon()) span { "Uguisu" } }
                 (content)
             }
         },
@@ -226,7 +229,7 @@ pub fn library_page(podcasts: &[PodcastSummary], stats: &Stats, import: Option<u
             }
             @if podcasts.is_empty() {
                 section.empty {
-                    (PreEscaped(LOGO))
+                    (icon())
                     h1 { "Your archive is empty" }
                     p.muted { "Add a podcast and Uguisu keeps every episode, even after it disappears from the feed." }
                     a.button.is-primary href="/add" { "Add your first podcast" }
