@@ -128,6 +128,7 @@ fn shell(title: &str, active: &str, content: Markup) -> Markup {
                     nav {
                         a class=(nav_class("library")) href="/" { "Library" }
                         a class=(nav_class("add")) href="/add" { "Add podcast" }
+                        a class=(nav_class("settings")) href="/settings" { "Settings" }
                     }
                     form.logout method="post" action="/logout" {
                         button.button.is-quiet type="submit" { "Sign out" }
@@ -182,6 +183,55 @@ pub fn setup_page(error: Option<&str>) -> Markup {
                     input type="password" name="confirm" required minlength="10" autocomplete="new-password";
                 }
                 button.button.is-primary type="submit" { "Create archive" }
+            }
+        },
+    )
+}
+
+pub fn settings_page(sessions: i64, notice: Option<&str>, error: Option<&str>) -> Markup {
+    shell(
+        "Settings",
+        "settings",
+        html! {
+            h1 { "Settings" }
+            @if let Some(notice) = notice { p.notice role="status" { (notice) } }
+            div.columns {
+                section.panel {
+                    h2 { "Password" }
+                    @if let Some(error) = error { p.notice.is-error role="alert" { (error) } }
+                    form.stack method="post" action="/settings/password" {
+                        label { "Current password"
+                            input type="password" name="current" required autocomplete="current-password";
+                        }
+                        label { "New password"
+                            input type="password" name="password" required minlength="10" autocomplete="new-password";
+                        }
+                        label { "Repeat new password"
+                            input type="password" name="confirm" required minlength="10" autocomplete="new-password";
+                        }
+                        button.button.is-primary type="submit" { "Change password" }
+                    }
+                    p.muted.small {
+                        "Changing the password signs out all other devices. If the password is lost, "
+                        code { "uguisu reset-password" } " on the server lets you choose a new one."
+                    }
+                }
+                section.panel {
+                    h2 { "Signed-in devices" }
+                    p.muted {
+                        @if sessions <= 1 {
+                            "Only this browser is signed in."
+                        } @else {
+                            (sessions) " browsers are signed in, this one included."
+                        }
+                    }
+                    form method="post" action="/settings/sessions" {
+                        button.button type="submit" disabled[sessions <= 1] { "Sign out all other devices" }
+                    }
+                    p.muted.small {
+                        "Podcast apps are not affected: feeds are protected by their secret addresses, not by the login."
+                    }
+                }
             }
         },
     )

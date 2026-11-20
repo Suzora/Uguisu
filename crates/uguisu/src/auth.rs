@@ -51,6 +51,38 @@ fn token_hash(token: &str) -> String {
     blake3::hash(token.as_bytes()).to_hex().to_string()
 }
 
+/// Ends every session except the given one, and returns how many were ended.
+pub async fn delete_other_sessions(pool: &SqlitePool, keep: Option<&str>) -> Result<u64> {
+    let keep = keep.map(token_hash).unwrap_or_default();
+    Ok(sqlx::query("DELETE FROM sessions WHERE token_hash != ?")
+        .bind(keep)
+        .execute(pool)
+        .await?
+        .rows_affected())
+}
+
+/// Number of sessions that are still valid.
+pub async fn session_count(pool: &SqlitePool) -> Result<i64> {
+    Ok(
+        sqlx::query_scalar("SELECT COUNT(*) FROM sessions WHERE expires_at > ?")
+            .bind(now())
+            .fetch_one(pool)
+            .await?,
+    )
+}
+
+/// Removes the password and ends every session. The next visit asks for a new password, like
+/// on a fresh installation. For the owner who has lost the password and has access to the
+/// machine.
+pub async fn reset_password(pool: &SqlitePool) -> Result<()> {
+    sqlx::query("DELETE FROM settings WHERE key = ?")
+        .bind(PASSWORD_KEY)
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM sessions").execute(pool).await?;
+    Ok(())
+}
+
 /// Creates a session and returns the secret token for the cookie. Only its hash is stored.
 pub async fn create_session(pool: &SqlitePool) -> Result<String> {
     let token = random_token(32);

@@ -97,6 +97,9 @@ enum Command {
         #[arg(long)]
         keep_unmatched: bool,
     },
+    /// Remove the password of the web interface and sign out every device. The next visit asks
+    /// for a new password. For when the password is lost.
+    ResetPassword,
     /// Ask the running instance whether it answers; exits with 0 if it does. Used by the
     /// container health check, where no other HTTP client is available.
     Healthcheck,
@@ -204,6 +207,11 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 report.known.len(),
                 report.skipped.len()
             );
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::ResetPassword => {
+            auth::reset_password(app.pool()).await?;
+            println!("The password is removed. Open the web interface to choose a new one.");
             Ok(ExitCode::SUCCESS)
         }
         Command::Reindex => {
