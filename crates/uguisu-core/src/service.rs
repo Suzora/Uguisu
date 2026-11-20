@@ -19,7 +19,12 @@ use crate::util::{now, random_token, short_hash, slugify};
 use crate::{db, search};
 
 /// Version of the on-disk archive format, described in `docs/ARCHIVE.md`.
-pub const ARCHIVE_FORMAT: u64 = 1;
+pub const ARCHIVE_FORMAT: u64 = 2;
+
+async fn write_archive_marker(path: &Path, format: u64) -> Result<()> {
+    let content = serde_json::json!({ "format": format, "software": "Uguisu" });
+    write_atomic(path, &serde_json::to_vec_pretty(&content)?).await
+}
 const MAX_FEED_BYTES: usize = 64 * 1024 * 1024;
 /// Upper bound for the pages of one feed (RFC 5005); far beyond what real feeds use.
 const MAX_FEED_PAGES: usize = 500;
@@ -183,6 +188,7 @@ struct FetchedFeed {
 #[derive(FromRow)]
 struct PendingAttachment {
     id: i64,
+    episode_id: i64,
     kind: String,
     source_key: String,
     source_url: String,
@@ -316,8 +322,13 @@ impl Uguisu {
                 }
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                let content = serde_json::json!({ "format": ARCHIVE_FORMAT, "software": "Uguisu" });
-                write_atomic(&marker, &serde_json::to_vec_pretty(&content)?).await?;
+                // An archive from before the marker existed is in the first format.
+                let mut entries = tokio::fs::read_dir(&archive_dir).await?;
+                let format = match entries.next_entry().await? {
+                    Some(_) => 1,
+                    None => ARCHIVE_FORMAT,
+                };
+                write_archive_marker(&marker, format).await?;
             }
             Err(error) => {
                 return Err(error).with_context(|| format!("cannot read {}", marker.display()));
@@ -639,6 +650,105 @@ impl Uguisu {
         None
     }
 
+    /// Writes `episode.json`: everything the index knows about an episode and its files, so
+    /// that the index can be rebuilt from the archive.
+    async fn write_episode_json(&self, episode_id: i64) -> Result<()> {
+        let Some((episode, podcast_dir)): Option<(Episode, String)> =
+            sqlx::query_as::<_, PendingDownload>(
+                "SELECT e.*, p.dir AS podcast_dir, p.feed_url FROM episodes e \
+             JOIN podcasts p ON p.id = e.podcast_id WHERE e.id = ?",
+            )
+            .bind(episode_id)
+            .fetch_optional(self.pool())
+            .await?
+            .map(|row| (row.episode, row.podcast_dir))
+        else {
+            return Ok(());
+        };
+        // Media first, each kind oldest first.
+        type FileRow = (String, String, String, String, i64, String, i64, i64, i64);
+        let files: Vec<FileRow> = sqlx::query_as(
+            "SELECT 'media', path, source_url, blake3, size, mime, downloaded_at, 0 AS place, id \
+             FROM media_files WHERE episode_id = ?1 \
+             UNION ALL \
+             SELECT kind, path, source_url, blake3, size, mime, downloaded_at, 1, id \
+             FROM attachments WHERE episode_id = ?1 AND path IS NOT NULL AND blake3 IS NOT NULL \
+             ORDER BY 8, 9",
+        )
+        .bind(episode_id)
+        .fetch_all(self.pool())
+        .await?;
+        let files: Vec<serde_json::Value> = files
+            .into_iter()
+            .map(
+                |(kind, path, source, blake3, size, mime, downloaded, _, _)| {
+                    serde_json::json!({
+                        "name": path.rsplit('/').next().unwrap_or(&path),
+                        "kind": kind,
+                        "source": redact(&source),
+                        "blake3": blake3,
+                        "size": size,
+                        "type": mime,
+                        "downloaded": iso_date(downloaded),
+                    })
+                },
+            )
+            .collect();
+        let json = serde_json::json!({
+            "guid": episode.guid,
+            "title": episode.title,
+            "description": episode.description,
+            "link": episode.link,
+            "published": episode.published_at.and_then(iso_date),
+            "duration_seconds": episode.duration,
+            "enclosure": {
+                "url": episode.enclosure_url,
+                "type": episode.enclosure_type,
+                "length": episode.enclosure_length,
+            },
+            "image": episode.image_url,
+            "season": episode.season,
+            "episode": episode.episode_no,
+            "hash": episode.meta_hash,
+            "first_seen": iso_date(episode.first_seen_at),
+            "removed": episode.removed_at.and_then(iso_date),
+            "files": files,
+        });
+        let path = self
+            .archive_path(&podcast_dir)
+            .join("episodes")
+            .join(&episode.dir)
+            .join("episode.json");
+        write_atomic(&path, &serde_json::to_vec_pretty(&json)?).await
+    }
+
+    /// Brings an archive written by an earlier version up to the current format. Returns the
+    /// number of episodes whose files were rewritten.
+    pub async fn upgrade_archive(&self) -> Result<usize> {
+        let marker = self.archive_dir().join("archive.json");
+        let format = serde_json::from_slice::<serde_json::Value>(&tokio::fs::read(&marker).await?)?
+            ["format"]
+            .as_u64()
+            .unwrap_or(1);
+        if format >= ARCHIVE_FORMAT {
+            return Ok(0);
+        }
+        // Format 2: episode.json also lists the episode's files and its state in the feed.
+        let ids: Vec<i64> = sqlx::query_scalar("SELECT id FROM episodes ORDER BY id")
+            .fetch_all(self.pool())
+            .await?;
+        tracing::info!(
+            episodes = ids.len(),
+            "upgrading the archive to format {ARCHIVE_FORMAT}"
+        );
+        for id in &ids {
+            self.write_episode_json(*id).await?;
+        }
+        write_archive_marker(&marker, ARCHIVE_FORMAT).await?;
+        tracing::info!("archive upgraded");
+        Ok(ids.len())
+    }
+
     /// Adds every URL of an OPML import. Failures are logged and counted, not fatal.
     pub async fn import_feeds(&self, urls: &[String]) -> ImportReport {
         let mut report = ImportReport::default();
@@ -927,13 +1037,15 @@ impl Uguisu {
         .await?;
 
         // 4. Episodes.
-        let mut changed: Vec<(String, &ParsedItem)> = Vec::new();
+        let mut changed: Vec<(i64, String, &ParsedItem)> = Vec::new();
+        // Episodes that left the feed or came back; their files say so too.
+        let mut status_changed: Vec<i64> = Vec::new();
         let mut seen: HashSet<i64> = HashSet::with_capacity(parsed.items.len());
         let mut tx = self.pool().begin().await?;
         for item in &parsed.items {
             let meta_hash = item.meta_hash();
-            let existing: Option<(i64, String, String, Option<String>)> = sqlx::query_as(
-                "SELECT id, meta_hash, dir, enclosure_url FROM episodes \
+            let existing: Option<(i64, String, String, Option<String>, bool)> = sqlx::query_as(
+                "SELECT id, meta_hash, dir, enclosure_url, removed_at IS NOT NULL FROM episodes \
                  WHERE podcast_id = ? AND guid = ?",
             )
             .bind(podcast_id)
@@ -971,8 +1083,11 @@ impl Uguisu {
                     .await?;
                     (id, dir, true)
                 }
-                Some((id, old_hash, dir, old_enclosure)) => {
+                Some((id, old_hash, dir, old_enclosure, was_removed)) => {
                     let is_changed = old_hash != meta_hash;
+                    if was_removed && !is_changed {
+                        status_changed.push(id);
+                    }
                     // A new address (ignoring its query string) means the source replaced the file.
                     let replaced = podcast.keep_versions
                         && item.enclosure_url.is_some()
@@ -1051,7 +1166,7 @@ impl Uguisu {
                 .bind(&item.raw_xml)
                 .execute(&mut *tx)
                 .await?;
-                changed.push((dir, item));
+                changed.push((episode_id, dir, item));
             }
         }
         // Episodes that were not in this feed have left it. An empty feed is more likely broken
@@ -1069,35 +1184,19 @@ impl Uguisu {
                     .bind(id)
                     .execute(&mut *tx)
                     .await?;
+                status_changed.push(id);
             }
         }
         tx.commit().await?;
 
         // 5. Sidecar files, so the archive explains itself without the database.
-        for (dir, item) in changed {
+        for (id, dir, item) in changed {
             let episode_dir = podcast_dir.join("episodes").join(dir);
-            let json = serde_json::json!({
-                "guid": item.guid,
-                "title": item.title,
-                "description": item.description,
-                "link": item.link,
-                "published": item.published_at.and_then(iso_date),
-                "duration_seconds": item.duration,
-                "enclosure": {
-                    "url": item.enclosure_url,
-                    "type": item.enclosure_type,
-                    "length": item.enclosure_length,
-                },
-                "image": item.image_url,
-                "season": item.season,
-                "episode": item.episode_no,
-            });
-            write_atomic(
-                &episode_dir.join("episode.json"),
-                &serde_json::to_vec_pretty(&json)?,
-            )
-            .await?;
             write_atomic(&episode_dir.join("item.xml"), item.raw_xml.as_bytes()).await?;
+            self.write_episode_json(id).await?;
+        }
+        for id in status_changed {
+            self.write_episode_json(id).await?;
         }
         let json = serde_json::json!({
             "title": parsed.title,
@@ -1272,7 +1371,7 @@ impl Uguisu {
 
     async fn pending_attachments(&self) -> Result<Vec<PendingAttachment>> {
         Ok(sqlx::query_as(
-            "SELECT a.id, a.kind, a.source_key, a.source_url, a.attempts, \
+            "SELECT a.id, a.episode_id, a.kind, a.source_key, a.source_url, a.attempts, \
              e.dir AS episode_dir, p.dir AS podcast_dir, p.feed_url \
              FROM attachments a JOIN episodes e ON e.id = a.episode_id \
              JOIN podcasts p ON p.id = e.podcast_id \
@@ -1286,7 +1385,7 @@ impl Uguisu {
 
     async fn download_attachment(&self, pending: PendingAttachment) {
         let outcome = match self.fetch_attachment(&pending).await {
-            Ok(()) => Ok(()),
+            Ok(()) => self.write_episode_json(pending.episode_id).await,
             Err(e) => {
                 tracing::warn!(url = %pending.source_key, "attachment download failed: {e:#}");
                 let host_break = host_break(&e);
@@ -1303,6 +1402,7 @@ impl Uguisu {
                 .execute(self.pool())
                 .await
                 .map(|_| ())
+                .map_err(anyhow::Error::from)
             }
         };
         if let Err(e) = outcome {
@@ -1388,6 +1488,9 @@ impl Uguisu {
         let outcome = match result {
             Ok(()) => {
                 tracing::info!(episode = %episode.title, "archived");
+                if let Err(e) = self.write_episode_json(episode.id).await {
+                    tracing::error!(episode = %episode.title, "cannot write episode.json: {e:#}");
+                }
                 sqlx::query("UPDATE episodes SET download_error = NULL, refetch = 0 WHERE id = ?")
                     .bind(episode.id)
                     .execute(self.pool())
@@ -1662,6 +1765,12 @@ impl Uguisu {
 
     /// Starts the feed refresher and the downloader. Both run until the process exits.
     pub fn spawn_workers(&self) {
+        let this = self.clone();
+        tokio::spawn(async move {
+            if let Err(e) = this.upgrade_archive().await {
+                tracing::error!("upgrading the archive failed: {e:#}");
+            }
+        });
         let this = self.clone();
         tokio::spawn(async move {
             loop {
