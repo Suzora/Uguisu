@@ -207,6 +207,87 @@ fn ns_attr(node: Node, namespace: &str, name: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Value of an attribute inside the text of one HTML start tag, with `&amp;` decoded.
+fn html_attribute(tag: &str, name: &str) -> Option<String> {
+    let lower = tag.to_ascii_lowercase();
+    let mut from = 0;
+    while let Some(found) = lower[from..].find(name) {
+        let start = from + found;
+        from = start + name.len();
+        let boundary = lower[..start]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_ascii_whitespace() || c == '"' || c == '\'');
+        let rest = tag[from..].trim_start();
+        if !boundary || !rest.starts_with('=') {
+            continue;
+        }
+        let rest = rest[1..].trim_start();
+        let value = match rest.chars().next()? {
+            quote @ ('"' | '\'') => rest[1..].split(quote).next()?,
+            _ => rest
+                .split(|c: char| c.is_ascii_whitespace() || c == '>')
+                .next()?,
+        };
+        return Some(value.trim().replace("&amp;", "&"));
+    }
+    None
+}
+
+pub fn looks_like_html(bytes: &[u8]) -> bool {
+    let head = String::from_utf8_lossy(&bytes[..bytes.len().min(2048)]).to_ascii_lowercase();
+    head.contains("<!doctype html") || head.contains("<html")
+}
+
+/// Finds the feeds a web page announces with `<link rel="alternate">`, in the order of the
+/// page, RSS before Atom. Empty for anything that is not an HTML page. Relative addresses are
+/// resolved against `base`.
+///
+/// Pages often announce several feeds (blog posts, comments, one per audio format), so the
+/// caller has to look for the one that carries episodes.
+pub fn discover(bytes: &[u8], base: &url::Url) -> Vec<url::Url> {
+    if !looks_like_html(bytes) {
+        return Vec::new();
+    }
+    let text = String::from_utf8_lossy(bytes);
+    let lower = text.to_ascii_lowercase();
+    let (mut rss, mut atom) = (Vec::new(), Vec::new());
+    let mut from = 0;
+    while let Some(found) = lower[from..].find("<link") {
+        let start = from + found;
+        let Some(length) = lower[start..].find('>') else {
+            break;
+        };
+        let end = start + length;
+        from = end;
+        let tag = &text[start + "<link".len()..end];
+        let is_alternate = html_attribute(tag, "rel").is_some_and(|rel| {
+            rel.split_ascii_whitespace()
+                .any(|r| r.eq_ignore_ascii_case("alternate"))
+        });
+        let Some(kind) = html_attribute(tag, "type").filter(|_| is_alternate) else {
+            continue;
+        };
+        let Some(target) = html_attribute(tag, "href").and_then(|href| base.join(&href).ok())
+        else {
+            continue;
+        };
+        if !matches!(target.scheme(), "http" | "https") {
+            continue;
+        }
+        let list = match kind.to_ascii_lowercase().as_str() {
+            "application/rss+xml" => &mut rss,
+            "application/atom+xml" => &mut atom,
+            _ => continue,
+        };
+        if !list.contains(&target) {
+            list.push(target);
+        }
+    }
+    rss.append(&mut atom);
+    rss
+}
+
 /// Parses RFC 2822 dates (the RSS standard) and, as a fallback, RFC 3339.
 ///
 /// The optional weekday is dropped first: real feeds contain dates whose weekday does not match
@@ -719,6 +800,37 @@ mod tests {
         );
         assert_eq!(item.enclosure_type.as_deref(), Some("audio/mpeg"));
         assert_eq!(item.enclosure_length, Some(7));
+    }
+
+    #[test]
+    fn discovers_the_feeds_of_a_web_page() {
+        let base = url::Url::parse("https://example.org/show/").unwrap();
+        let find = |html: &str| -> Vec<String> {
+            discover(html.as_bytes(), &base)
+                .into_iter()
+                .map(String::from)
+                .collect()
+        };
+        let page = r#"<!DOCTYPE html><html><head>
+<link rel="stylesheet" href="/style.css">
+<LINK REL='alternate' TYPE='application/atom+xml' HREF='/atom.xml'>
+<link href="feed.xml?a=1&amp;b=2" type="application/rss+xml" title="Podcast" rel="alternate">
+<link rel=alternate type=application/rss+xml href=/comments>
+</head><body><p>broken <br> html</body></html>"#;
+        assert_eq!(
+            find(page),
+            [
+                "https://example.org/show/feed.xml?a=1&b=2",
+                "https://example.org/comments",
+                "https://example.org/atom.xml"
+            ]
+        );
+        assert!(find("<html><head><title>No feed</title></head></html>").is_empty());
+        // A feed is never mistaken for a page, whatever links it contains.
+        assert!(
+            find(r#"<rss><channel><link rel="alternate" type="application/rss+xml" href="/x"/></channel></rss>"#)
+                .is_empty()
+        );
     }
 
     #[test]

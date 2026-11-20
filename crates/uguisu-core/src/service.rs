@@ -21,6 +21,8 @@ use crate::{db, search};
 const MAX_FEED_BYTES: usize = 64 * 1024 * 1024;
 /// Upper bound for the pages of one feed (RFC 5005); far beyond what real feeds use.
 const MAX_FEED_PAGES: usize = 500;
+/// How many of the feeds a web page announces are tried to find the podcast feed.
+const MAX_ANNOUNCED_FEEDS: usize = 8;
 const MAX_COVER_BYTES: usize = 32 * 1024 * 1024;
 const MAX_ATTACHMENT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_DOWNLOAD_ATTEMPTS: i64 = 5;
@@ -145,6 +147,18 @@ enum Fetched {
         last_modified: Option<String>,
     },
 }
+
+/// The address did not lead to a feed but to a web page that announces these feeds.
+#[derive(Debug)]
+struct FeedElsewhere(Vec<reqwest::Url>);
+
+impl std::fmt::Display for FeedElsewhere {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "this address is a web page, not a podcast feed")
+    }
+}
+
+impl std::error::Error for FeedElsewhere {}
 
 /// A source feed with all of its pages.
 struct FetchedFeed {
@@ -405,8 +419,15 @@ impl Uguisu {
     // ── Adding and refreshing ──────────────────────────────────────────────────────────────
 
     /// Adds a podcast by feed URL and returns its id. Adding a podcast that is already archived
-    /// (same URL or same `<podcast:guid>`) returns the existing id.
+    /// (same URL or same `<podcast:guid>`) returns the existing id. The address of a web page
+    /// that announces a feed works as well.
     pub async fn add_podcast(&self, input: &str) -> Result<i64> {
+        self.add_feed(input, false).await
+    }
+
+    /// `discovered` is set when `input` was taken from a web page; such a feed is not searched
+    /// for a further feed.
+    async fn add_feed(&self, input: &str, discovered: bool) -> Result<i64> {
         let url = parse_user_url(input, self.inner.cfg.allow_private_networks)?;
         let url = url.as_str();
         let existing: Option<i64> = sqlx::query_scalar(
@@ -420,7 +441,22 @@ impl Uguisu {
             return Ok(id);
         }
 
-        let Some(fetched) = self.fetch_all(url, None, None).await? else {
+        let fetched = match self.fetch_all(url, None, None).await {
+            // A web page that announces feeds: add the one that carries episodes.
+            Err(error) => match error.downcast_ref::<FeedElsewhere>() {
+                Some(FeedElsewhere(announced)) if !discovered => {
+                    let target = self.podcast_feed_among(announced).await.context(
+                        "this address is a web page, and none of the feeds it announces \
+                         contains episodes",
+                    )?;
+                    tracing::info!(page = url, feed = %target, "feed found on the web page");
+                    return Box::pin(self.add_feed(target.as_str(), true)).await;
+                }
+                _ => return Err(error),
+            },
+            Ok(fetched) => fetched,
+        };
+        let Some(fetched) = fetched else {
             bail!("the server answered 'not modified' to an unconditional request");
         };
         let parsed = &fetched.parsed;
@@ -453,6 +489,26 @@ impl Uguisu {
         tracing::info!(podcast = %parsed.title, episodes = parsed.items.len(), "podcast added");
         self.ingest(id, fetched).await?;
         Ok(id)
+    }
+
+    /// The first of the announced feeds that has an episode with a media file. Pages commonly
+    /// list feeds of blog posts and comments before the podcast feed.
+    async fn podcast_feed_among(&self, announced: &[reqwest::Url]) -> Option<reqwest::Url> {
+        for target in announced.iter().take(MAX_ANNOUNCED_FEEDS) {
+            if check_url(target, self.inner.cfg.allow_private_networks).is_err() {
+                continue;
+            }
+            let Ok(Fetched::Body { bytes, .. }) =
+                self.fetch_feed(target.as_str(), None, None).await
+            else {
+                continue;
+            };
+            if feed::parse(&bytes).is_ok_and(|f| f.items.iter().any(|i| i.enclosure_url.is_some()))
+            {
+                return Some(target.clone());
+            }
+        }
+        None
     }
 
     /// Adds every URL of an OPML import. Failures are logged and counted, not fatal.
@@ -534,10 +590,24 @@ impl Uguisu {
         else {
             return Ok(None);
         };
-        let mut parsed = feed::parse(&bytes)?;
+        let mut current = reqwest::Url::parse(url)?;
+        let mut parsed = match feed::parse(&bytes) {
+            Ok(parsed) => parsed,
+            Err(error) => {
+                let announced = feed::discover(&bytes, &current);
+                return Err(if announced.is_empty() {
+                    if feed::looks_like_html(&bytes) {
+                        anyhow::anyhow!("this address is a web page that announces no podcast feed")
+                    } else {
+                        error
+                    }
+                } else {
+                    FeedElsewhere(announced).into()
+                });
+            }
+        };
         let mut pages = vec![bytes];
 
-        let mut current = reqwest::Url::parse(url)?;
         let mut visited: HashSet<String> = HashSet::from([current.to_string()]);
         let mut guids: HashSet<String> = parsed.items.iter().map(|i| i.guid.clone()).collect();
         let mut next = parsed.next_page.take();

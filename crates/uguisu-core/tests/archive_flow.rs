@@ -50,6 +50,29 @@ async fn start_source(body: FeedBody) -> String {
             }),
         )
         .route(
+            "/blog.xml",
+            get(|| async {
+                (
+                    [(CONTENT_TYPE, "application/rss+xml")],
+                    "<rss version=\"2.0\"><channel><title>Blog</title>\
+                     <item><title>A post</title><guid>post-1</guid></item></channel></rss>",
+                )
+            }),
+        )
+        .route(
+            "/show",
+            get(|| async {
+                (
+                    [(CONTENT_TYPE, "text/html")],
+                    "<!doctype html><html><head><title>Show</title>\
+                     <link rel=\"alternate\" type=\"application/rss+xml\" href=\"/blog.xml\">\
+                     <link rel=\"alternate\" type=\"application/rss+xml\" href=\"/missing.xml\">\
+                     <link rel=\"alternate\" type=\"application/rss+xml\" href=\"feed.xml\">\
+                     </head><body><p>Welcome<br></body></html>",
+                )
+            }),
+        )
+        .route(
             "/audio/{file}",
             get(
                 |axum::extract::Path(file): axum::extract::Path<String>| async move {
@@ -646,4 +669,35 @@ async fn atom_feeds_are_archived_and_published_as_rss() {
             .unwrap()
             .starts_with("https://archive.example/media/")
     );
+}
+
+/// The address of the podcast's web page is enough: of the feeds it announces, the one with
+/// episodes is added – not the blog feed listed first, nor the one that does not exist.
+#[tokio::test]
+async fn the_feed_is_found_from_the_web_page() {
+    let base = start_source(Arc::new(Mutex::new(feed(&item(1, "First"))))).await;
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = Config::new(data.path());
+    cfg.allow_private_networks = true;
+    let uguisu = Uguisu::open(cfg).await.unwrap();
+
+    let id = uguisu.add_podcast(&format!("{base}/show")).await.unwrap();
+    let podcast = uguisu.podcast(id).await.unwrap().unwrap();
+    assert_eq!(podcast.title, "Test Cast");
+    assert_eq!(podcast.feed_url, format!("{base}/feed.xml"));
+    assert_eq!(
+        uguisu
+            .add_podcast(&format!("{base}/feed.xml"))
+            .await
+            .unwrap(),
+        id,
+        "page and feed address lead to the same podcast"
+    );
+
+    // Something that is neither a feed nor a page is refused with the parser's message.
+    let error = uguisu
+        .add_podcast(&format!("{base}/cover.png"))
+        .await
+        .unwrap_err();
+    assert!(format!("{error:#}").contains("not valid XML"), "{error:#}");
 }
