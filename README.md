@@ -29,7 +29,8 @@ Uguisu is not a player and does not sync listening progress. That is the job of 
 - **Publishes the archive as feeds.** One feed per podcast behind a secret address. Episodes are
   published as the original feed entries – show notes, chapters, transcripts and other
   Podcasting 2.0 tags included – with the media address pointing at the archive. Range requests
-  (seeking) are supported.
+  (seeking) are supported. Adding `?limit=50` to a feed address publishes only the newest 50
+  episodes, for apps that struggle with very long feeds.
 - **Archives what an episode links to.** Transcripts, chapter files, episode images and the
   images shown in the show notes are stored next to the media file, checked like it, and the
   published feed points at the archived copies.

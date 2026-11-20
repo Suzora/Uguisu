@@ -199,6 +199,23 @@ fn reuse_item(
     Some(rewrite_text(&out, links))
 }
 
+/// The newest `limit` episodes that [`build_feed`] would publish. `episodes` is ordered newest
+/// first; episodes that would be left out anyway do not count.
+pub fn newest(podcast: &Podcast, episodes: Vec<FeedEpisode>, limit: usize) -> Vec<FeedEpisode> {
+    episodes
+        .into_iter()
+        .filter(|episode| is_published(podcast, episode))
+        .take(limit)
+        .collect()
+}
+
+fn is_published(podcast: &Podcast, episode: &FeedEpisode) -> bool {
+    episode.view.media_path.is_some()
+        && episode.view.media_size.is_some()
+        && episode.view.media_mime.is_some()
+        && (episode.view.episode.removed_at.is_none() || podcast.include_removed)
+}
+
 /// Renders an RSS 2.0 document. Episodes without an archived file are left out, as are episodes
 /// that disappeared from the source feed when the podcast is configured that way.
 pub fn build_feed(

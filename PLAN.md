@@ -105,15 +105,17 @@ The promise "readable without Uguisu" is made good and tested.
 
 ### 0.4 – Feeds that work everywhere
 
-- [~] Conditional requests (ETag) and compression for published feeds. Caching the generated
+- [x] Conditional requests (ETag) and compression for published feeds. Caching the generated
       feed is dropped: building one takes about 30 ms for 500 episodes (see the load test).
-- [ ] Very large feeds: optionally limit to the newest episodes, or publish in pages (RFC 5005).
+- [~] Very large feeds: `?limit=N` on a feed address publishes only the newest N episodes.
+- [ ] Very large feeds, continued: publish in pages (RFC 5005) – only if an app turns out to
+      need it.
 - [ ] Cover thumbnails for the web interface. Originals stay untouched in the archive.
 - [ ] One combined feed over all podcasts.
 - [ ] Access to removed episodes and earlier media versions through the published feed.
 - [ ] Compatibility check with real apps – AntennaPod, PinePods, Apple Podcasts, Pocket Casts,
       gPodder – documented as a table. Not checked with any app so far.
-- [ ] Validate generated feeds in the test suite.
+- [~] Validate generated feeds in the test suite.
 
 ### 0.5 – Web interface
 

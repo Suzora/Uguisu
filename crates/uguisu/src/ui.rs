@@ -450,6 +450,9 @@ pub fn podcast_page(
                     input #feed-url type="text" readonly value=(feed_url) aria-label="Archive feed address";
                     button.button.is-primary type="button" data-copy="#feed-url" { "Copy" }
                 }
+                p.muted.small {
+                    "For a shorter feed, add " code { "?limit=50" } " to the address: only the newest 50 episodes are published."
+                }
                 div.actions {
                     form method="post" action=(format!("/podcasts/{}/refresh", p.id)) {
                         button.button type="submit" { "Check source feed now" }
