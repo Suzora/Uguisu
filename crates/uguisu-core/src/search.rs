@@ -11,7 +11,8 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 const ITUNES_TIMEOUT: Duration = Duration::from_secs(15);
-// fyyd has been observed to take around 30 seconds for a search.
+// fyyd reports answering within a second, but whole requests have been measured at 15 to
+// 30 seconds, so the limit is generous.
 const FYYD_TIMEOUT: Duration = Duration::from_secs(45);
 const RESULTS_PER_PROVIDER: &str = "20";
 
@@ -235,7 +236,7 @@ struct FyydPodcast {
     layout_image_url: Option<String>,
     #[serde(rename = "imgURL")]
     img_url: Option<String>,
-    subtitle: Option<String>,
+    author: Option<String>,
 }
 
 async fn fyyd(client: &reqwest::Client, query: &str) -> Result<Vec<SearchHit>> {
@@ -263,8 +264,7 @@ fn parse_fyyd(body: &[u8]) -> Result<Vec<SearchHit>> {
         .filter_map(|p| {
             Some(SearchHit {
                 title: non_empty(p.title)?,
-                // fyyd has no author field; the subtitle is the closest short description.
-                author: non_empty(p.subtitle),
+                author: non_empty(p.author),
                 feed_url: non_empty(p.xml_url)?,
                 // The image hosted by fyyd is preferred: it is served over https and resized.
                 image_url: non_empty(p.layout_image_url).or(non_empty(p.img_url)),
@@ -307,25 +307,32 @@ mod tests {
 
     #[test]
     fn parses_fyyd() {
-        // Shape taken from the API documentation, including `categories` being a list or a number.
-        let body = br#"{"status":1,"msg":"ok","meta":{"API_INFO":{"API_VERSION":0.2}},"data":[
-            {"title":"Freak Show","id":85,"xmlURL":"https:\/\/feeds.metaebene.me\/freakshow\/m4a",
-             "htmlURL":"http:\/\/freakshow.fm","imgURL":"http:\/\/freakshow.fm\/cover.jpg",
-             "layoutImageURL":"https:\/\/img.fyyd.de\/pd\/layout\/85.jpg","language":"de",
-             "categories":[52,61],"rank":32,"subtitle":"Menschen! Technik! Sensationen!"},
+        // First entry: shape of a real answer (November 2026). The others cover the variants in
+        // the API documentation, where `categories` may be a number and fields may be missing.
+        let body = br##"{"status":1,"msg":"ok","meta":{"paging":{"count":2,"page":0,"first_page":0,
+            "last_page":0,"next_page":null,"prev_page":null},"API_INFO":{"API_VERSION":"0.2"},
+            "SERVER":"192.0.2.1","duration":1},"data":[
+            {"title":"Charles Band's Full Moon Freakshow","id":82022,
+             "xmlURL":"https:\/\/anchor.fm\/s\/93f097fc\/podcast\/rss",
+             "htmlURL":"https:\/\/www.fullmoonfeatures.com\/browse",
+             "imgURL":"https:\/\/cdn.example\/original.jpg","status":200,
+             "status_since":"2026-06-19 19:12:05","slug":"charles-band-s-full-moon-freakshow",
+             "layoutImageURL":"https:\/\/img-1.fyyd.de\/pd\/layout\/82022.jpg",
+             "language":"en","generator":"Anchor Podcasts","categories":[205,208],
+             "lastpub":"2024-11-26T23:41:48+01:00","rank":2,"description":"Long text",
+             "subtitle":"Long text","tcolor":"#fff","color":"#212a3b","episode_count":37,
+             "iflags":null,"paymentURL":null,"author":"Charles Band"},
             {"title":"Second","id":36645,"xmlURL":"http:\/\/second.example\/feed",
-             "imgURL":"http:\/\/second.example\/cover.jpg","categories":38,"subtitle":""},
-            {"title":"Broken","id":1}]}"#;
+             "imgURL":"http:\/\/second.example\/cover.jpg","categories":38,"author":""},
+            {"title":"Broken","id":1}]}"##;
         let hits = parse_fyyd(body).unwrap();
         assert_eq!(hits.len(), 2);
-        assert_eq!(hits[0].feed_url, "https://feeds.metaebene.me/freakshow/m4a");
-        assert_eq!(
-            hits[0].author.as_deref(),
-            Some("Menschen! Technik! Sensationen!")
-        );
+        assert_eq!(hits[0].title, "Charles Band's Full Moon Freakshow");
+        assert_eq!(hits[0].feed_url, "https://anchor.fm/s/93f097fc/podcast/rss");
+        assert_eq!(hits[0].author.as_deref(), Some("Charles Band"));
         assert_eq!(
             hits[0].image_url.as_deref(),
-            Some("https://img.fyyd.de/pd/layout/85.jpg")
+            Some("https://img-1.fyyd.de/pd/layout/82022.jpg")
         );
         assert_eq!(hits[1].author, None);
         assert_eq!(
