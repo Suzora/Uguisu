@@ -590,3 +590,60 @@ async fn paged_feeds_are_read_completely() {
     assert_eq!(uguisu.episodes(id).await.unwrap().len(), 6);
     assert_eq!(std::fs::read_dir(&snapshots).unwrap().count(), 3);
 }
+
+/// An Atom feed as source: archived like any other feed and published as RSS.
+#[tokio::test]
+async fn atom_feeds_are_archived_and_published_as_rss() {
+    let atom = r#"<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Atom Cast</title>
+  <link href="https://example.org/"/>
+  <entry>
+    <id>urn:uuid:atom-1</id>
+    <title>Only episode</title>
+    <published>2024-01-02T10:00:00Z</published>
+    <link rel="enclosure" href="BASE/audio/1.mp3" type="audio/mpeg" length="10"/>
+    <content type="html">&lt;p&gt;Notes&lt;/p&gt;</content>
+  </entry>
+</feed>"#;
+    let base = start_source(Arc::new(Mutex::new(atom.to_string()))).await;
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = Config::new(data.path());
+    cfg.allow_private_networks = true;
+    let uguisu = Uguisu::open(cfg).await.unwrap();
+
+    let id = uguisu
+        .add_podcast(&format!("{base}/feed.xml"))
+        .await
+        .unwrap();
+    assert_eq!(uguisu.download_pending().await.unwrap(), 1);
+    let episodes = uguisu.episodes(id).await.unwrap();
+    let item_xml = uguisu
+        .archive_path(episodes[0].media_path.as_deref().unwrap())
+        .with_file_name("item.xml");
+    assert!(
+        std::fs::read_to_string(item_xml)
+            .unwrap()
+            .starts_with("<entry>"),
+        "the original entry is kept as it was"
+    );
+
+    let podcast = uguisu.podcast(id).await.unwrap().unwrap();
+    let published = uguisu.feed_episodes(id).await.unwrap();
+    let xml = rss::build_feed(&podcast, &published, &[], "https://archive.example");
+    assert!(xml.contains("<rss version=\"2.0\""));
+    let republished = uguisu_core::feed::parse(xml.as_bytes()).unwrap();
+    assert_eq!(republished.title, "Atom Cast");
+    assert_eq!(republished.items.len(), 1);
+    let item = &republished.items[0];
+    assert_eq!(item.guid, "urn:uuid:atom-1");
+    assert_eq!(item.title, "Only episode");
+    assert_eq!(item.description.as_deref(), Some("<p>Notes</p>"));
+    assert_eq!(item.published_at, Some(1_704_189_600));
+    assert!(
+        item.enclosure_url
+            .as_deref()
+            .unwrap()
+            .starts_with("https://archive.example/media/")
+    );
+}

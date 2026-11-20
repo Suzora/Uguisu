@@ -47,7 +47,7 @@ Principles every decision is measured against:
 - [x] Container image with health check; CI (format, lints, tests, `cargo deny`, `typos`, image).
 - [x] Release workflow for the image; its dry run passes. Publishing itself runs for the first
       time with the first version tag.
-- [~] Feeds split into pages (RFC 5005) are read to the last page.
+- [x] Feeds split into pages (RFC 5005) are read to the last page.
 
 ## 3. Milestones
 
@@ -57,8 +57,8 @@ Each milestone ends with a release. Items are worked through one topic per pull 
 
 Everything a podcast offers ends up in the archive.
 
-- [~] Paged and archived feeds (RFC 5005).
-- [ ] Atom and RSS 1.0 as source formats. The published feed stays RSS 2.0.
+- [x] Paged and archived feeds (RFC 5005).
+- [~] Atom and RSS 1.0 as source formats. The published feed stays RSS 2.0.
 - [ ] Find the feed when the user enters the address of a web page
       (`<link rel="alternate">`), instead of reporting an error.
 - [ ] Archive images embedded in show notes and point the published show notes at the copies.
