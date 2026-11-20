@@ -115,6 +115,7 @@ async fn archive_flow() {
     let data = tempfile::tempdir().unwrap();
     let mut cfg = Config::new(data.path());
     cfg.allow_private_networks = true;
+    cfg.host_pause = std::time::Duration::ZERO;
     let uguisu = Uguisu::open(cfg).await.unwrap();
 
     // Add: both episodes are indexed, the raw feed is snapshotted, the cover is stored.
@@ -276,6 +277,7 @@ async fn replaced_media_is_kept_as_a_new_version() {
     let data = tempfile::tempdir().unwrap();
     let mut cfg = Config::new(data.path());
     cfg.allow_private_networks = true;
+    cfg.host_pause = std::time::Duration::ZERO;
     let uguisu = Uguisu::open(cfg).await.unwrap();
     let id = uguisu
         .add_podcast(&format!("{base}/feed.xml"))
@@ -355,6 +357,7 @@ async fn files_are_rechecked_when_their_last_check_is_old() {
     let data = tempfile::tempdir().unwrap();
     let mut cfg = Config::new(data.path());
     cfg.allow_private_networks = true;
+    cfg.host_pause = std::time::Duration::ZERO;
     let uguisu = Uguisu::open(cfg).await.unwrap();
     let id = uguisu
         .add_podcast(&format!("{base}/feed.xml"))
@@ -422,6 +425,7 @@ async fn published_feed_keeps_the_original_items() {
     let data = tempfile::tempdir().unwrap();
     let mut cfg = Config::new(data.path());
     cfg.allow_private_networks = true;
+    cfg.host_pause = std::time::Duration::ZERO;
     let uguisu = Uguisu::open(cfg).await.unwrap();
     let id = uguisu
         .add_podcast(&format!("{base}/feed.xml"))
@@ -581,6 +585,7 @@ async fn paged_feeds_are_read_completely() {
     let data = tempfile::tempdir().unwrap();
     let mut cfg = Config::new(data.path());
     cfg.allow_private_networks = true;
+    cfg.host_pause = std::time::Duration::ZERO;
     let uguisu = Uguisu::open(cfg).await.unwrap();
 
     let id = uguisu
@@ -633,6 +638,7 @@ async fn atom_feeds_are_archived_and_published_as_rss() {
     let data = tempfile::tempdir().unwrap();
     let mut cfg = Config::new(data.path());
     cfg.allow_private_networks = true;
+    cfg.host_pause = std::time::Duration::ZERO;
     let uguisu = Uguisu::open(cfg).await.unwrap();
 
     let id = uguisu
@@ -679,6 +685,7 @@ async fn the_feed_is_found_from_the_web_page() {
     let data = tempfile::tempdir().unwrap();
     let mut cfg = Config::new(data.path());
     cfg.allow_private_networks = true;
+    cfg.host_pause = std::time::Duration::ZERO;
     let uguisu = Uguisu::open(cfg).await.unwrap();
 
     let id = uguisu.add_podcast(&format!("{base}/show")).await.unwrap();
@@ -799,6 +806,7 @@ async fn interrupted_downloads_are_continued() {
     let data = tempfile::tempdir().unwrap();
     let mut cfg = Config::new(data.path());
     cfg.allow_private_networks = true;
+    cfg.host_pause = std::time::Duration::ZERO;
     let uguisu = Uguisu::open(cfg).await.unwrap();
     let id = uguisu
         .add_podcast(&format!("{base}/feed.xml"))
@@ -821,4 +829,81 @@ async fn interrupted_downloads_are_continued() {
     assert!(!path.with_file_name("download.part").exists());
     assert!(!path.with_file_name("download.part.json").exists());
     assert!(uguisu.verify().await.unwrap().corrupt.is_empty());
+}
+
+/// A host that asks for a break gets it: the download is postponed by the time it named and
+/// does not count as a failed attempt. Requests to one host keep their distance.
+#[tokio::test]
+async fn sources_are_treated_politely() {
+    use axum::http::{StatusCode, header};
+
+    let audio_requests = Arc::new(Mutex::new(0u32));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let feed_xml = feed(&format!("{}{}", item(2, "Second"), item(1, "First")))
+        .replace("BASE", &base)
+        .replace("<itunes:image href=\"", "<itunes:image href=\"x");
+    let app = Router::new()
+        .route(
+            "/feed.xml",
+            get(move || {
+                let xml = feed_xml.clone();
+                async move { ([(CONTENT_TYPE, "application/rss+xml")], xml) }
+            }),
+        )
+        .route(
+            "/audio/{file}",
+            get({
+                let audio_requests = audio_requests.clone();
+                move || {
+                    *audio_requests.lock().unwrap() += 1;
+                    async {
+                        (
+                            StatusCode::TOO_MANY_REQUESTS,
+                            [(header::RETRY_AFTER, "120")],
+                        )
+                    }
+                }
+            }),
+        );
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = Config::new(data.path());
+    cfg.allow_private_networks = true;
+    cfg.host_pause = std::time::Duration::from_millis(300);
+    cfg.download_concurrency = 1;
+    let uguisu = Uguisu::open(cfg).await.unwrap();
+
+    let started = std::time::Instant::now();
+    let id = uguisu
+        .add_podcast(&format!("{base}/feed.xml"))
+        .await
+        .unwrap();
+    uguisu.refresh(id).await.unwrap();
+    assert!(
+        started.elapsed() >= std::time::Duration::from_millis(300),
+        "the second request to the host waits for its slot"
+    );
+
+    uguisu.download_pending().await.unwrap();
+    assert_eq!(
+        *audio_requests.lock().unwrap(),
+        1,
+        "after the host asked for a break, the second episode is not even requested"
+    );
+    let now = uguisu_core::util::now();
+    for view in uguisu.episodes(id).await.unwrap() {
+        let episode = view.episode;
+        assert_eq!(episode.download_attempts, 0, "a break is not a failure");
+        let wait = episode.next_attempt_at - now;
+        assert!((100..=121).contains(&wait), "postponed by {wait} seconds");
+        assert!(
+            episode
+                .download_error
+                .as_deref()
+                .unwrap()
+                .contains("asked to wait"),
+        );
+    }
 }

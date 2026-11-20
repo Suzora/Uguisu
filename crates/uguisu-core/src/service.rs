@@ -1,9 +1,9 @@
 //! The archive service: adding podcasts, refreshing feeds, downloading media, verifying files.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use futures_util::StreamExt;
@@ -26,6 +26,8 @@ const MAX_ANNOUNCED_FEEDS: usize = 8;
 const MAX_COVER_BYTES: usize = 32 * 1024 * 1024;
 const MAX_ATTACHMENT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_DOWNLOAD_ATTEMPTS: i64 = 5;
+/// Longest break a host can ask for with `Retry-After`, in seconds.
+const MAX_HOST_BREAK: u64 = 3600;
 /// How often an interrupted download is continued within one attempt.
 const MAX_RESUMES: u32 = 5;
 
@@ -102,6 +104,9 @@ pub struct Config {
     pub download_concurrency: usize,
     /// Every archived file is re-hashed at least this often. `None` disables the automatic check.
     pub verify_interval: Option<Duration>,
+    /// Shortest time between two requests to the same host, so that archiving a long feed
+    /// does not look like an attack to its server.
+    pub host_pause: Duration,
 }
 
 impl Config {
@@ -114,6 +119,7 @@ impl Config {
             refresh_interval: Duration::from_secs(3600),
             download_concurrency: 2,
             verify_interval: Some(Duration::from_secs(30 * 24 * 3600)),
+            host_pause: Duration::from_secs(1),
         }
     }
 }
@@ -204,6 +210,53 @@ struct Inner {
     wake_downloader: Notify,
     downloading: Mutex<HashSet<i64>>,
     search_cache: Mutex<search::SearchCache>,
+    hosts: Mutex<HashMap<String, HostState>>,
+}
+
+/// When a host may be asked again.
+#[derive(Clone, Copy)]
+struct HostState {
+    /// Start of the next free slot, kept apart by [`Config::host_pause`].
+    next_request: Instant,
+    /// Set while the host has asked for a break with `Retry-After`.
+    busy_until: Option<Instant>,
+}
+
+/// A host answered "too many requests" or "unavailable" and named a waiting time. This is not a
+/// failure of the file that was asked for, so it does not count as a download attempt.
+#[derive(Debug)]
+struct HostBusy {
+    host: String,
+    seconds: u64,
+}
+
+impl std::fmt::Display for HostBusy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} asked to wait {} seconds before the next request",
+            self.host, self.seconds
+        )
+    }
+}
+
+impl std::error::Error for HostBusy {}
+
+/// Seconds to wait if `error` is a host's request for a break.
+fn host_break(error: &anyhow::Error) -> Option<i64> {
+    error
+        .downcast_ref::<HostBusy>()
+        .map(|busy| busy.seconds as i64)
+}
+
+/// `Retry-After` is either a number of seconds or a date.
+fn retry_after(response: &reqwest::Response) -> Option<u64> {
+    let value = header(response, reqwest::header::RETRY_AFTER)?;
+    let seconds = match value.trim().parse::<u64>() {
+        Ok(seconds) => seconds,
+        Err(_) => u64::try_from(feed::parse_date(&value)? - now()).ok()?,
+    };
+    Some(seconds.clamp(1, MAX_HOST_BREAK))
 }
 
 #[derive(Clone)]
@@ -251,8 +304,50 @@ impl Uguisu {
                 wake_downloader: Notify::new(),
                 downloading: Mutex::new(HashSet::new()),
                 search_cache: Mutex::new(search::SearchCache::default()),
+                hosts: Mutex::new(HashMap::new()),
             }),
         })
+    }
+
+    /// Sends a request to a source, politely: requests to one host keep a distance of
+    /// [`Config::host_pause`], and a host that asks for a break with `Retry-After` gets it.
+    async fn send(&self, request: reqwest::RequestBuilder) -> Result<reqwest::Response> {
+        let (client, request) = request.build_split();
+        let request = request?;
+        let host = request.url().host_str().unwrap_or_default().to_string();
+        let slot = {
+            let mut hosts = self.inner.hosts.lock().unwrap();
+            let now = Instant::now();
+            let state = hosts.entry(host.clone()).or_insert(HostState {
+                next_request: now,
+                busy_until: None,
+            });
+            if let Some(until) = state.busy_until.filter(|until| *until > now) {
+                let seconds = (until - now).as_secs().max(1);
+                return Err(HostBusy { host, seconds }.into());
+            }
+            let slot = state.next_request.max(now);
+            state.next_request = slot + self.inner.cfg.host_pause;
+            slot
+        };
+        tokio::time::sleep_until(slot.into()).await;
+
+        let url = request.url().clone();
+        let response = client
+            .execute(request)
+            .await
+            .with_context(|| format!("cannot fetch {url}"))?;
+        let overloaded = matches!(
+            response.status(),
+            reqwest::StatusCode::TOO_MANY_REQUESTS | reqwest::StatusCode::SERVICE_UNAVAILABLE
+        );
+        if overloaded && let Some(seconds) = retry_after(&response) {
+            if let Some(state) = self.inner.hosts.lock().unwrap().get_mut(&host) {
+                state.busy_until = Some(Instant::now() + Duration::from_secs(seconds));
+            }
+            return Err(HostBusy { host, seconds }.into());
+        }
+        Ok(response)
     }
 
     pub fn pool(&self) -> &SqlitePool {
@@ -675,10 +770,7 @@ impl Uguisu {
         if let Some(last_modified) = last_modified {
             request = request.header(reqwest::header::IF_MODIFIED_SINCE, last_modified);
         }
-        let mut response = request
-            .send()
-            .await
-            .with_context(|| format!("cannot fetch {url}"))?;
+        let mut response = self.send(request).await?;
         if response.status() == reqwest::StatusCode::NOT_MODIFIED {
             return Ok(Fetched::NotModified);
         }
@@ -1004,14 +1096,8 @@ impl Uguisu {
     ) -> Result<()> {
         let url = url::Url::parse(image_url).context("invalid cover URL")?;
         check_url(&url, self.inner.cfg.allow_private_networks)?;
-        let mut response = self
-            .inner
-            .client
-            .get(url)
-            .timeout(Duration::from_secs(120))
-            .send()
-            .await?
-            .error_for_status()?;
+        let request = self.inner.client.get(url).timeout(Duration::from_secs(120));
+        let mut response = self.send(request).await?.error_for_status()?;
         let content_type = header(&response, reqwest::header::CONTENT_TYPE).unwrap_or_default();
         let ext = archive::extension_from_mime(&content_type)
             .or_else(|| archive::extension_from_url(image_url))
@@ -1156,11 +1242,14 @@ impl Uguisu {
             Ok(()) => Ok(()),
             Err(e) => {
                 tracing::warn!(url = %pending.source_key, "attachment download failed: {e:#}");
-                let delay = 300 * 4i64.pow(pending.attempts.clamp(0, 6) as u32);
+                let host_break = host_break(&e);
+                let delay =
+                    host_break.unwrap_or(300 * 4i64.pow(pending.attempts.clamp(0, 6) as u32));
                 sqlx::query(
-                    "UPDATE attachments SET attempts = attempts + 1, error = ?, \
+                    "UPDATE attachments SET attempts = attempts + ?, error = ?, \
                      next_attempt_at = ? WHERE id = ?",
                 )
+                .bind(host_break.is_none())
                 .bind(format!("{e:#}"))
                 .bind(now() + delay)
                 .bind(pending.id)
@@ -1177,13 +1266,8 @@ impl Uguisu {
     async fn fetch_attachment(&self, pending: &PendingAttachment) -> Result<()> {
         let url = url::Url::parse(&pending.source_url).context("invalid address")?;
         check_url(&url, self.inner.cfg.allow_private_networks)?;
-        let mut response = self
-            .inner
-            .client
-            .get(url)
-            .timeout(Duration::from_secs(120))
-            .send()
-            .await?;
+        let request = self.inner.client.get(url).timeout(Duration::from_secs(120));
+        let mut response = self.send(request).await?;
         if !response.status().is_success() {
             bail!("the server answered {}", response.status());
         }
@@ -1256,11 +1340,14 @@ impl Uguisu {
             Err(e) => {
                 tracing::warn!(episode = %episode.title, "download failed: {e:#}");
                 // Back off: 5 min, 20 min, 80 min, ...
-                let delay = 300 * 4i64.pow(episode.download_attempts.clamp(0, 6) as u32);
+                let host_break = host_break(&e);
+                let delay = host_break
+                    .unwrap_or(300 * 4i64.pow(episode.download_attempts.clamp(0, 6) as u32));
                 sqlx::query(
-                    "UPDATE episodes SET download_attempts = download_attempts + 1, \
+                    "UPDATE episodes SET download_attempts = download_attempts + ?, \
                      download_error = ?, next_attempt_at = ? WHERE id = ?",
                 )
+                .bind(host_break.is_none())
                 .bind(format!("{e:#}"))
                 .bind(now() + delay)
                 .bind(episode.id)
@@ -1301,7 +1388,7 @@ impl Uguisu {
                     .header(reqwest::header::RANGE, format!("bytes={size}-"))
                     .header(reqwest::header::IF_RANGE, validator);
             }
-            let mut response = request.send().await?;
+            let mut response = self.send(request).await?;
             let continued = match (&kept, response.status()) {
                 (Some((size, _)), reqwest::StatusCode::PARTIAL_CONTENT)
                     if header(&response, reqwest::header::CONTENT_RANGE)

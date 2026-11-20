@@ -63,8 +63,8 @@ Everything a podcast offers ends up in the archive.
       (`<link rel="alternate">`), instead of reporting an error.
 - [ ] Archive images embedded in show notes and point the published show notes at the copies.
 - [ ] More Podcasting 2.0 files: `podcast:alternateEnclosure`, several transcript formats.
-- [~] Resume interrupted downloads with range requests.
-- [ ] Be polite to sources: a pause between requests per host, respect `Retry-After`.
+- [x] Resume interrupted downloads with range requests.
+- [~] Be polite to sources: a pause between requests per host, respect `Retry-After`.
 - [ ] Feeds that need credentials (HTTP Basic, for example paid feeds). Credentials never appear
       in logs or published feeds.
 - [!] Podcast Index search. Needs an API key; registration is closed at the moment.
