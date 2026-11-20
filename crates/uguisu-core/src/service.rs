@@ -50,10 +50,14 @@ const PODCAST_LIST_SQL: &str = "SELECT p.*, \
      FROM podcasts p \
      LEFT JOIN (SELECT e.podcast_id, COUNT(*) AS episode_count, \
          SUM(e.removed_at IS NOT NULL) AS removed_count, \
-         SUM(e.enclosure_url IS NOT NULL AND e.download_attempts < 5 AND (e.refetch = 1 OR NOT EXISTS \
+         SUM(e.enclosure_url IS NOT NULL AND e.download_attempts < 5 \
+           AND (o.archive_from IS NULL OR e.published_at IS NULL \
+             OR e.published_at >= o.archive_from) \
+           AND (e.refetch = 1 OR NOT EXISTS \
            (SELECT 1 FROM media_files m WHERE m.episode_id = e.id AND m.status = 'ok'))) \
            AS pending_count \
-       FROM episodes e GROUP BY e.podcast_id) ec ON ec.podcast_id = p.id \
+       FROM episodes e JOIN podcasts o ON o.id = e.podcast_id \
+       GROUP BY e.podcast_id) ec ON ec.podcast_id = p.id \
      LEFT JOIN (SELECT e.podcast_id, COUNT(DISTINCT m.episode_id) AS archived_count, \
          SUM(m.size) AS archived_bytes \
        FROM media_files m JOIN episodes e ON e.id = m.episode_id \
@@ -92,6 +96,8 @@ macro_rules! podcast_summary_sql {
      (SELECT COUNT(*) FROM episodes e WHERE e.podcast_id = p.id AND e.removed_at IS NOT NULL) \
        AS removed_count, \
      (SELECT COUNT(*) FROM episodes e WHERE e.podcast_id = p.id AND e.enclosure_url IS NOT NULL \
+       AND (p.archive_from IS NULL OR e.published_at IS NULL \
+         OR e.published_at >= p.archive_from) \
        AND e.download_attempts < 5 AND (e.refetch = 1 OR NOT EXISTS \
          (SELECT 1 FROM media_files m WHERE m.episode_id = e.id AND m.status = 'ok'))) \
        AS pending_count \
@@ -622,12 +628,23 @@ impl Uguisu {
     /// (same URL or same `<podcast:guid>`) returns the existing id. The address of a web page
     /// that announces a feed works as well.
     pub async fn add_podcast(&self, input: &str) -> Result<i64> {
-        self.add_feed(input, false).await
+        self.add_feed(input, false, None).await
+    }
+
+    /// Like [`Self::add_podcast`], with a start date: episodes published before it are listed
+    /// but their files are not downloaded.
+    pub async fn add_podcast_from(&self, input: &str, archive_from: Option<i64>) -> Result<i64> {
+        self.add_feed(input, false, archive_from).await
     }
 
     /// `discovered` is set when `input` was taken from a web page; such a feed is not searched
     /// for a further feed.
-    async fn add_feed(&self, input: &str, discovered: bool) -> Result<i64> {
+    async fn add_feed(
+        &self,
+        input: &str,
+        discovered: bool,
+        archive_from: Option<i64>,
+    ) -> Result<i64> {
         let url = parse_user_url(input, self.inner.cfg.allow_private_networks)?;
         let url = url.as_str();
         let existing: Option<i64> = sqlx::query_scalar(
@@ -650,7 +667,7 @@ impl Uguisu {
                          contains episodes",
                     )?;
                     tracing::info!(page = %redact(url), feed = %target, "feed found on the web page");
-                    return Box::pin(self.add_feed(target.as_str(), true)).await;
+                    return Box::pin(self.add_feed(target.as_str(), true, archive_from)).await;
                 }
                 _ => return Err(error),
             },
@@ -674,8 +691,8 @@ impl Uguisu {
 
         let dir = format!("{}-{}", slugify(&parsed.title, 60), short_hash(url));
         let id: i64 = sqlx::query_scalar(
-            "INSERT INTO podcasts (feed_url, original_feed_url, title, dir, feed_token, created_at) \
-             VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+            "INSERT INTO podcasts (feed_url, original_feed_url, title, dir, feed_token, created_at, \
+             archive_from) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
         )
         .bind(url)
         .bind(url)
@@ -683,6 +700,7 @@ impl Uguisu {
         .bind(&dir)
         .bind(random_token(24))
         .bind(now())
+        .bind(archive_from)
         .fetch_one(self.pool())
         .await?;
 
@@ -831,6 +849,7 @@ impl Uguisu {
             "feed_token": podcast.feed_token,
             "include_removed": podcast.include_removed,
             "keep_versions": podcast.keep_versions,
+            "archive_from": podcast.archive_from.and_then(iso_date),
             "added": iso_date(podcast.created_at),
         });
         write_atomic(
@@ -1521,6 +1540,19 @@ impl Uguisu {
     }
 
     /// Replaces the secret in the published feed URL. The old URL stops working immediately.
+    /// Sets or clears the start date of a podcast. Clearing it, or moving it back, lets the
+    /// episodes it held back be downloaded; files already archived are never removed.
+    pub async fn set_archive_from(&self, podcast_id: i64, archive_from: Option<i64>) -> Result<()> {
+        sqlx::query("UPDATE podcasts SET archive_from = ? WHERE id = ?")
+            .bind(archive_from)
+            .bind(podcast_id)
+            .execute(self.pool())
+            .await?;
+        self.write_podcast_settings(podcast_id).await?;
+        self.inner.wake_downloader.notify_one();
+        Ok(())
+    }
+
     pub async fn regenerate_token(&self, podcast_id: i64) -> Result<()> {
         sqlx::query("UPDATE podcasts SET feed_token = ? WHERE id = ?")
             .bind(random_token(24))
@@ -1537,6 +1569,8 @@ impl Uguisu {
             "SELECT e.*, p.dir AS podcast_dir, p.feed_url FROM episodes e \
              JOIN podcasts p ON p.id = e.podcast_id \
              WHERE e.enclosure_url IS NOT NULL AND e.download_attempts < ? AND e.next_attempt_at <= ? \
+             AND (p.archive_from IS NULL OR e.published_at IS NULL \
+               OR e.published_at >= p.archive_from) \
              AND (e.refetch = 1 OR NOT EXISTS \
                (SELECT 1 FROM media_files m WHERE m.episode_id = e.id AND m.status = 'ok')) \
              ORDER BY e.published_at DESC LIMIT 50",
@@ -1577,7 +1611,9 @@ impl Uguisu {
              e.dir AS episode_dir, p.dir AS podcast_dir, p.feed_url \
              FROM attachments a JOIN episodes e ON e.id = a.episode_id \
              JOIN podcasts p ON p.id = e.podcast_id \
-             WHERE a.status != 'ok' AND a.attempts < ? AND a.next_attempt_at <= ? LIMIT 50",
+             WHERE a.status != 'ok' AND a.attempts < ? AND a.next_attempt_at <= ? \
+             AND (p.archive_from IS NULL OR e.published_at IS NULL \
+               OR e.published_at >= p.archive_from) LIMIT 50",
         )
         .bind(MAX_DOWNLOAD_ATTEMPTS)
         .bind(now())
