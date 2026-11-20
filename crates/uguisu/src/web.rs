@@ -213,7 +213,8 @@ async fn asset(Path(file): Path<String>) -> AppResult {
             "text/javascript; charset=utf-8",
             include_bytes!("../assets/htmx.min.js"),
         ),
-        "favicon.svg" => ("image/svg+xml", include_bytes!("../assets/favicon.svg")),
+        "favicon.png" => ("image/png", include_bytes!("../assets/favicon.png")),
+        "icon.webp" => ("image/webp", include_bytes!("../assets/icon.webp")),
         _ => return Err(AppError::NotFound),
     };
     Ok((

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="crates/uguisu/assets/logo.webp" alt="Uguisu logo: a singing bush warbler on a branch" width="280">
+</p>
+
 # Uguisu
 
 Uguisu is a self-hosted **podcast archiver**. It downloads every episode of the podcasts you add,

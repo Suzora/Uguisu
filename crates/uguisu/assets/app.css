@@ -104,7 +104,8 @@ img { display: block; max-width: 100%; }
   text-decoration: none;
 }
 .brand:hover { color: var(--text); }
-.logo { width: 30px; height: 30px; color: var(--accent); flex: none; }
+.logo { width: 34px; height: 34px; flex: none; border-radius: 24%; }
+.auth-brand .logo { width: 56px; height: 56px; }
 
 .topbar nav { display: flex; gap: 4px; margin-right: auto; }
 .nav-link {
@@ -278,7 +279,7 @@ progress::-webkit-progress-value { background: var(--accent); border-radius: 999
 progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 
 .empty { display: grid; justify-items: center; gap: 14px; text-align: center; padding: 72px 20px; }
-.empty .logo { width: 84px; height: 84px; }
+.empty .logo { width: 128px; height: 128px; box-shadow: var(--shadow); }
 .empty p { max-width: 46ch; }
 
 /* ── Add / search ──────────────────────────────────────────────────────── */
