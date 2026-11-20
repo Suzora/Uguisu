@@ -61,11 +61,11 @@ Everything a podcast offers ends up in the archive.
 - [x] Atom and RSS 1.0 as source formats. The published feed stays RSS 2.0.
 - [x] Find the feed when the user enters the address of a web page
       (`<link rel="alternate">`), instead of reporting an error.
-- [~] Archive images embedded in show notes and point the published show notes at the copies.
+- [x] Archive images embedded in show notes and point the published show notes at the copies.
 - [ ] More Podcasting 2.0 files: `podcast:alternateEnclosure`, several transcript formats.
 - [x] Resume interrupted downloads with range requests.
 - [x] Be polite to sources: a pause between requests per host, respect `Retry-After`.
-- [ ] Feeds that need credentials (HTTP Basic, for example paid feeds). Credentials never appear
+- [~] Feeds that need credentials (HTTP Basic, for example paid feeds). Credentials never appear
       in logs or published feeds.
 - [!] Podcast Index search. Needs an API key; registration is closed at the moment.
 - [ ] Verify the fyyd search from a real instance (so far only the response format is verified).

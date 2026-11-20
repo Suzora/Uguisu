@@ -13,7 +13,7 @@ use tokio::sync::Notify;
 
 use crate::archive::{self, write_atomic};
 use crate::feed::{self, ParsedFeed, ParsedItem, without_query};
-use crate::http::{build_client, check_url, parse_user_url};
+use crate::http::{build_client, check_url, lend_credentials, parse_user_url, redact};
 use crate::model::{Attachment, Episode, EpisodeView, FeedEpisode, Podcast, PodcastSummary, Stats};
 use crate::util::{now, random_token, short_hash, slugify};
 use crate::{db, search};
@@ -187,6 +187,7 @@ struct PendingAttachment {
     attempts: i64,
     episode_dir: String,
     podcast_dir: String,
+    feed_url: String,
 }
 
 /// The two tables that hold archived files.
@@ -201,6 +202,7 @@ struct PendingDownload {
     #[sqlx(flatten)]
     episode: Episode,
     podcast_dir: String,
+    feed_url: String,
 }
 
 struct Inner {
@@ -332,10 +334,12 @@ impl Uguisu {
         };
         tokio::time::sleep_until(slot.into()).await;
 
-        let url = request.url().clone();
+        // Neither the address in the message nor the one reqwest adds may show a password.
+        let url = redact(request.url().as_str());
         let response = client
             .execute(request)
             .await
+            .map_err(reqwest::Error::without_url)
             .with_context(|| format!("cannot fetch {url}"))?;
         let overloaded = matches!(
             response.status(),
@@ -546,7 +550,7 @@ impl Uguisu {
                         "this address is a web page, and none of the feeds it announces \
                          contains episodes",
                     )?;
-                    tracing::info!(page = url, feed = %target, "feed found on the web page");
+                    tracing::info!(page = %redact(url), feed = %target, "feed found on the web page");
                     return Box::pin(self.add_feed(target.as_str(), true)).await;
                 }
                 _ => return Err(error),
@@ -709,9 +713,10 @@ impl Uguisu {
         let mut guids: HashSet<String> = parsed.items.iter().map(|i| i.guid.clone()).collect();
         let mut next = parsed.next_page.take();
         while let Some(link) = next {
-            let Ok(target) = current.join(&link) else {
+            let Ok(mut target) = current.join(&link) else {
                 break;
             };
+            lend_credentials(&mut target, url);
             // A link back to a page that was already read ends the chain.
             if !visited.insert(target.to_string()) {
                 break;
@@ -775,7 +780,11 @@ impl Uguisu {
             return Ok(Fetched::NotModified);
         }
         if !response.status().is_success() {
-            bail!("the feed server answered {} for {url}", response.status());
+            bail!(
+                "the feed server answered {} for {}",
+                response.status(),
+                redact(url)
+            );
         }
         let etag = header(&response, reqwest::header::ETAG);
         let last_modified = header(&response, reqwest::header::LAST_MODIFIED);
@@ -857,7 +866,12 @@ impl Uguisu {
                     .fetch_optional(self.pool())
                     .await?;
             if taken.is_none() {
-                tracing::info!(podcast = %podcast.title, from = %podcast.feed_url, to = %target, "feed moved");
+                tracing::info!(
+                    podcast = %podcast.title,
+                    from = %redact(&podcast.feed_url),
+                    to = %redact(target.as_str()),
+                    "feed moved"
+                );
                 feed_url = target.to_string();
                 moved = true;
             }
@@ -1066,8 +1080,9 @@ impl Uguisu {
             "language": parsed.language,
             "image": parsed.image_url,
             "podcast_guid": parsed.podcast_guid.as_ref().or(podcast.podcast_guid.as_ref()),
-            "feed_url": feed_url,
-            "original_feed_url": podcast.original_feed_url,
+            // Without user name and password: the archive may be passed on, a password not.
+            "feed_url": redact(&feed_url),
+            "original_feed_url": redact(&podcast.original_feed_url),
             "last_fetched": iso_date(now),
         });
         write_atomic(
@@ -1079,7 +1094,9 @@ impl Uguisu {
         // 6. Cover art, best effort.
         if let Some(image_url) = &parsed.image_url
             && (podcast.cover_file.is_none() || podcast.image_url.as_ref() != Some(image_url))
-            && let Err(e) = self.fetch_cover(podcast_id, &podcast_dir, image_url).await
+            && let Err(e) = self
+                .fetch_cover(podcast_id, &podcast_dir, image_url, &feed_url)
+                .await
         {
             tracing::warn!(podcast = %parsed.title, "cover download failed: {e:#}");
         }
@@ -1093,9 +1110,11 @@ impl Uguisu {
         podcast_id: i64,
         podcast_dir: &Path,
         image_url: &str,
+        feed_url: &str,
     ) -> Result<()> {
-        let url = url::Url::parse(image_url).context("invalid cover URL")?;
+        let mut url = url::Url::parse(image_url).context("invalid cover URL")?;
         check_url(&url, self.inner.cfg.allow_private_networks)?;
+        lend_credentials(&mut url, feed_url);
         let request = self.inner.client.get(url).timeout(Duration::from_secs(120));
         let mut response = self.send(request).await?.error_for_status()?;
         let content_type = header(&response, reqwest::header::CONTENT_TYPE).unwrap_or_default();
@@ -1187,7 +1206,8 @@ impl Uguisu {
 
     async fn pending_downloads(&self) -> Result<Vec<PendingDownload>> {
         Ok(sqlx::query_as(
-            "SELECT e.*, p.dir AS podcast_dir FROM episodes e JOIN podcasts p ON p.id = e.podcast_id \
+            "SELECT e.*, p.dir AS podcast_dir, p.feed_url FROM episodes e \
+             JOIN podcasts p ON p.id = e.podcast_id \
              WHERE e.enclosure_url IS NOT NULL AND e.download_attempts < ? AND e.next_attempt_at <= ? \
              AND (e.refetch = 1 OR NOT EXISTS \
                (SELECT 1 FROM media_files m WHERE m.episode_id = e.id AND m.status = 'ok')) \
@@ -1226,7 +1246,7 @@ impl Uguisu {
     async fn pending_attachments(&self) -> Result<Vec<PendingAttachment>> {
         Ok(sqlx::query_as(
             "SELECT a.id, a.kind, a.source_key, a.source_url, a.attempts, \
-             e.dir AS episode_dir, p.dir AS podcast_dir \
+             e.dir AS episode_dir, p.dir AS podcast_dir, p.feed_url \
              FROM attachments a JOIN episodes e ON e.id = a.episode_id \
              JOIN podcasts p ON p.id = e.podcast_id \
              WHERE a.status != 'ok' AND a.attempts < ? AND a.next_attempt_at <= ? LIMIT 50",
@@ -1264,8 +1284,9 @@ impl Uguisu {
     }
 
     async fn fetch_attachment(&self, pending: &PendingAttachment) -> Result<()> {
-        let url = url::Url::parse(&pending.source_url).context("invalid address")?;
+        let mut url = url::Url::parse(&pending.source_url).context("invalid address")?;
         check_url(&url, self.inner.cfg.allow_private_networks)?;
+        lend_credentials(&mut url, &pending.feed_url);
         let request = self.inner.client.get(url).timeout(Duration::from_secs(120));
         let mut response = self.send(request).await?;
         if !response.status().is_success() {
@@ -1332,7 +1353,9 @@ impl Uguisu {
     async fn download_one(&self, pending: PendingDownload) {
         let episode = &pending.episode;
         self.inner.downloading.lock().unwrap().insert(episode.id);
-        let result = self.download(episode, &pending.podcast_dir).await;
+        let result = self
+            .download(episode, &pending.podcast_dir, &pending.feed_url)
+            .await;
         self.inner.downloading.lock().unwrap().remove(&episode.id);
 
         let outcome = match result {
@@ -1375,7 +1398,7 @@ impl Uguisu {
     /// the whole file, and the download starts over.
     async fn fetch_media(&self, url: &url::Url, part: &Path) -> Result<(String, u64, String)> {
         let note = part.with_extension("part.json");
-        let source = without_query(url.as_str()).to_string();
+        let source = redact(without_query(url.as_str()));
         let mut resumes = 0;
         loop {
             // What is already there, if it belongs to this source and can be continued.
@@ -1493,19 +1516,20 @@ impl Uguisu {
                         return Err(error);
                     }
                     resumes += 1;
-                    tracing::debug!(%url, at = size, "download interrupted, continuing");
+                    tracing::debug!(url = %source, at = size, "download interrupted, continuing");
                 }
             }
         }
     }
 
-    async fn download(&self, episode: &Episode, podcast_dir: &str) -> Result<()> {
+    async fn download(&self, episode: &Episode, podcast_dir: &str, feed_url: &str) -> Result<()> {
         let source = episode
             .enclosure_url
             .as_deref()
             .context("episode has no enclosure")?;
-        let url = url::Url::parse(source).context("invalid enclosure URL")?;
+        let mut url = url::Url::parse(source).context("invalid enclosure URL")?;
         check_url(&url, self.inner.cfg.allow_private_networks)?;
+        lend_credentials(&mut url, feed_url);
 
         let relative_dir = format!("{podcast_dir}/episodes/{}", episode.dir);
         let dir = self.archive_path(&relative_dir);

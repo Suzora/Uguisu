@@ -214,10 +214,8 @@ pub fn build_feed(
     let (namespace_attributes, reusable) = namespaces(podcast);
     let _ = writeln!(x, "<rss version=\"2.0\" {namespace_attributes}>\n<channel>");
     let _ = writeln!(x, "<title>{}</title>", xml_escape(&podcast.title));
-    let link = podcast
-        .link
-        .as_deref()
-        .unwrap_or(&podcast.original_feed_url);
+    let source = crate::http::redact(&podcast.original_feed_url);
+    let link = podcast.link.as_deref().unwrap_or(&source);
     let _ = writeln!(x, "<link>{}</link>", xml_escape(link));
     let _ = writeln!(
         x,
