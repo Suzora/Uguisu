@@ -9,7 +9,7 @@ use crate::model::{EpisodeView, Podcast};
 use crate::util::xml_escape;
 
 fn rfc2822(timestamp: i64) -> Option<String> {
-    chrono::DateTime::from_timestamp(timestamp, 0).map(|d| d.to_rfc2822())
+    crate::util::rfc2822(timestamp)
 }
 
 fn url_segment(input: &str) -> String {

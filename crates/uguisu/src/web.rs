@@ -18,6 +18,7 @@ use serde::Deserialize;
 use tower::ServiceExt;
 use tower_http::services::ServeFile;
 use uguisu_core::model::Podcast;
+use uguisu_core::search::Provider;
 use uguisu_core::{Uguisu, opml, rss};
 
 use crate::{auth, ui};
@@ -81,12 +82,14 @@ pub fn router(state: AppState) -> Router {
         .route("/", get(library))
         .route("/add", get(add_page))
         .route("/search", get(search))
+        .route("/search/{provider}", get(search_provider))
         .route("/podcasts", post(add_podcast))
         .route("/podcasts/{id}", get(podcast_page))
         .route("/podcasts/{id}/episodes", get(episodes_fragment))
         .route("/podcasts/{id}/refresh", post(refresh_podcast))
         .route("/podcasts/{id}/settings", post(update_settings))
         .route("/podcasts/{id}/token", post(regenerate_token))
+        .route("/podcasts/{id}/remove", post(remove_podcast))
         .route("/cover/{id}", get(cover))
         .route("/opml", get(opml_export).post(opml_import))
         .route("/logout", post(logout))
@@ -347,22 +350,28 @@ struct SearchQuery {
     q: String,
 }
 
-async fn search(State(state): State<AppState>, Query(query): Query<SearchQuery>) -> Html<String> {
+/// Answers at once with one placeholder per directory; each placeholder then loads its own
+/// results, so a slow directory never delays a fast one.
+async fn search(Query(query): Query<SearchQuery>) -> Html<String> {
+    page(ui::search_placeholders(query.q.trim()))
+}
+
+async fn search_provider(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+    Query(query): Query<SearchQuery>,
+) -> AppResult {
+    let provider = Provider::from_key(&key).ok_or(AppError::NotFound)?;
     let q = query.q.trim();
-    if q.chars().count() < 2 {
-        return page(ui::search_results(&[], None, q));
+    let outcome = if q.chars().count() < 2 {
+        Ok(Vec::new())
+    } else {
+        state.app.search(provider, q).await
+    };
+    if let Err(e) = &outcome {
+        tracing::warn!("search on {} failed: {e:#}", provider.name());
     }
-    match state.app.search(q).await {
-        Ok(hits) => page(ui::search_results(&hits, None, q)),
-        Err(e) => {
-            tracing::warn!("search failed: {e:#}");
-            page(ui::search_results(
-                &[],
-                Some("The podcast directories could not be reached."),
-                q,
-            ))
-        }
-    }
+    Ok(page(ui::provider_results(provider, outcome.as_deref().ok())).into_response())
 }
 
 #[derive(Deserialize)]
@@ -450,6 +459,24 @@ async fn regenerate_token(State(state): State<AppState>, Path(id): Path<i64>) ->
     state.app.podcast(id).await?.ok_or(AppError::NotFound)?;
     state.app.regenerate_token(id).await?;
     Ok(see_other(&format!("/podcasts/{id}")))
+}
+
+#[derive(Deserialize)]
+struct RemoveForm {
+    delete_files: Option<String>,
+}
+
+async fn remove_podcast(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Form(form): Form<RemoveForm>,
+) -> AppResult {
+    state.app.podcast(id).await?.ok_or(AppError::NotFound)?;
+    state
+        .app
+        .remove_podcast(id, form.delete_files.is_some())
+        .await?;
+    Ok(see_other("/"))
 }
 
 async fn cover(State(state): State<AppState>, Path(id): Path<i64>, request: Request) -> AppResult {

@@ -123,10 +123,7 @@ pub fn parse_date(input: &str) -> Option<i64> {
         Some((weekday, rest)) if weekday.chars().all(char::is_alphabetic) => rest.trim_start(),
         _ => input,
     };
-    chrono::DateTime::parse_from_rfc2822(input)
-        .or_else(|_| chrono::DateTime::parse_from_rfc3339(input))
-        .ok()
-        .map(|d| d.timestamp())
+    crate::util::parse_rfc2822(input).or_else(|| crate::util::parse_rfc3339(input))
 }
 
 /// Parses `HH:MM:SS`, `MM:SS` or plain seconds.

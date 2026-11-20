@@ -22,18 +22,32 @@ const MAX_FEED_BYTES: usize = 64 * 1024 * 1024;
 const MAX_COVER_BYTES: usize = 32 * 1024 * 1024;
 const MAX_DOWNLOAD_ATTEMPTS: i64 = 5;
 
-const EPISODE_VIEW_SQL: &str = "SELECT e.*, m.path AS media_path, m.size AS media_size, \
+// A macro rather than a constant so that the complete statement stays a string literal.
+macro_rules! episode_view_sql {
+    ($tail:literal) => {
+        concat!(
+            "SELECT e.*, m.path AS media_path, m.size AS media_size, \
      m.mime AS media_mime, m.blake3 AS media_blake3 \
      FROM episodes e LEFT JOIN media_files m ON m.id = \
-     (SELECT MAX(id) FROM media_files WHERE episode_id = e.id AND status = 'ok')";
+     (SELECT MAX(id) FROM media_files WHERE episode_id = e.id AND status = 'ok')",
+            " ",
+            $tail
+        )
+    };
+}
 
-const PODCAST_SUMMARY_SQL: &str = "SELECT p.*, \
+// A macro rather than a constant so that the complete statement stays a string literal.
+macro_rules! podcast_summary_sql {
+    ($tail:literal) => {
+        concat!("SELECT p.*, \
      (SELECT COUNT(*) FROM episodes e WHERE e.podcast_id = p.id) AS episode_count, \
      (SELECT COUNT(DISTINCT m.episode_id) FROM media_files m JOIN episodes e ON e.id = m.episode_id \
        WHERE e.podcast_id = p.id AND m.status = 'ok') AS archived_count, \
      (SELECT COALESCE(SUM(m.size), 0) FROM media_files m JOIN episodes e ON e.id = m.episode_id \
        WHERE e.podcast_id = p.id AND m.status = 'ok') AS archived_bytes \
-     FROM podcasts p";
+     FROM podcasts p", " ", $tail)
+    };
+}
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -96,6 +110,7 @@ struct Inner {
     client: reqwest::Client,
     wake_downloader: Notify,
     downloading: Mutex<HashSet<i64>>,
+    search_cache: Mutex<search::SearchCache>,
 }
 
 #[derive(Clone)]
@@ -112,14 +127,13 @@ fn header(response: &reqwest::Response, name: reqwest::header::HeaderName) -> Op
 }
 
 fn iso_date(timestamp: i64) -> Option<String> {
-    chrono::DateTime::from_timestamp(timestamp, 0).map(|d| d.to_rfc3339())
+    crate::util::rfc3339(timestamp)
 }
 
 fn episode_dir_name(item: &ParsedItem) -> String {
     let date = item
         .published_at
-        .and_then(|t| chrono::DateTime::from_timestamp(t, 0))
-        .map(|d| d.format("%Y-%m-%d").to_string())
+        .and_then(|t| crate::util::format_utc(t, "%Y-%m-%d"))
         .unwrap_or_else(|| "undated".to_string());
     format!(
         "{date}-{}-{}",
@@ -143,6 +157,7 @@ impl Uguisu {
                 client,
                 wake_downloader: Notify::new(),
                 downloading: Mutex::new(HashSet::new()),
+                search_cache: Mutex::new(search::SearchCache::default()),
             }),
         })
     }
@@ -167,13 +182,15 @@ impl Uguisu {
     // ── Queries ────────────────────────────────────────────────────────────────────────────
 
     pub async fn podcasts(&self) -> Result<Vec<PodcastSummary>> {
-        let sql = format!("{PODCAST_SUMMARY_SQL} ORDER BY p.title COLLATE NOCASE");
-        Ok(sqlx::query_as(&sql).fetch_all(self.pool()).await?)
+        Ok(
+            sqlx::query_as(podcast_summary_sql!("ORDER BY p.title COLLATE NOCASE"))
+                .fetch_all(self.pool())
+                .await?,
+        )
     }
 
     pub async fn podcast_summary(&self, id: i64) -> Result<Option<PodcastSummary>> {
-        let sql = format!("{PODCAST_SUMMARY_SQL} WHERE p.id = ?");
-        Ok(sqlx::query_as(&sql)
+        Ok(sqlx::query_as(podcast_summary_sql!("WHERE p.id = ?"))
             .bind(id)
             .fetch_optional(self.pool())
             .await?)
@@ -197,23 +214,23 @@ impl Uguisu {
 
     /// Episodes of a podcast, newest first.
     pub async fn episodes(&self, podcast_id: i64) -> Result<Vec<EpisodeView>> {
-        let sql = format!(
-            "{EPISODE_VIEW_SQL} WHERE e.podcast_id = ? \
+        Ok(sqlx::query_as(episode_view_sql!(
+            "WHERE e.podcast_id = ? \
              ORDER BY e.published_at IS NULL, e.published_at DESC, e.id DESC"
-        );
-        Ok(sqlx::query_as(&sql)
-            .bind(podcast_id)
-            .fetch_all(self.pool())
-            .await?)
+        ))
+        .bind(podcast_id)
+        .fetch_all(self.pool())
+        .await?)
     }
 
     pub async fn episode(&self, podcast_id: i64, episode_id: i64) -> Result<Option<EpisodeView>> {
-        let sql = format!("{EPISODE_VIEW_SQL} WHERE e.podcast_id = ? AND e.id = ?");
-        Ok(sqlx::query_as(&sql)
-            .bind(podcast_id)
-            .bind(episode_id)
-            .fetch_optional(self.pool())
-            .await?)
+        Ok(
+            sqlx::query_as(episode_view_sql!("WHERE e.podcast_id = ? AND e.id = ?"))
+                .bind(podcast_id)
+                .bind(episode_id)
+                .fetch_optional(self.pool())
+                .await?,
+        )
     }
 
     pub async fn stats(&self) -> Result<Stats> {
@@ -232,8 +249,23 @@ impl Uguisu {
         self.inner.downloading.lock().unwrap().clone()
     }
 
-    pub async fn search(&self, query: &str) -> Result<Vec<search::SearchHit>> {
-        search::search(&self.inner.client, query).await
+    /// Searches one directory. Results are cached for a few minutes, and feeds that another
+    /// provider already returned for the same query are left out.
+    pub async fn search(
+        &self,
+        provider: search::Provider,
+        query: &str,
+    ) -> Result<Vec<search::SearchHit>> {
+        if let Some(hits) = self.inner.search_cache.lock().unwrap().get(provider, query) {
+            return Ok(hits);
+        }
+        let hits = search::search_provider(&self.inner.client, provider, query).await?;
+        Ok(self
+            .inner
+            .search_cache
+            .lock()
+            .unwrap()
+            .store(provider, query, hits))
     }
 
     // ── Adding and refreshing ──────────────────────────────────────────────────────────────
@@ -439,9 +471,8 @@ impl Uguisu {
                 .fetch_optional(self.pool())
                 .await?;
         if known.is_none() {
-            let stamp = chrono::DateTime::from_timestamp(now, 0)
-                .map(|d| d.format("%Y%m%dT%H%M%SZ").to_string())
-                .unwrap_or_else(|| now.to_string());
+            let stamp =
+                crate::util::format_utc(now, "%Y%m%dT%H%M%SZ").unwrap_or_else(|| now.to_string());
             let relative = format!("{}/feeds/{stamp}-{}.xml", podcast.dir, &hash[..8]);
             write_atomic(&self.archive_path(&relative), bytes).await?;
             sqlx::query(
@@ -718,6 +749,41 @@ impl Uguisu {
             .bind(podcast_id)
             .execute(self.pool())
             .await?;
+        Ok(())
+    }
+
+    /// Removes a podcast from the index. The archived files stay on disk unless `delete_files`
+    /// is set; without the index they remain a readable, self-describing directory.
+    pub async fn remove_podcast(&self, podcast_id: i64, delete_files: bool) -> Result<()> {
+        let podcast = self
+            .podcast(podcast_id)
+            .await?
+            .context("podcast not found")?;
+        // Episodes, revisions, snapshots and media rows go with it (ON DELETE CASCADE).
+        sqlx::query("DELETE FROM podcasts WHERE id = ?")
+            .bind(podcast_id)
+            .execute(self.pool())
+            .await?;
+        tracing::info!(podcast = %podcast.title, delete_files, "podcast removed");
+        if delete_files {
+            // `dir` is generated by Uguisu as a single path segment; refuse anything else
+            // rather than risk deleting outside the podcast's own directory.
+            let is_single_segment = !podcast.dir.is_empty()
+                && !podcast.dir.contains(['/', '\\'])
+                && podcast.dir != "."
+                && podcast.dir != "..";
+            if !is_single_segment {
+                bail!("refusing to delete unexpected directory {:?}", podcast.dir);
+            }
+            let dir = self.archive_path(&podcast.dir);
+            match tokio::fs::remove_dir_all(&dir).await {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    return Err(e).with_context(|| format!("cannot delete {}", dir.display()));
+                }
+            }
+        }
         Ok(())
     }
 

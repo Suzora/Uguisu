@@ -8,6 +8,39 @@ pub fn now() -> i64 {
         .unwrap_or(0)
 }
 
+fn timestamp(seconds: i64) -> Option<jiff::Timestamp> {
+    jiff::Timestamp::from_second(seconds).ok()
+}
+
+/// Formats unix seconds in UTC with a `strftime` pattern.
+pub fn format_utc(seconds: i64, pattern: &str) -> Option<String> {
+    Some(timestamp(seconds)?.strftime(pattern).to_string())
+}
+
+/// Unix seconds as an RFC 3339 timestamp, e.g. `2024-01-02T10:00:00Z`.
+pub fn rfc3339(seconds: i64) -> Option<String> {
+    Some(timestamp(seconds)?.to_string())
+}
+
+/// Unix seconds as an RFC 2822 date, the format RSS uses.
+pub fn rfc2822(seconds: i64) -> Option<String> {
+    format_utc(seconds, "%a, %d %b %Y %H:%M:%S +0000")
+}
+
+pub fn parse_rfc2822(input: &str) -> Option<i64> {
+    jiff::fmt::rfc2822::DateTimeParser::new()
+        .parse_timestamp(input)
+        .ok()
+        .map(|timestamp| timestamp.as_second())
+}
+
+pub fn parse_rfc3339(input: &str) -> Option<i64> {
+    input
+        .parse::<jiff::Timestamp>()
+        .ok()
+        .map(|timestamp| timestamp.as_second())
+}
+
 pub fn hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
@@ -86,6 +119,26 @@ mod tests {
         assert_eq!(slugify("鶯の声", 60), "鶯の声");
         assert_eq!(slugify("!!!", 60), "untitled");
         assert_eq!(slugify("abcdef", 3), "abc");
+    }
+
+    #[test]
+    fn time_formats() {
+        let t = 1_704_189_600; // 2024-01-02 10:00:00 UTC
+        assert_eq!(rfc3339(t).as_deref(), Some("2024-01-02T10:00:00Z"));
+        assert_eq!(
+            rfc2822(t).as_deref(),
+            Some("Tue, 02 Jan 2024 10:00:00 +0000")
+        );
+        assert_eq!(
+            format_utc(t, "%Y%m%dT%H%M%SZ").as_deref(),
+            Some("20240102T100000Z")
+        );
+        assert_eq!(
+            format_utc(t, "%-d %b %Y, %H:%M").as_deref(),
+            Some("2 Jan 2024, 10:00")
+        );
+        assert_eq!(parse_rfc2822(&rfc2822(t).unwrap()), Some(t));
+        assert_eq!(parse_rfc3339("2024-01-02T11:00:00+01:00"), Some(t));
     }
 
     #[test]

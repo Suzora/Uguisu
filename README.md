@@ -19,7 +19,7 @@ Uguisu is not a player and does not sync listening progress. That is the job of 
 - **Publishes the archive as feeds.** One feed per podcast behind a secret address, with the
   original episode GUIDs and support for range requests (seeking). An OPML export lists all
   archive feeds for import into a podcast app.
-- **Takes input the easy way.** Search podcast directories (currently iTunes), paste a feed
+- **Takes input the easy way.** Search podcast directories (iTunes and fyyd), paste a feed
   address, or import an OPML file from your current app.
 - **Keeps the archive readable without Uguisu.** The database is only an index. Everything needed
   to understand the archive is on disk as plain files.
@@ -59,7 +59,7 @@ proxy with HTTPS in front of it if the instance is reachable from outside your n
 
 ## Running from source
 
-Requires a current stable Rust toolchain.
+Requires Rust 1.88 or newer.
 
 ```bash
 cargo run --release -p uguisu
@@ -107,11 +107,15 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
+CI additionally runs [`cargo deny check`](https://github.com/EmbarkStudios/cargo-deny)
+(vulnerabilities, unmaintained crates and licenses of all dependencies, see `deny.toml`) and
+[`typos`](https://github.com/crate-ci/typos) (spelling, see `_typos.toml`).
+
 ## Not there yet
 
-More search providers (Podcast Index, fyyd), Atom feeds, paged feeds (RFC 5005), keeping several
+Podcast Index search (needs an API key), Atom feeds, paged feeds (RFC 5005), keeping several
 versions of an episode whose audio was replaced, transcripts and chapters, show-note images,
-removing a podcast from the interface, scheduled verification, and passing through Podcasting 2.0
+scheduled verification, and passing through Podcasting 2.0
 tags in the published feeds.
 
 ## License
