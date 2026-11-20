@@ -237,12 +237,16 @@ struct FyydPodcast {
     #[serde(rename = "imgURL")]
     img_url: Option<String>,
     author: Option<String>,
+    // Popularity within fyyd. Read leniently: an unexpected type must not fail the search.
+    rank: Option<serde_json::Value>,
 }
 
 async fn fyyd(client: &reqwest::Client, query: &str) -> Result<Vec<SearchHit>> {
     let body = client
         .get("https://api.fyyd.de/0.2/search/podcast")
-        .query(&[("title", query), ("count", RESULTS_PER_PROVIDER)])
+        // `term` searches the whole podcast and finds more than `title`, which matches the
+        // title only literally ("freakshow" does not find "Freak Show").
+        .query(&[("term", query), ("count", RESULTS_PER_PROVIDER)])
         .timeout(FYYD_TIMEOUT)
         .send()
         .await
@@ -252,26 +256,44 @@ async fn fyyd(client: &reqwest::Client, query: &str) -> Result<Vec<SearchHit>> {
         .bytes()
         .await
         .context("fyyd search was interrupted")?;
-    parse_fyyd(&body)
+    parse_fyyd(&body, query)
 }
 
-fn parse_fyyd(body: &[u8]) -> Result<Vec<SearchHit>> {
+/// Letters and digits only, lowercased: "Freak Show" and "freakshow" compare equal.
+fn squash(text: &str) -> String {
+    text.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+/// fyyd returns full-text matches in no useful order. Podcasts whose title contains the query
+/// come first, the more popular ones (by fyyd's rank) before the less popular.
+fn parse_fyyd(body: &[u8], query: &str) -> Result<Vec<SearchHit>> {
     let response: FyydResponse =
         serde_json::from_slice(body).context("fyyd search returned an unexpected answer")?;
-    Ok(response
+    let needle = squash(query);
+    let mut ranked: Vec<(bool, f64, SearchHit)> = response
         .data
         .into_iter()
         .filter_map(|p| {
-            Some(SearchHit {
-                title: non_empty(p.title)?,
+            let title = non_empty(p.title)?;
+            let in_title = !needle.is_empty() && squash(&title).contains(&needle);
+            let rank = p.rank.as_ref().and_then(|r| r.as_f64()).unwrap_or(0.0);
+            let hit = SearchHit {
+                title,
                 author: non_empty(p.author),
                 feed_url: non_empty(p.xml_url)?,
                 // The image hosted by fyyd is preferred: it is served over https and resized.
                 image_url: non_empty(p.layout_image_url).or(non_empty(p.img_url)),
                 provider: "fyyd",
-            })
+            };
+            Some((in_title, rank, hit))
         })
-        .collect())
+        .collect();
+    // Stable sort: equal entries keep the order fyyd gave them.
+    ranked.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.total_cmp(&a.1)));
+    Ok(ranked.into_iter().map(|(_, _, hit)| hit).collect())
 }
 
 #[cfg(test)]
@@ -307,40 +329,53 @@ mod tests {
 
     #[test]
     fn parses_fyyd() {
-        // First entry: shape of a real answer (November 2026). The others cover the variants in
-        // the API documentation, where `categories` may be a number and fields may be missing.
-        let body = br##"{"status":1,"msg":"ok","meta":{"paging":{"count":2,"page":0,"first_page":0,
+        // Shape and order of a real answer to `term=freakshow` (November 2026), shortened.
+        let body = br##"{"status":1,"msg":"ok","meta":{"paging":{"count":5,"page":0,"first_page":0,
             "last_page":0,"next_page":null,"prev_page":null},"API_INFO":{"API_VERSION":"0.2"},
-            "SERVER":"192.0.2.1","duration":1},"data":[
+            "SERVER":"192.0.2.1","duration":0},"data":[
             {"title":"Charles Band's Full Moon Freakshow","id":82022,
              "xmlURL":"https:\/\/anchor.fm\/s\/93f097fc\/podcast\/rss",
-             "htmlURL":"https:\/\/www.fullmoonfeatures.com\/browse",
              "imgURL":"https:\/\/cdn.example\/original.jpg","status":200,
-             "status_since":"2026-06-19 19:12:05","slug":"charles-band-s-full-moon-freakshow",
              "layoutImageURL":"https:\/\/img-1.fyyd.de\/pd\/layout\/82022.jpg",
-             "language":"en","generator":"Anchor Podcasts","categories":[205,208],
-             "lastpub":"2024-11-26T23:41:48+01:00","rank":2,"description":"Long text",
-             "subtitle":"Long text","tcolor":"#fff","color":"#212a3b","episode_count":37,
-             "iflags":null,"paymentURL":null,"author":"Charles Band"},
-            {"title":"Second","id":36645,"xmlURL":"http:\/\/second.example\/feed",
-             "imgURL":"http:\/\/second.example\/cover.jpg","categories":38,"author":""},
+             "language":"en","categories":[205,208],"rank":2,"subtitle":"Long text",
+             "episode_count":37,"iflags":null,"paymentURL":null,"author":"Charles Band"},
+            {"title":"SmartHütte","id":90243,"xmlURL":"https:\/\/feeds.transistor.fm\/smarthuette",
+             "layoutImageURL":"https:\/\/img-1.fyyd.de\/pd\/layout\/90243.jpg","categories":[203],
+             "rank":8,"iflags":"99","author":"Andrej Friesen, Thomas Wiebe"},
+            {"title":"Freak Show","id":85,"xmlURL":"https:\/\/feeds.metaebene.me\/freakshow\/mp3",
+             "layoutImageURL":"https:\/\/img-1.fyyd.de\/pd\/layout\/85.jpg","categories":[203,181],
+             "rank":292,"author":"Metaebene Personal Media - Tim Pritlove"},
+            {"title":"No rank","id":7,"xmlURL":"http:\/\/second.example\/feed",
+             "imgURL":"http:\/\/second.example\/cover.jpg","categories":38,"rank":"n\/a","author":""},
             {"title":"Broken","id":1}]}"##;
-        let hits = parse_fyyd(body).unwrap();
-        assert_eq!(hits.len(), 2);
-        assert_eq!(hits[0].title, "Charles Band's Full Moon Freakshow");
-        assert_eq!(hits[0].feed_url, "https://anchor.fm/s/93f097fc/podcast/rss");
-        assert_eq!(hits[0].author.as_deref(), Some("Charles Band"));
+        let hits = parse_fyyd(body, "freakshow").unwrap();
+        let titles: Vec<&str> = hits.iter().map(|h| h.title.as_str()).collect();
+        assert_eq!(
+            titles,
+            [
+                "Freak Show",
+                "Charles Band's Full Moon Freakshow",
+                "SmartH\u{fc}tte",
+                "No rank"
+            ],
+            "title matches first, then by rank"
+        );
+        assert_eq!(hits[0].feed_url, "https://feeds.metaebene.me/freakshow/mp3");
+        assert_eq!(
+            hits[0].author.as_deref(),
+            Some("Metaebene Personal Media - Tim Pritlove")
+        );
         assert_eq!(
             hits[0].image_url.as_deref(),
-            Some("https://img-1.fyyd.de/pd/layout/82022.jpg")
+            Some("https://img-1.fyyd.de/pd/layout/85.jpg")
         );
-        assert_eq!(hits[1].author, None);
+        assert_eq!(hits[3].author, None);
         assert_eq!(
-            hits[1].image_url.as_deref(),
+            hits[3].image_url.as_deref(),
             Some("http://second.example/cover.jpg")
         );
         assert!(
-            parse_fyyd(br#"{"status":0,"msg":"error"}"#)
+            parse_fyyd(br#"{"status":0,"msg":"error"}"#, "x")
                 .unwrap()
                 .is_empty()
         );
