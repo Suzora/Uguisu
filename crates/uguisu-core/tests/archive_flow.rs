@@ -1066,7 +1066,7 @@ async fn the_archive_states_its_format() {
     drop(Uguisu::open(Config::new(data.path())).await.unwrap());
     let content: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&marker).unwrap()).unwrap();
-    assert_eq!(content["format"], 2);
+    assert_eq!(content["format"], 3);
     // Opening again is fine and leaves the marker alone.
     drop(Uguisu::open(Config::new(data.path())).await.unwrap());
 
@@ -1135,6 +1135,29 @@ async fn episode_files_describe_the_archive() {
         blake3::hash(b"content of two.vtt").to_hex().as_str()
     );
     assert_eq!(files[1]["source"], format!("{base}/files/two.vtt"));
+    let revisions = second["revisions"].as_array().unwrap();
+    assert_eq!(revisions.len(), 1);
+    assert_eq!(revisions[0]["file"], "item.xml");
+    assert_eq!(revisions[0]["hash"], second["hash"]);
+
+    // What this installation decided about the podcast is on disk as well.
+    let podcast = uguisu.podcast(id).await.unwrap().unwrap();
+    let settings_path = uguisu.archive_path(&podcast.dir).join("uguisu.json");
+    let settings = |path: &std::path::Path| -> serde_json::Value {
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    };
+    assert_eq!(
+        settings(&settings_path)["feed_token"],
+        podcast.feed_token.as_str()
+    );
+    assert_eq!(settings(&settings_path)["keep_versions"], false);
+    uguisu.set_options(id, true, true).await.unwrap();
+    assert_eq!(settings(&settings_path)["keep_versions"], true);
+    uguisu.regenerate_token(id).await.unwrap();
+    assert_ne!(
+        settings(&settings_path)["feed_token"],
+        podcast.feed_token.as_str()
+    );
 
     // An episode that leaves the feed is marked in its file, and unmarked when it returns.
     *source.lock().unwrap() = feed(&item(1, "First"));
@@ -1144,7 +1167,26 @@ async fn episode_files_describe_the_archive() {
     uguisu.refresh(id).await.unwrap();
     assert!(read(&uguisu, &episodes[0])["removed"].is_null());
 
-    // An archive in the first format: its episode files are rewritten once.
+    // A changed feed entry: the earlier state stays next to the current one.
+    *source.lock().unwrap() = feed(&two.replace("Second", "Second, corrected"));
+    uguisu.refresh(id).await.unwrap();
+    let second = read(&uguisu, &episodes[0]);
+    let revisions = second["revisions"].as_array().unwrap();
+    assert_eq!(revisions.len(), 2);
+    assert_eq!(revisions[1]["file"], "item.xml");
+    let episode_dir = uguisu
+        .archive_path(episodes[0].media_path.as_deref().unwrap())
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let earlier =
+        std::fs::read_to_string(episode_dir.join(revisions[0]["file"].as_str().unwrap())).unwrap();
+    assert!(earlier.contains("<title>Second</title>"));
+    let current = std::fs::read_to_string(episode_dir.join("item.xml")).unwrap();
+    assert!(current.contains("<title>Second, corrected</title>"));
+
+    // An archive in the first format: its files are brought up to date once.
+    std::fs::remove_file(&settings_path).unwrap();
     let marker = data.path().join("archive/archive.json");
     std::fs::write(&marker, r#"{ "format": 1, "software": "Uguisu" }"#).unwrap();
     let old = uguisu
@@ -1153,8 +1195,9 @@ async fn episode_files_describe_the_archive() {
     std::fs::write(&old, r#"{ "guid": "ep-1", "title": "First" }"#).unwrap();
     assert_eq!(uguisu.upgrade_archive().await.unwrap(), 2);
     assert_eq!(read(&uguisu, &episodes[1])["files"][0]["name"], "media.mp3");
+    assert!(settings_path.exists());
     assert_eq!(uguisu.upgrade_archive().await.unwrap(), 0);
     let content: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&marker).unwrap()).unwrap();
-    assert_eq!(content["format"], 2);
+    assert_eq!(content["format"], 3);
 }

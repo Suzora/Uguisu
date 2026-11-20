@@ -1,6 +1,6 @@
 # The Uguisu archive format
 
-Format version: **2** (early development – may still change before Uguisu 1.0)
+Format version: **3** (early development – may still change before Uguisu 1.0)
 
 An Uguisu archive is a directory of ordinary files. This document describes it so that an
 archive can be read, checked and used without Uguisu – today or in twenty years.
@@ -15,6 +15,7 @@ archive/
   archive.json                               format marker
   <podcast>-<hash>/                          one directory per podcast
     podcast.json                             podcast metadata
+    uguisu.json                              settings of this installation (private)
     cover.<ext>                              cover art (jpg, png, webp or gif)
     feeds/
       <timestamp>-<hash>.xml                 source feed, byte for byte
@@ -22,6 +23,7 @@ archive/
       <date>-<title>-<hash>/                 one directory per episode
         episode.json                         episode metadata
         item.xml                             the episode's entry from the feed, unmodified
+        item-<timestamp>-<hash>.xml          earlier states of that entry
         media.<ext>                          the episode
         media.<ext>.blake3                   its checksum
         media.v2.<ext>, media.v2.<ext>.blake3    later versions, if the source replaced the file
@@ -36,7 +38,7 @@ All text files are UTF-8. JSON files are pretty-printed. Times are in UTC.
 ## `archive.json`
 
 ```json
-{ "format": 2, "software": "Uguisu" }
+{ "format": 3, "software": "Uguisu" }
 ```
 
 `format` is the version of this document. Uguisu refuses to open an archive with a higher
@@ -47,6 +49,7 @@ archive in an older format is brought up to date in the background after the sta
 | --- | --- |
 | 1 | First format |
 | 2 | `episode.json` also holds `hash`, `first_seen`, `removed` and `files` |
+| 3 | Earlier states of a feed entry are kept as `item-….xml`; `uguisu.json` per podcast; `namespaces` in `podcast.json` |
 
 ## Directory names
 
@@ -68,9 +71,25 @@ A directory keeps its name when the title changes later.
 | `podcast_guid` | `<podcast:guid>` of the feed, if it has one |
 | `feed_url` | Address the feed is fetched from |
 | `original_feed_url` | Address the podcast was added with |
+| `namespaces` | XML namespace declarations of the feed's root element as `[prefix, address]` pairs; the entries in `item.xml` use these prefixes |
 | `last_fetched` | Time of the last successful fetch |
 
 Addresses never contain a user name or password.
+
+## `uguisu.json`
+
+Everything else in the archive is a record of the source. This file holds what the installation
+decided about the podcast:
+
+| Field | Meaning |
+| --- | --- |
+| `feed_token` | The secret part of the address under which Uguisu publishes this podcast |
+| `include_removed` | Whether episodes removed from the source feed are still published |
+| `keep_versions` | Whether replaced media files are kept as versions |
+| `added` | When the podcast was added to the archive |
+
+Leave this file out when you pass an archive on: whoever knows the token can read the published
+feed of the installation it came from.
 
 ## `feeds/`
 
@@ -85,8 +104,8 @@ media can be derived from them.
 ## `episode.json` and `item.xml`
 
 `item.xml` is the `<item>` (RSS) or `<entry>` (Atom) element of the episode, cut out of the feed
-without any change. It is rewritten whenever the publisher changes the entry; earlier states are
-found in the feed snapshots.
+without any change. When the publisher changes the entry, the earlier state is kept as
+`item-<timestamp>-<hash>.xml`, named after the time it was first seen and the start of its hash.
 
 `episode.json` holds what Uguisu read from it:
 
@@ -102,6 +121,7 @@ found in the feed snapshots.
 | `hash` | Identifies this state of the feed entry; it changes when the publisher changes anything |
 | `first_seen` | When the episode first appeared in the source feed |
 | `removed` | When the episode was found missing from the source feed; `null` while it is listed |
+| `revisions` | Every state of the feed entry, oldest first: `seen` (time), `hash` and `file` |
 | `files` | The archived files of the episode, see below |
 
 Each entry of `files` describes one file in the episode's directory:
@@ -150,9 +170,8 @@ They can be deleted at any time while Uguisu is not running.
 
 ## What is only in the database
 
-Known gaps of format version 2, to be closed before 1.0:
+Not part of the archive, by design:
 
-- earlier states of an episode's feed entry (they can be found in the feed snapshots, but not
-  per episode);
-- the time each file was last verified;
-- settings per podcast and the secret addresses of the published feeds.
+- user names and passwords of feeds behind a password;
+- the time each file was last verified, and the state of downloads that have not succeeded yet;
+- the login of the web interface.
