@@ -349,7 +349,8 @@ struct LibraryQuery {
 async fn library(State(state): State<AppState>, Query(query): Query<LibraryQuery>) -> AppResult {
     let podcasts = state.app.podcasts().await?;
     let stats = state.app.stats().await?;
-    Ok(page(ui::library_page(&podcasts, &stats, query.import)).into_response())
+    let space_low = state.app.space_is_low();
+    Ok(page(ui::library_page(&podcasts, &stats, query.import, space_low)).into_response())
 }
 
 async fn add_page() -> Html<String> {

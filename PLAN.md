@@ -85,12 +85,12 @@ The promise "readable without Uguisu" is made good and tested.
       their checksums and says whether the episode is still in the feed (archive format 2).
 - [x] Close the gaps, part 2: earlier states of a feed entry per episode, and the settings and
       feed addresses per podcast.
-- [~] `uguisu reindex`: rebuild the database completely from the archive on disk. Test: delete
+- [x] `uguisu reindex`: rebuild the database completely from the archive on disk. Test: delete
       the database, reindex, the published feeds are identical.
 - [ ] `uguisu import <directory>`: take over an existing collection of files with its feed.
 - [ ] Repair: re-download a damaged file and keep the damaged copy until the new one is
       verified; show clearly when the source no longer offers the file.
-- [ ] Disk space: check the reserve before downloading, fail with a clear message instead of
+- [~] Disk space: check the reserve before downloading, fail with a clear message instead of
       leaving half files.
 - [ ] Regular consistent backup of the database into the data directory.
 - [ ] Optional rules per podcast: archive only from a date on, or only new episodes. The

@@ -106,6 +106,7 @@ cargo run -p uguisu
 | `--refresh-minutes` | `UGUISU_REFRESH_MINUTES` | `60` | Interval between checks of each source feed |
 | `--download-concurrency` | `UGUISU_DOWNLOAD_CONCURRENCY` | `2` | Simultaneous downloads |
 | `--verify-days` | `UGUISU_VERIFY_DAYS` | `30` | Re-hash every file at least this often; `0` turns it off |
+| `--min-free-gb` | `UGUISU_MIN_FREE_GB` | `1` | Downloads wait while less than this is free on the disk; `0` turns it off |
 | `--allow-private-networks` | `UGUISU_ALLOW_PRIVATE_NETWORKS` | off | Allow sources on local and private addresses |
 
 Commands: `uguisu serve` (default), `uguisu verify` and `uguisu reindex`. `verify` exits with a
