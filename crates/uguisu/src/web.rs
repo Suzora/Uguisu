@@ -604,9 +604,17 @@ async fn opml_import(State(state): State<AppState>, mut multipart: Multipart) ->
 
 // ── Published feeds (no login, secret token in the URL) ────────────────────────────────────
 
+#[derive(Deserialize, Default)]
+struct FeedQuery {
+    /// Publish only the newest episodes. Feeds of long-running podcasts grow to megabytes,
+    /// which some apps handle badly.
+    limit: Option<usize>,
+}
+
 async fn feed(
     State(state): State<AppState>,
     Path(file): Path<String>,
+    Query(query): Query<FeedQuery>,
     headers: HeaderMap,
 ) -> AppResult {
     let token = file.strip_suffix(".xml").unwrap_or(&file);
@@ -615,7 +623,10 @@ async fn feed(
         .podcast_by_token(token)
         .await?
         .ok_or(AppError::NotFound)?;
-    let episodes = state.app.feed_episodes(podcast.id).await?;
+    let mut episodes = state.app.feed_episodes(podcast.id).await?;
+    if let Some(limit) = query.limit.filter(|limit| *limit > 0) {
+        episodes = rss::newest(&podcast, episodes, limit);
+    }
     let attachments = state.app.attachments(podcast.id).await?;
     let xml = rss::build_feed(
         &podcast,
@@ -802,6 +813,57 @@ mod tests {
         let plain = Request::get(&address).body(Body::empty()).unwrap();
         let response = router.oneshot(plain).await.unwrap();
         assert!(!response.headers().contains_key(header::CONTENT_ENCODING));
+    }
+
+    #[tokio::test]
+    async fn a_feed_can_be_limited_to_the_newest_episodes() {
+        let (_data, router, address) = archive().await;
+        // Five archived episodes, one a day.
+        let app = uguisu_core::Uguisu::open(uguisu_core::Config::new(_data.path()))
+            .await
+            .unwrap();
+        for n in 1..=5 {
+            sqlx::query(
+                "INSERT INTO episodes (id, podcast_id, guid, title, published_at, enclosure_url, \
+                 dir, meta_hash, first_seen_at, last_seen_at) \
+                 VALUES (?1, 1, 'ep-' || ?1, 'Episode ' || ?1, ?1 * 86400, 'https://x.test/a.mp3', \
+                 'e' || ?1, 'h' || ?1, 0, 0)",
+            )
+            .bind(n)
+            .execute(app.pool())
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO media_files (episode_id, path, size, blake3, mime, source_url, \
+                 downloaded_at, verified_at) \
+                 VALUES (?1, 'test/episodes/e' || ?1 || '/media.mp3', 1, 'b', 'audio/mpeg', 's', 0, 0)",
+            )
+            .bind(n)
+            .execute(app.pool())
+            .await
+            .unwrap();
+        }
+        let titles = |query: &'static str| {
+            let router = router.clone();
+            let address = format!("{address}{query}");
+            async move {
+                let request = Request::get(&address).body(Body::empty()).unwrap();
+                let response = router.oneshot(request).await.unwrap();
+                assert_eq!(response.status(), StatusCode::OK);
+                let body = axum::body::to_bytes(response.into_body(), 1 << 20)
+                    .await
+                    .unwrap();
+                let feed = uguisu_core::feed::parse(&body).unwrap();
+                feed.items
+                    .into_iter()
+                    .map(|item| item.title)
+                    .collect::<Vec<_>>()
+            }
+        };
+        assert_eq!(titles("").await.len(), 5);
+        assert_eq!(titles("?limit=2").await, ["Episode 5", "Episode 4"]);
+        assert_eq!(titles("?limit=0").await.len(), 5, "0 means no limit");
+        assert_eq!(titles("?limit=99").await.len(), 5);
     }
 
     #[tokio::test]

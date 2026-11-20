@@ -32,6 +32,75 @@ fn item(n: u32, title: &str) -> String {
     )
 }
 
+/// Checks a published feed against what podcast apps rely on: RSS 2.0 with the required
+/// channel elements, and for every item a unique identifier, a usable enclosure pointing at
+/// the archive and, if present, a date in the standard format.
+fn assert_valid_feed(xml: &str) {
+    let doc = roxmltree::Document::parse(xml).expect("the feed is well-formed XML");
+    let rss = doc.root_element();
+    assert_eq!(rss.tag_name().name(), "rss");
+    assert_eq!(rss.attribute("version"), Some("2.0"));
+    let own = |node: roxmltree::Node, name: &str| -> Vec<String> {
+        node.children()
+            .filter(|c| c.tag_name().name() == name && c.tag_name().namespace().is_none())
+            .map(|c| c.text().unwrap_or_default().trim().to_string())
+            .collect()
+    };
+    let channels: Vec<_> = rss.children().filter(|c| c.is_element()).collect();
+    assert_eq!(channels.len(), 1, "exactly one channel");
+    let channel = channels[0];
+    assert_eq!(channel.tag_name().name(), "channel");
+    for required in ["title", "link", "description"] {
+        assert_eq!(
+            own(channel, required).len(),
+            1,
+            "one <{required}> in the channel"
+        );
+    }
+    assert!(!own(channel, "title")[0].is_empty());
+    assert!(own(channel, "link")[0].starts_with("http"));
+
+    let mut guids = std::collections::HashSet::new();
+    for item in channel.children().filter(|c| c.tag_name().name() == "item") {
+        let guid = own(item, "guid");
+        assert_eq!(guid.len(), 1, "one <guid> per item");
+        assert!(!guid[0].is_empty());
+        assert!(guids.insert(guid[0].clone()), "duplicate guid {}", guid[0]);
+        assert!(
+            !own(item, "title").is_empty() || !own(item, "description").is_empty(),
+            "an item needs a title or a description"
+        );
+        let enclosures: Vec<_> = item
+            .children()
+            .filter(|c| c.tag_name().name() == "enclosure" && c.tag_name().namespace().is_none())
+            .collect();
+        assert_eq!(enclosures.len(), 1, "one <enclosure> per item");
+        let enclosure = enclosures[0];
+        let url = enclosure.attribute("url").expect("enclosure url");
+        assert!(url.starts_with("https://archive.example/media/"), "{url}");
+        assert!(!url.contains(' '));
+        let length: u64 = enclosure
+            .attribute("length")
+            .expect("enclosure length")
+            .parse()
+            .expect("numeric length");
+        assert!(length > 0);
+        assert!(
+            enclosure
+                .attribute("type")
+                .expect("enclosure type")
+                .contains('/')
+        );
+        for date in own(item, "pubDate") {
+            assert!(
+                uguisu_core::feed::parse_date(&date).is_some(),
+                "unreadable date {date}"
+            );
+            assert!(date.ends_with("+0000") || date.ends_with("GMT"), "{date}");
+        }
+    }
+}
+
 type FeedBody = Arc<Mutex<String>>;
 
 async fn start_source(body: FeedBody) -> String {
@@ -166,6 +235,7 @@ async fn archive_flow() {
     // Re-publish: original GUIDs, enclosures pointing at the archive.
     let published = uguisu.feed_episodes(id).await.unwrap();
     let xml = rss::build_feed(&podcast, &published, &[], "https://archive.example");
+    assert_valid_feed(&xml);
     let republished = uguisu_core::feed::parse(xml.as_bytes()).unwrap();
     assert_eq!(republished.items.len(), 2);
     assert_eq!(republished.items[0].guid, "ep-2");
@@ -475,6 +545,7 @@ async fn published_feed_keeps_the_original_items() {
         &attachments,
         "https://archive.example",
     );
+    assert_valid_feed(&xml);
 
     // What the publisher put into the item is still there, byte for byte.
     for original in [
@@ -666,6 +737,7 @@ async fn atom_feeds_are_archived_and_published_as_rss() {
     let podcast = uguisu.podcast(id).await.unwrap().unwrap();
     let published = uguisu.feed_episodes(id).await.unwrap();
     let xml = rss::build_feed(&podcast, &published, &[], "https://archive.example");
+    assert_valid_feed(&xml);
     assert!(xml.contains("<rss version=\"2.0\""));
     let republished = uguisu_core::feed::parse(xml.as_bytes()).unwrap();
     assert_eq!(republished.title, "Atom Cast");
@@ -957,6 +1029,7 @@ async fn images_in_show_notes_are_archived() {
         &attachments,
         "https://archive.example",
     );
+    assert_valid_feed(&xml);
     let archived = rss::attachment_url("https://archive.example", &podcast.feed_token, photo);
     assert!(
         xml.contains(&format!("<img src=\"{archived}\" alt=\"A photo\">")),
@@ -1066,6 +1139,7 @@ async fn feeds_with_credentials_are_archived_without_leaking_them() {
     }
     let published = uguisu.feed_episodes(id).await.unwrap();
     let xml = rss::build_feed(&podcast, &published, &[], "https://archive.example");
+    assert_valid_feed(&xml);
     assert!(!xml.contains("secret"));
 }
 
@@ -1587,6 +1661,7 @@ async fn existing_files_are_imported() {
     let podcast = uguisu.podcast(id).await.unwrap().unwrap();
     let published = uguisu.feed_episodes(id).await.unwrap();
     let xml = rss::build_feed(&podcast, &published, &[], "https://archive.example");
+    assert_valid_feed(&xml);
     let republished = uguisu_core::feed::parse(xml.as_bytes()).unwrap();
     assert_eq!(republished.items.len(), 3);
     assert!(xml.contains("Episode 0 - the pilot"));
