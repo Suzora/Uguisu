@@ -105,6 +105,10 @@ pub fn router(state: AppState) -> Router {
             "/feed/{file}",
             get(feed).layer(tower_http::compression::CompressionLayer::new()),
         )
+        .route(
+            "/feed/all/{file}",
+            get(combined_feed).layer(tower_http::compression::CompressionLayer::new()),
+        )
         .route("/media/{token}/{file}", get(feed_cover))
         .route("/media/{token}/{episode_id}/{file}", get(media))
         .route(
@@ -350,11 +354,26 @@ struct LibraryQuery {
     import: Option<usize>,
 }
 
-async fn library(State(state): State<AppState>, Query(query): Query<LibraryQuery>) -> AppResult {
+async fn library(
+    State(state): State<AppState>,
+    Query(query): Query<LibraryQuery>,
+    headers: HeaderMap,
+) -> AppResult {
     let podcasts = state.app.podcasts().await?;
     let stats = state.app.stats().await?;
     let space_low = state.app.space_is_low();
-    Ok(page(ui::library_page(&podcasts, &stats, query.import, space_low)).into_response())
+    let combined = rss::combined_feed_url(
+        &base_url(&state, &headers),
+        &state.app.combined_feed_token().await?,
+    );
+    Ok(page(ui::library_page(
+        &podcasts,
+        &stats,
+        query.import,
+        space_low,
+        &combined,
+    ))
+    .into_response())
 }
 
 async fn add_page() -> Html<String> {
@@ -403,7 +422,17 @@ async fn add_podcast(State(state): State<AppState>, Form(form): Form<AddForm>) -
         let now = uguisu_core::util::now();
         now - now.rem_euclid(86_400)
     });
-    match state.app.add_podcast_from(&form.url, archive_from).await {
+    // In a task of its own: a browser that gives up waiting must not stop the work half way,
+    // which would leave a podcast without its files written.
+    let added = {
+        let app = state.app.clone();
+        let url = form.url.clone();
+        tokio::spawn(async move { app.add_podcast_from(&url, archive_from).await })
+            .await
+            .map_err(anyhow::Error::from)
+            .and_then(|result| result)
+    };
+    match added {
         Ok(id) => Ok(see_other(&format!("/podcasts/{id}"))),
         Err(e) => {
             tracing::info!("cannot add {}: {e:#}", form.url);
@@ -472,8 +501,12 @@ async fn episodes_fragment(
 async fn refresh_podcast(State(state): State<AppState>, Path(id): Path<i64>) -> AppResult {
     state.app.podcast(id).await?.ok_or(AppError::NotFound)?;
     // A failure is stored on the podcast and shown on its page.
-    if let Err(e) = state.app.refresh(id).await {
-        tracing::warn!(podcast_id = id, "refresh failed: {e:#}");
+    // In a task of its own, so that it finishes even if the browser stops waiting.
+    let app = state.app.clone();
+    match tokio::spawn(async move { app.refresh(id).await }).await {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => tracing::warn!(podcast_id = id, "refresh failed: {e:#}"),
+        Err(e) => tracing::error!(podcast_id = id, "refresh stopped: {e}"),
     }
     Ok(see_other(&format!("/podcasts/{id}")))
 }
@@ -634,6 +667,48 @@ async fn feed(
         &attachments,
         &base_url(&state, &headers),
     );
+    Ok(feed_response(&headers, xml))
+}
+
+/// How many episodes the feed over all podcasts carries unless the address says otherwise.
+const COMBINED_FEED_EPISODES: usize = 100;
+
+async fn combined_feed(
+    State(state): State<AppState>,
+    Path(file): Path<String>,
+    Query(query): Query<FeedQuery>,
+    headers: HeaderMap,
+) -> AppResult {
+    let token = file.strip_suffix(".xml").unwrap_or(&file);
+    // Compared in full, so that nothing about the token can be learned from a wrong guess.
+    let expected = state.app.combined_feed_token().await?;
+    if blake3::hash(token.as_bytes()) != blake3::hash(expected.as_bytes()) {
+        return Err(AppError::NotFound);
+    }
+    let limit = query
+        .limit
+        .filter(|limit| *limit > 0)
+        .unwrap_or(COMBINED_FEED_EPISODES)
+        .min(1000);
+    let episodes = state.app.newest_episodes(limit as i64).await?;
+    let podcasts = state.app.podcasts().await?;
+    let entries: Vec<(&Podcast, &uguisu_core::model::EpisodeView)> = episodes
+        .iter()
+        .filter_map(|view| {
+            let summary = podcasts
+                .iter()
+                .find(|p| p.podcast.id == view.episode.podcast_id)?;
+            Some((&summary.podcast, view))
+        })
+        .collect();
+    let ids: Vec<i64> = episodes.iter().map(|view| view.episode.id).collect();
+    let attachments = state.app.attachments_of(&ids).await?;
+    let xml = rss::build_combined_feed(&entries, &attachments, &base_url(&state, &headers));
+    Ok(feed_response(&headers, xml))
+}
+
+/// A feed document, or "not modified" if the client already has this very document.
+fn feed_response(headers: &HeaderMap, xml: String) -> Response {
     // Podcast apps ask for their feeds every hour or so, and mostly nothing has changed. The
     // tag lets them find that out without downloading the feed again.
     let etag = format!("\"{}\"", &blake3::hash(xml.as_bytes()).to_hex()[..32]);
@@ -650,14 +725,14 @@ async fn feed(
         (axum::http::header::ETAG, etag),
     ];
     if unchanged {
-        return Ok((StatusCode::NOT_MODIFIED, cache).into_response());
+        return (StatusCode::NOT_MODIFIED, cache).into_response();
     }
-    Ok((
+    (
         cache,
         [(CONTENT_TYPE, "application/rss+xml; charset=utf-8")],
         xml,
     )
-        .into_response())
+        .into_response()
 }
 
 async fn feed_cover(
@@ -864,6 +939,70 @@ mod tests {
         assert_eq!(titles("?limit=2").await, ["Episode 5", "Episode 4"]);
         assert_eq!(titles("?limit=0").await.len(), 5, "0 means no limit");
         assert_eq!(titles("?limit=99").await.len(), 5);
+    }
+
+    #[tokio::test]
+    async fn one_feed_covers_all_podcasts() {
+        let (_data, router, _) = archive().await;
+        let app = uguisu_core::Uguisu::open(uguisu_core::Config::new(_data.path()))
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO podcasts (feed_url, original_feed_url, title, dir, feed_token, created_at) \
+             VALUES ('https://example.org/2', 'https://example.org/2', 'Other Cast', 'other', \
+             'other-token', 0)",
+        )
+        .execute(app.pool())
+        .await
+        .unwrap();
+        // The same GUID in both podcasts, one day apart.
+        for (id, podcast) in [(1, 1), (2, 2)] {
+            sqlx::query(
+                "INSERT INTO episodes (id, podcast_id, guid, title, published_at, enclosure_url, \
+                 dir, meta_hash, first_seen_at, last_seen_at) \
+                 VALUES (?1, ?2, 'same-guid', 'Episode', ?1 * 86400, 'https://x.test/a.mp3', \
+                 'e' || ?1, 'h' || ?1, 0, 0)",
+            )
+            .bind(id)
+            .bind(podcast)
+            .execute(app.pool())
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO media_files (episode_id, path, size, blake3, mime, source_url, \
+                 downloaded_at, verified_at) \
+                 VALUES (?1, 'p/episodes/e' || ?1 || '/media.mp3', 1, 'b', 'audio/mpeg', 's', 0, 0)",
+            )
+            .bind(id)
+            .execute(app.pool())
+            .await
+            .unwrap();
+        }
+        let token = app.combined_feed_token().await.unwrap();
+        assert_eq!(app.combined_feed_token().await.unwrap(), token);
+
+        let request = Request::get(format!("/feed/all/{token}.xml"))
+            .body(Body::empty())
+            .unwrap();
+        let response = router.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(response.headers().contains_key(header::ETAG));
+        let body = axum::body::to_bytes(response.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        let feed = uguisu_core::feed::parse(&body).unwrap();
+        let titles: Vec<&str> = feed.items.iter().map(|i| i.title.as_str()).collect();
+        assert_eq!(titles, ["Other Cast – Episode", "Test Cast – Episode"]);
+        assert_ne!(feed.items[0].guid, feed.items[1].guid);
+        let text = String::from_utf8_lossy(&body);
+        assert!(text.contains("/media/other-token/2/media.mp3"));
+        assert!(text.contains("/media/secret-token/1/media.mp3"));
+
+        let wrong = Request::get("/feed/all/wrong.xml")
+            .body(Body::empty())
+            .unwrap();
+        let response = router.oneshot(wrong).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

@@ -222,6 +222,7 @@ pub fn library_page(
     stats: &Stats,
     import: Option<usize>,
     space_low: bool,
+    combined_feed: &str,
 ) -> Markup {
     shell(
         "Library",
@@ -265,6 +266,16 @@ pub fn library_page(
                     }
                     div.stat-actions {
                         a.button href="/opml" title="Subscription list of all archive feeds, for import into a podcast app" { "Export OPML" }
+                    }
+                }
+                section.panel {
+                    h2 { "One feed for everything" }
+                    p.muted.small {
+                        "The newest 100 episodes of all podcasts in a single feed. Treat the address like a password."
+                    }
+                    div.copy-row {
+                        input #combined-feed type="text" readonly value=(combined_feed) aria-label="Address of the feed over all podcasts";
+                        button.button type="button" data-copy="#combined-feed" { "Copy" }
                     }
                 }
                 section.grid {

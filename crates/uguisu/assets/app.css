@@ -179,6 +179,9 @@ input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent);
 .stack { display: grid; gap: 16px; }
 .inline { display: flex; gap: 10px; align-items: center; }
 .inline > input { flex: 1; }
+/* An option of an inline form goes on a line of its own, below the field and its button. */
+.inline:has(> label.check) { flex-wrap: wrap; }
+.inline > label.check { flex-basis: 100%; }
 
 .notice {
   padding: 12px 16px;

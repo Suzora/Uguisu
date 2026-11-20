@@ -13,6 +13,7 @@ format.
 ```text
 archive/
   archive.json                               format marker
+  uguisu.json                                settings of this installation (private)
   <podcast>-<hash>/                          one directory per podcast
     podcast.json                             podcast metadata
     uguisu.json                              settings of this installation (private)
@@ -51,6 +52,10 @@ archive in an older format is brought up to date in the background after the sta
 | 2 | `episode.json` also holds `hash`, `first_seen`, `removed` and `files` |
 | 3 | Earlier states of a feed entry are kept as `item-….xml`; `uguisu.json` per podcast; `namespaces` in `podcast.json` |
 | 4 | `id` for episodes and files |
+
+The `uguisu.json` next to it holds the secret part of the address of the feed over all podcasts
+(`combined_feed_token`). Like the file of the same name in each podcast's directory it belongs to
+the installation, not to the record of the sources; leave it out when passing an archive on.
 
 ## Directory names
 
