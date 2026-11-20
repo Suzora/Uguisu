@@ -58,7 +58,7 @@ pub struct ParsedItem {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ItemLink {
-    /// `transcript`, `chapters` or `image`.
+    /// `transcript`, `chapters`, `image` or `notes-image` (an image shown in the show notes).
     pub kind: &'static str,
     pub url: String,
 }
@@ -138,7 +138,48 @@ fn item_links(item: Node) -> Vec<ItemLink> {
             links.push(ItemLink { kind, url });
         }
     }
+    // Images embedded in the show notes. The notes are HTML inside these elements.
+    for node in item.children().filter(|n| {
+        n.is_element() && matches!(n.tag_name().name(), "encoded" | "description" | "content")
+    }) {
+        let Some(html) = text_of(node) else { continue };
+        for url in html_images(&html) {
+            if links.len() >= MAX_ITEM_LINKS {
+                return links;
+            }
+            if !links
+                .iter()
+                .any(|l| without_query(&l.url) == without_query(&url))
+            {
+                links.push(ItemLink {
+                    kind: "notes-image",
+                    url,
+                });
+            }
+        }
+    }
     links
+}
+
+/// Upper bound for the files archived per episode besides its media file.
+const MAX_ITEM_LINKS: usize = 40;
+
+/// Addresses of the images an HTML fragment shows with `<img src>`.
+fn html_images(html: &str) -> Vec<String> {
+    let lower = html.to_ascii_lowercase();
+    let mut found = Vec::new();
+    let mut from = 0;
+    while let Some(position) = lower[from..].find("<img") {
+        let start = from + position + "<img".len();
+        let end = start + lower[start..].find('>').unwrap_or(lower.len() - start);
+        from = end;
+        if let Some(url) = html_attribute(&html[start..end], "src")
+            && (url.starts_with("http://") || url.starts_with("https://"))
+        {
+            found.push(url);
+        }
+    }
+    found
 }
 
 /// A paged feed links its next page with `rel="next"`, an archived feed its previous archive
@@ -830,6 +871,32 @@ mod tests {
         assert!(
             find(r#"<rss><channel><link rel="alternate" type="application/rss+xml" href="/x"/></channel></rss>"#)
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn finds_images_in_show_notes() {
+        let xml = r#"<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>T</title>
+<item><guid>1</guid>
+<description>&lt;p&gt;&lt;img src="https://example.org/a.png?w=1&amp;amp;h=2"&gt;&lt;/p&gt;</description>
+<content:encoded><![CDATA[<p><IMG alt="x" data-src="https://example.org/lazy.png"
+ SRC='https://example.org/a.png?w=9'> <img srcset="https://example.org/set.png 2x"
+ src=https://example.org/b.jpg> <img src="/relative.png"><img src="data:image/gif;base64,AA"></p>]]></content:encoded>
+</item></channel></rss>"#;
+        let feed = parse(xml.as_bytes()).unwrap();
+        let links: Vec<(&str, &str)> = feed.items[0]
+            .links
+            .iter()
+            .map(|l| (l.kind, l.url.as_str()))
+            .collect();
+        assert_eq!(
+            links,
+            [
+                // Found first in <description>; the same picture in another size is not
+                // stored twice.
+                ("notes-image", "https://example.org/a.png?w=1&h=2"),
+                ("notes-image", "https://example.org/b.jpg"),
+            ]
         );
     }
 

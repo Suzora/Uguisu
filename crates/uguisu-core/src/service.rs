@@ -1288,6 +1288,12 @@ impl Uguisu {
             .or_else(|| (!content_type.is_empty()).then(|| content_type.clone()))
             .unwrap_or_else(|| "application/octet-stream".to_string());
 
+        // Show notes also embed things that are not pictures, such as counting pixels that
+        // answer with a web page.
+        if pending.kind == "notes-image" && !mime.starts_with("image/") {
+            bail!("not an image ({mime})");
+        }
+
         let mut bytes = Vec::new();
         while let Some(chunk) = response.chunk().await.context("download interrupted")? {
             if bytes.len() + chunk.len() > MAX_ATTACHMENT_BYTES {

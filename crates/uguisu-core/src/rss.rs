@@ -87,11 +87,65 @@ pub fn attachment_url(base_url: &str, token: &str, attachment: &Attachment) -> S
     )
 }
 
+/// What can follow an address inside HTML that is itself inside XML: a quote, a bracket or
+/// white space, written directly or as an entity, escaped once or twice.
+const ADDRESS_ENDS: [&str; 12] = [
+    "\"",
+    "'",
+    "<",
+    ">",
+    "&quot;",
+    "&#34;",
+    "&#39;",
+    "&apos;",
+    "&lt;",
+    "&gt;",
+    "&amp;quot;",
+    "&amp;#",
+];
+
+/// Replaces the addresses of archived files wherever they occur in `text`, which is how images
+/// in show notes are pointed at the archive. An address is matched together with its query
+/// string, and only as a whole: `a.png` is not replaced inside `a.png.webp`.
+fn rewrite_text(text: &str, links: &[(&str, String)]) -> String {
+    let mut out = text.to_string();
+    for (source, archived) in links {
+        if source.is_empty() || !out.contains(source) {
+            continue;
+        }
+        let mut result = String::with_capacity(out.len());
+        let mut rest = out.as_str();
+        while let Some(position) = rest.find(source) {
+            let after = &rest[position + source.len()..];
+            // The end of the address: directly after it, or after its query string.
+            let end = after
+                .char_indices()
+                .find(|(index, c)| {
+                    c.is_whitespace() || ADDRESS_ENDS.iter().any(|e| after[*index..].starts_with(e))
+                })
+                .map_or(after.len(), |(index, _)| index);
+            let tail = &after[..end];
+            result.push_str(&rest[..position]);
+            if tail.is_empty() || tail.starts_with('?') || tail.starts_with('#') {
+                result.push_str(archived);
+            } else {
+                result.push_str(source);
+                result.push_str(tail);
+            }
+            rest = &after[end..];
+        }
+        result.push_str(rest);
+        out = result;
+    }
+    out
+}
+
 /// Returns the original `<item>` with its `<enclosure>` replaced, or `None` if it cannot be
 /// reused (not well-formed on its own, no enclosure, or more than one element).
 ///
 /// `links` maps source addresses (without query string) of archived attachments to their
-/// address in the archive; `url` and `href` attributes pointing at one of them are rewritten.
+/// address in the archive; `url` and `href` attributes pointing at one of them are rewritten,
+/// and so are the addresses of images in the show notes.
 fn reuse_item(
     raw: &str,
     namespace_attributes: &str,
@@ -142,7 +196,7 @@ fn reuse_item(
         position = range.end;
     }
     out.push_str(&text[position..text.len() - "</r>".len()]);
-    Some(out)
+    Some(rewrite_text(&out, links))
 }
 
 /// Renders an RSS 2.0 document. Episodes without an archived file are left out, as are episodes
@@ -239,7 +293,7 @@ pub fn build_feed(
             let _ = writeln!(x, "<link>{}</link>", xml_escape(link));
         }
         if let Some(description) = &e.description {
-            let escaped = xml_escape(description);
+            let escaped = xml_escape(&rewrite_text(description, &links));
             let _ = writeln!(x, "<description>{escaped}</description>");
             let _ = writeln!(x, "<content:encoded>{escaped}</content:encoded>");
         }
@@ -266,6 +320,29 @@ mod tests {
     const NAMESPACES: &str = "xmlns:podcast=\"https://podcastindex.org/namespace/1.0\"";
     const ENCLOSURE: &str =
         "<enclosure url=\"https://archive.example/a.mp3\" length=\"1\" type=\"audio/mpeg\"/>";
+
+    #[test]
+    fn rewrites_addresses_in_show_notes() {
+        let links = [("https://cdn.example/a.png", "ARCHIVED".to_string())];
+        let rewrite = |text: &str| rewrite_text(text, &links);
+        // In CDATA, with and without a query string, and in every quoting style.
+        assert_eq!(
+            rewrite(
+                r#"<img src="https://cdn.example/a.png"> <img src='https://cdn.example/a.png?w=1&amp;h=2'>"#
+            ),
+            r#"<img src="ARCHIVED"> <img src='ARCHIVED'>"#
+        );
+        assert_eq!(rewrite("src=https://cdn.example/a.png>"), "src=ARCHIVED>");
+        // Escaped once more, as in a <description> without CDATA.
+        assert_eq!(
+            rewrite("&lt;img src=&quot;https://cdn.example/a.png?w=1&amp;amp;h=2&quot;&gt;"),
+            "&lt;img src=&quot;ARCHIVED&quot;&gt;"
+        );
+        // Other addresses that merely start the same way stay as they are.
+        let other = r#"<img src="https://cdn.example/a.png.webp"> https://cdn.example/a.pngx"#;
+        assert_eq!(rewrite(other), other);
+        assert_eq!(rewrite("see https://cdn.example/a.png"), "see ARCHIVED");
+    }
 
     #[test]
     fn reuses_the_original_item() {
