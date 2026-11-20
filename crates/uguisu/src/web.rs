@@ -94,6 +94,9 @@ pub fn router(state: AppState) -> Router {
         .route("/cover/{id}", get(cover))
         .route("/opml", get(opml_export).post(opml_import))
         .route("/logout", post(logout))
+        .route("/settings", get(settings_page))
+        .route("/settings/password", post(change_password))
+        .route("/settings/sessions", post(end_other_sessions))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_login));
 
     let public = Router::new()
@@ -332,6 +335,70 @@ async fn start_session(state: &AppState, headers: &HeaderMap) -> AppResult {
         ],
     )
         .into_response())
+}
+
+#[derive(Deserialize, Default)]
+struct SettingsQuery {
+    done: Option<String>,
+}
+
+async fn settings_page(
+    State(state): State<AppState>,
+    Query(query): Query<SettingsQuery>,
+) -> AppResult {
+    let sessions = auth::session_count(state.app.pool()).await?;
+    let notice = match query.done.as_deref() {
+        Some("password") => Some("The password is changed. Other devices have been signed out."),
+        Some("sessions") => Some("All other devices have been signed out."),
+        _ => None,
+    };
+    Ok(page(ui::settings_page(sessions, notice, None)).into_response())
+}
+
+#[derive(Deserialize)]
+struct PasswordForm {
+    current: String,
+    password: String,
+    confirm: String,
+}
+
+async fn change_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<PasswordForm>,
+) -> AppResult {
+    let pool = state.app.pool();
+    // The same pause as at the login: this form checks a password too.
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    let problem = if !auth::check_password(pool, form.current).await? {
+        Some("The current password is not correct.".to_string())
+    } else if form.password.chars().count() < auth::MIN_PASSWORD_LENGTH {
+        Some(format!(
+            "Please choose at least {} characters.",
+            auth::MIN_PASSWORD_LENGTH
+        ))
+    } else if form.password != form.confirm {
+        Some("The two new passwords do not match.".to_string())
+    } else {
+        None
+    };
+    if let Some(problem) = problem {
+        let sessions = auth::session_count(pool).await?;
+        return Ok((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            page(ui::settings_page(sessions, None, Some(&problem))),
+        )
+            .into_response());
+    }
+    auth::set_password(pool, form.password).await?;
+    // Whoever knew the old password is signed out; this browser stays.
+    auth::delete_other_sessions(pool, auth::session_token(&headers).as_deref()).await?;
+    Ok(see_other("/settings?done=password"))
+}
+
+async fn end_other_sessions(State(state): State<AppState>, headers: HeaderMap) -> AppResult {
+    auth::delete_other_sessions(state.app.pool(), auth::session_token(&headers).as_deref()).await?;
+    Ok(see_other("/settings?done=sessions"))
 }
 
 async fn logout(State(state): State<AppState>, headers: HeaderMap) -> AppResult {
@@ -1230,6 +1297,90 @@ mod tests {
         assert_ne!(response.status(), StatusCode::OK);
         let response = get("/podcasts/2/episodes/7", true).await.unwrap();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn the_password_can_be_changed_and_devices_signed_out() {
+        let (data, router, _) = archive().await;
+        let app = uguisu_core::Uguisu::open(uguisu_core::Config::new(data.path()))
+            .await
+            .unwrap();
+        let pool = app.pool();
+        crate::auth::set_password(pool, "the first password".into())
+            .await
+            .unwrap();
+        let here = crate::auth::create_session(pool).await.unwrap();
+        let elsewhere = crate::auth::create_session(pool).await.unwrap();
+        let post = |address: &'static str, body: &'static str| {
+            let request = Request::post(address)
+                .header(header::COOKIE, format!("uguisu_session={here}"))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header("sec-fetch-site", "same-origin")
+                .body(Body::from(body))
+                .unwrap();
+            router.clone().oneshot(request)
+        };
+
+        // A wrong current password, a short one and a mismatch change nothing.
+        for body in [
+            "current=wrong&password=the+second+password&confirm=the+second+password",
+            "current=the+first+password&password=short&confirm=short",
+            "current=the+first+password&password=the+second+password&confirm=something+else",
+        ] {
+            let response = post("/settings/password", body).await.unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "{body}"
+            );
+        }
+        assert!(
+            crate::auth::check_password(pool, "the first password".into())
+                .await
+                .unwrap()
+        );
+        assert!(
+            crate::auth::session_is_valid(pool, &elsewhere)
+                .await
+                .unwrap()
+        );
+
+        let response = post(
+            "/settings/password",
+            "current=the+first+password&password=the+second+password&confirm=the+second+password",
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert!(
+            crate::auth::check_password(pool, "the second password".into())
+                .await
+                .unwrap()
+        );
+        assert!(
+            !crate::auth::check_password(pool, "the first password".into())
+                .await
+                .unwrap()
+        );
+        assert!(crate::auth::session_is_valid(pool, &here).await.unwrap());
+        assert!(
+            !crate::auth::session_is_valid(pool, &elsewhere)
+                .await
+                .unwrap(),
+            "other devices are signed out"
+        );
+
+        // Signing out other devices on its own.
+        let another = crate::auth::create_session(pool).await.unwrap();
+        let response = post("/settings/sessions", "").await.unwrap();
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert!(!crate::auth::session_is_valid(pool, &another).await.unwrap());
+        assert!(crate::auth::session_is_valid(pool, &here).await.unwrap());
+
+        // The owner's way back in after losing the password.
+        crate::auth::reset_password(pool).await.unwrap();
+        assert!(!crate::auth::password_is_set(pool).await.unwrap());
+        assert!(!crate::auth::session_is_valid(pool, &here).await.unwrap());
     }
 
     #[tokio::test]

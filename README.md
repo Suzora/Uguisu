@@ -115,7 +115,8 @@ cargo run -p uguisu
 | `--backups` | `UGUISU_BACKUPS` | `7` | Daily copies of the database kept in `backups/`; `0` turns them off |
 | `--allow-private-networks` | `UGUISU_ALLOW_PRIVATE_NETWORKS` | off | Allow sources on local and private addresses |
 
-Commands: `uguisu serve` (default), `uguisu verify`, `uguisu reindex` and `uguisu import`. `verify` exits with a
+Commands: `uguisu serve` (default), `uguisu verify`, `uguisu reindex`, `uguisu import` and
+`uguisu reset-password`. `verify` exits with a
 non-zero status if any file is damaged or missing, so it can be used from cron or a monitoring
 job. `reindex` rebuilds a lost or damaged database from the archive; the published feeds keep
 their addresses. Feed passwords and the login are not part of the archive and have to be entered
@@ -157,6 +158,9 @@ feed passwords in plain text, like the database itself.
 ## Security notes
 
 - The web interface has a single account, protected by a password (Argon2) and a session cookie.
+  The password is changed under Settings, which also signs out other devices. If it is lost,
+  `uguisu reset-password` (with Docker: `docker compose exec uguisu uguisu reset-password`)
+  removes it, and the next visit asks for a new one.
 - Published feeds and their media need no login. They are protected by a random 192-bit token in
   the address, because most podcast apps cannot log in. Treat a feed address like a password; a new
   one can be generated per podcast.

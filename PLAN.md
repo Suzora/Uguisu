@@ -119,11 +119,12 @@ The promise "readable without Uguisu" is made good and tested.
 
 ### 0.5 – Web interface
 
-- [~] Episode page: show notes, attachments, media versions, revisions with their differences.
+- [x] Episode page: show notes, attachments, media versions, revisions with their differences.
 - [ ] History per podcast: feed snapshots, changes, errors.
 - [ ] Full-text search in the archive over titles, show notes and transcripts (SQLite FTS5).
 - [ ] Overview: running, waiting and failed downloads, state of verification, disk usage.
-- [ ] Settings: change the password, end sessions, defaults for new podcasts.
+- [~] Settings: change the password, sign out other devices.
+- [ ] Settings: defaults for new podcasts.
 - [ ] German and English.
 - [ ] Accessibility (keyboard, contrast, screen readers) and a layout for phones.
 - [ ] Final logo and icons. The current logo is provisional.
@@ -135,7 +136,8 @@ The promise "readable without Uguisu" is made good and tested.
 - [ ] Automatic dependency updates and a scheduled `cargo deny` run.
 - [ ] Notifications about damaged files and feeds that keep failing (webhook, ntfy); optional
       `/metrics`.
-- [ ] Login: limit failed attempts, `uguisu reset-password`, `Secure` cookies behind HTTPS.
+- [~] `uguisu reset-password` for a lost password.
+- [ ] Login: limit failed attempts, `Secure` cookies behind HTTPS.
 - [ ] Security review (requests to private networks, paths, XML, headers) and `SECURITY.md`.
 - [ ] Operations guide: reverse proxy examples, backup and restore, moving, upgrading.
 - [ ] Faster shutdown (about 2 seconds today) and safe behaviour when stopped mid-download.
