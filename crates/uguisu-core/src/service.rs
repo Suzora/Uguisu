@@ -638,32 +638,63 @@ impl Uguisu {
         Ok(found)
     }
 
-    /// Brings the full-text index of one podcast in step with its episodes.
+    /// Brings the full-text index of one podcast in step with its episodes. Transcripts that
+    /// are already indexed stay.
     pub(crate) async fn index_podcast_text(&self, podcast_id: i64) -> Result<()> {
-        let rows: Vec<(i64, String, Option<String>)> =
-            sqlx::query_as("SELECT id, title, description FROM episodes WHERE podcast_id = ?")
-                .bind(podcast_id)
-                .fetch_all(self.pool())
-                .await?;
-        let mut tx = self.pool().begin().await?;
-        sqlx::query(
-            "DELETE FROM episode_search WHERE rowid IN \
-               (SELECT id FROM episodes WHERE podcast_id = ?)",
+        let rows: Vec<(i64, String, Option<String>, bool)> = sqlx::query_as(
+            "SELECT e.id, e.title, e.description, \
+             EXISTS (SELECT 1 FROM episode_search s WHERE s.rowid = e.id) \
+             FROM episodes e WHERE e.podcast_id = ?",
         )
         .bind(podcast_id)
-        .execute(&mut *tx)
+        .fetch_all(self.pool())
         .await?;
-        for (id, title, description) in rows {
-            sqlx::query("INSERT INTO episode_search (rowid, title, notes) VALUES (?, ?, ?)")
-                .bind(id)
+        let mut tx = self.pool().begin().await?;
+        for (id, title, description, indexed) in rows {
+            let statement = if indexed {
+                "UPDATE episode_search SET title = ?, notes = ? WHERE rowid = ?"
+            } else {
+                "INSERT INTO episode_search (title, notes, transcript, rowid) VALUES (?, ?, '', ?)"
+            };
+            sqlx::query(statement)
                 .bind(title)
                 .bind(crate::util::html_to_text(
                     description.as_deref().unwrap_or(""),
                 ))
+                .bind(id)
                 .execute(&mut *tx)
                 .await?;
         }
         tx.commit().await?;
+        Ok(())
+    }
+
+    /// Puts the transcript of an episode into the full-text index. An episode often has the
+    /// same transcript in several formats; one of them is enough.
+    pub(crate) async fn index_transcript(&self, episode_id: i64) -> Result<()> {
+        let paths: Vec<String> = sqlx::query_scalar(
+            "SELECT path FROM attachments WHERE episode_id = ? AND kind = 'transcript' \
+             AND status = 'ok' AND path IS NOT NULL ORDER BY id",
+        )
+        .bind(episode_id)
+        .fetch_all(self.pool())
+        .await?;
+        let mut text = String::new();
+        for path in paths {
+            let Ok(bytes) = tokio::fs::read(self.archive_path(&path)).await else {
+                continue;
+            };
+            let extension = path.rsplit('.').next().unwrap_or_default();
+            text = crate::util::transcript_text(&bytes, extension);
+            if !text.trim().is_empty() {
+                break;
+            }
+        }
+        sqlx::query("UPDATE episode_search SET transcript = ? WHERE rowid = ?")
+            .bind(text)
+            .bind(episode_id)
+            .execute(self.pool())
+            .await?;
         Ok(())
     }
 
@@ -676,7 +707,13 @@ impl Uguisu {
         )
         .fetch_one(self.pool())
         .await?;
-        if indexed == episodes && orphans == 0 {
+        if orphans > 0 {
+            // A removed podcast: its entries go, the rest of the index stays.
+            sqlx::query("DELETE FROM episode_search WHERE rowid NOT IN (SELECT id FROM episodes)")
+                .execute(self.pool())
+                .await?;
+        }
+        if indexed - orphans == episodes {
             return Ok(());
         }
         sqlx::query("DELETE FROM episode_search")
@@ -688,11 +725,19 @@ impl Uguisu {
         for id in podcasts {
             self.index_podcast_text(id).await?;
         }
+        let with_transcript: Vec<i64> = sqlx::query_scalar(
+            "SELECT DISTINCT episode_id FROM attachments WHERE kind = 'transcript' AND status = 'ok'",
+        )
+        .fetch_all(self.pool())
+        .await?;
+        for id in with_transcript {
+            self.index_transcript(id).await?;
+        }
         tracing::info!(episodes, "search index rebuilt");
         Ok(())
     }
 
-    /// Searches titles and show notes of all archived podcasts. Every word has to occur; the
+    /// Searches titles, show notes and transcripts of all archived podcasts. Every word has to occur; the
     /// last one may be the beginning of a word. Best matches first.
     pub async fn search_episodes(&self, query: &str, limit: i64) -> Result<Vec<SearchResult>> {
         // The words are passed as quoted strings, so that nothing in them is read as part of
@@ -710,11 +755,11 @@ impl Uguisu {
         Ok(sqlx::query_as(
             "SELECT e.id AS episode_id, e.podcast_id, p.title AS podcast_title, e.title, \
              e.published_at, \
-             snippet(episode_search, 1, char(1), char(2), '…', 24) AS snippet \
+             snippet(episode_search, -1, char(1), char(2), '…', 24) AS snippet \
              FROM episode_search JOIN episodes e ON e.id = episode_search.rowid \
              JOIN podcasts p ON p.id = e.podcast_id \
              WHERE episode_search MATCH ? \
-             ORDER BY bm25(episode_search, 4.0, 1.0), e.published_at DESC LIMIT ?",
+             ORDER BY bm25(episode_search, 4.0, 1.0, 0.5), e.published_at DESC LIMIT ?",
         )
         .bind(expression)
         .bind(limit)
@@ -2037,7 +2082,14 @@ impl Uguisu {
 
     async fn download_attachment(&self, pending: PendingAttachment) {
         let outcome = match self.fetch_attachment(&pending).await {
-            Ok(()) => self.write_episode_json(pending.episode_id).await,
+            Ok(()) => {
+                if pending.kind == "transcript"
+                    && let Err(e) = self.index_transcript(pending.episode_id).await
+                {
+                    tracing::warn!("cannot index a transcript: {e:#}");
+                }
+                self.write_episode_json(pending.episode_id).await
+            }
             Err(e) => {
                 tracing::warn!(url = %pending.source_key, "attachment download failed: {e:#}");
                 let host_break = host_break(&e);

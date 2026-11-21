@@ -120,10 +120,10 @@ The promise "readable without Uguisu" is made good and tested.
 - [x] Episode page: show notes, attachments, media versions, revisions with their differences.
 - [x] History per podcast: feed snapshots, changes, errors.
 - [x] Full-text search in the archive over titles and show notes (SQLite FTS5).
-- [ ] Full-text search over transcripts as well.
+- [~] Full-text search over transcripts as well (WebVTT, SubRip, JSON, HTML, plain text).
 - [x] Overview: running, waiting and failed downloads, state of verification, disk usage.
 - [x] Settings: change the password, sign out other devices.
-- [~] Settings: defaults for new podcasts.
+- [x] Settings: defaults for new podcasts.
 - [x] German and English, chosen in the settings. Error messages that come from feeds, servers
       and the archive engine stay in English.
 - [x] Accessibility (keyboard, contrast, screen readers) and a layout for phones. Checked with
