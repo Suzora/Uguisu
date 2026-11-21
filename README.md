@@ -91,6 +91,8 @@ has a health check, so `docker ps` shows whether the instance answers.
 Each release also publishes the image as `ghcr.io/suzora/uguisu:<version>`; to use it, replace
 `build: .` in `compose.yaml` with `image: ghcr.io/suzora/uguisu:<version>`.
 
+[docs/OPERATIONS.md](docs/OPERATIONS.md) covers HTTPS, backup and restore, moving and upgrading.
+
 Set `UGUISU_BASE_URL` to the address your podcast app will use to reach Uguisu. Put a reverse
 proxy with HTTPS in front of it if the instance is reachable from outside your network.
 
@@ -161,7 +163,7 @@ feed passwords in plain text, like the database itself.
 
 - The web interface has a single account, protected by a password (Argon2) and a session cookie.
   The password is changed under Settings, which also signs out other devices. If it is lost,
-  `uguisu reset-password` (with Docker: `docker compose exec uguisu uguisu reset-password`)
+  `uguisu reset-password` (with Docker: `docker compose exec uguisu /usr/local/bin/uguisu reset-password`)
   removes it, and the next visit asks for a new one.
 - Published feeds and their media need no login. They are protected by a random 192-bit token in
   the address, because most podcast apps cannot log in. Treat a feed address like a password; a new
