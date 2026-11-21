@@ -206,3 +206,23 @@ pub struct DamagedFile {
     /// `corrupt` or `missing`.
     pub status: String,
 }
+
+/// One stored version of a source feed (or of one of its pages).
+#[derive(Debug, Clone, FromRow)]
+pub struct FeedSnapshot {
+    pub id: i64,
+    pub fetched_at: i64,
+    pub blake3: String,
+    pub size: i64,
+    pub path: String,
+}
+
+/// Something that happened to an episode in the source feed.
+#[derive(Debug, Clone, FromRow)]
+pub struct HistoryEvent {
+    pub at: i64,
+    /// `added`, `changed` or `removed`.
+    pub kind: String,
+    pub episode_id: i64,
+    pub title: String,
+}
