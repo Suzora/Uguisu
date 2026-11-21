@@ -120,7 +120,7 @@ The promise "readable without Uguisu" is made good and tested.
 - [x] Episode page: show notes, attachments, media versions, revisions with their differences.
 - [x] History per podcast: feed snapshots, changes, errors.
 - [x] Full-text search in the archive over titles and show notes (SQLite FTS5).
-- [~] Full-text search over transcripts as well (WebVTT, SubRip, JSON, HTML, plain text).
+- [x] Full-text search over transcripts as well (WebVTT, SubRip, JSON, HTML, plain text).
 - [x] Overview: running, waiting and failed downloads, state of verification, disk usage.
 - [x] Settings: change the password, sign out other devices.
 - [x] Settings: defaults for new podcasts.
@@ -147,7 +147,9 @@ The promise "readable without Uguisu" is made good and tested.
       feed could exhaust memory through its own XML entities; IPv6 addresses that lead to
       private IPv4 addresses were let through; `reindex` followed file names out of the archive.
 - [x] Operations guide: reverse proxy examples, backup and restore, moving, upgrading.
-- [ ] Faster shutdown (about 2 seconds today) and safe behaviour when stopped mid-download.
+- [~] Stopping: at most a few seconds, and safe in the middle of a download. Measured: under
+      0.2 s when idle or downloading; a download interrupted by a stop or a kill is continued
+      and ends byte-identical. Requests still running are cut off after three seconds.
 
 ### 1.0 – The finished product
 

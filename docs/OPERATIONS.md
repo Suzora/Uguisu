@@ -105,6 +105,20 @@ again:
 sudo chown -R 65532:65532 data
 ```
 
+## Stopping
+
+`docker stop` is safe at any moment. Uguisu stops within a few seconds:
+
+- Requests that are being answered get three seconds to finish; a podcast app in the middle of
+  a large file is cut off and asks again later.
+- A download that is under way stays on disk as `download.part` and is continued from there at
+  the next start, as long as the source still offers the same file.
+- A verification that is under way is abandoned and done again when it is next due.
+
+The same holds when the process is killed or the machine loses power: files are written under
+another name and moved into place only when they are complete, and the database is a SQLite
+database in WAL mode.
+
 ## Upgrading
 
 Pull or build the new image and restart. The database is migrated at the start, and an archive
