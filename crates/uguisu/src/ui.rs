@@ -1118,7 +1118,7 @@ pub fn episode_page(
                         button.button type="submit" { "Try the download again" }
                     }
                 }
-                @if let Some(link) = e.link.as_deref().filter(|l| l.starts_with("http")) {
+                @if let Some(link) = e.link.as_deref().filter(|l| l.starts_with("https://") || l.starts_with("http://")) {
                     p.small { a href=(link) rel="noreferrer noopener" { (link) } }
                 }
                 p.muted.small { "First seen " (format_datetime(e.first_seen_at)) " · identifier " code { (shorten(&e.guid, 80)) } }

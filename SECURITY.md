@@ -29,7 +29,11 @@ releases.
 - **Fetching from the internet.** Feed and media addresses come from the user and from feeds.
   Uguisu refuses loopback, private and link-local addresses unless told otherwise, also after
   redirects and for names that resolve to such addresses. With an HTTP proxy configured the
-  proxy resolves names, and this check covers only addresses written as numbers.
+  proxy resolves names, and this check covers only addresses written as numbers. IPv6 addresses
+  that carry an IPv4 address inside (6to4, NAT64) are judged by that address.
+- **Feeds are untrusted XML.** External entities are never loaded. A feed whose own entity
+  declarations would expand to many times its size is refused; feeds, covers and attachments
+  have size limits, and downloads stop before the disk reserve is used up.
 - **Archived content is untrusted.** Show notes are shown as text, never as HTML. Archived files
   are served with a policy that forbids scripts, and images are decoded with limits on size and
   memory.
@@ -43,3 +47,6 @@ releases.
 - Transport security: Uguisu speaks HTTP and expects a reverse proxy with HTTPS in front when it
   is reachable from outside a trusted network.
 - Denial of service by someone who is already logged in.
+- A wrong public address when none is configured: without `UGUISU_BASE_URL` the addresses in
+  published feeds follow the `Host` and `X-Forwarded-*` headers of each request. Set
+  `UGUISU_BASE_URL` wherever requests can reach Uguisu with headers you do not control.

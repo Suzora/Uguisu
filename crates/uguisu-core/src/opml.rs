@@ -17,6 +17,7 @@ pub fn parse(bytes: &[u8]) -> Result<Vec<String>> {
         allow_dtd: true,
         ..ParsingOptions::default()
     };
+    crate::feed::check_entities(text)?;
     let doc = Document::parse_with_options(text, options).context("the file is not valid XML")?;
     let mut urls: Vec<String> = Vec::new();
     for node in doc.descendants().filter(|n| n.has_tag_name("outline")) {
