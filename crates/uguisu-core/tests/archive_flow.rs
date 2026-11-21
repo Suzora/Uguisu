@@ -157,6 +157,14 @@ async fn start_source(body: FeedBody) -> String {
                 |axum::extract::Path(file): axum::extract::Path<String>| async move {
                     if file.starts_with("missing") {
                         Err(axum::http::StatusCode::NOT_FOUND)
+                    } else if file.starts_with("talk") {
+                        Ok((
+                            [(CONTENT_TYPE, "text/vtt")],
+                            "WEBVTT\n\n1\n00:00:01.000 --> 00:00:04.000\n\
+                             <v Ada>Welcome to the marshland walk.</v>\n\n\
+                             2\n00:00:04.500 --> 00:00:09.000\nWe heard a bittern booming.\n"
+                                .to_string(),
+                        ))
                     } else {
                         Ok(([(CONTENT_TYPE, "text/plain")], format!("content of {file}")))
                     }
@@ -1943,4 +1951,85 @@ async fn new_podcasts_start_with_the_chosen_options() {
     uguisu.reindex().await.unwrap();
     assert_eq!(uguisu.new_podcast_defaults().await.unwrap(), chosen);
     assert_eq!(uguisu.combined_feed_token().await.unwrap(), token);
+}
+
+#[tokio::test]
+async fn transcripts_are_searchable() {
+    let with_transcript = item_with_file(1, "1.mp3").replace(
+        "<guid>",
+        "<podcast:transcript xmlns:podcast=\"https://podcastindex.org/namespace/1.0\" \
+         url=\"BASE/files/talk.vtt\" type=\"text/vtt\"/><guid>",
+    );
+    let source_feed: FeedBody = Arc::new(Mutex::new(feed(&format!(
+        "{}{}",
+        item_with_file(2, "2.mp3"),
+        with_transcript
+    ))));
+    let base = start_source(source_feed.clone()).await;
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = Config::new(data.path());
+    cfg.allow_private_networks = true;
+    cfg.min_free_space = 0;
+    cfg.host_pause = std::time::Duration::ZERO;
+    let uguisu = Uguisu::open(cfg).await.unwrap();
+    let id = uguisu
+        .add_podcast(&format!("{base}/feed.xml"))
+        .await
+        .unwrap();
+
+    // The word is spoken, but written nowhere in the feed.
+    assert!(
+        uguisu
+            .search_episodes("bittern", 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    uguisu.download_pending().await.unwrap();
+    let hits = uguisu.search_episodes("bittern", 10).await.unwrap();
+    assert_eq!(hits.len(), 1);
+    assert!(
+        hits[0].snippet.contains("\u{1}bittern\u{2}"),
+        "{}",
+        hits[0].snippet
+    );
+    // Time codes, cue numbers and speaker tags are not part of the text.
+    assert!(uguisu.search_episodes("00", 10).await.unwrap().is_empty());
+    assert!(uguisu.search_episodes("Ada", 10).await.unwrap().is_empty());
+    assert_eq!(
+        uguisu
+            .search_episodes("marshland wal", 10)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+
+    // A change in the feed re-indexes titles and notes; the transcript stays findable.
+    let changed = source_feed
+        .lock()
+        .unwrap()
+        .replace("Episode 1", "Episode one");
+    assert_ne!(
+        changed,
+        *source_feed.lock().unwrap(),
+        "the test feed has such a title"
+    );
+    *source_feed.lock().unwrap() = changed;
+    uguisu.refresh(id).await.unwrap();
+    assert_eq!(
+        uguisu.search_episodes("bittern", 10).await.unwrap().len(),
+        1
+    );
+
+    // A lost index is rebuilt from the archived files.
+    sqlx::query("DELETE FROM episode_search")
+        .execute(uguisu.pool())
+        .await
+        .unwrap();
+    uguisu.sync_search_index().await.unwrap();
+    assert_eq!(
+        uguisu.search_episodes("bittern", 10).await.unwrap().len(),
+        1
+    );
 }

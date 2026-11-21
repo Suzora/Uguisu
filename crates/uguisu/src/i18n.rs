@@ -205,13 +205,13 @@ const GERMAN: &[(&str, &str)] = &[
     // Search in the archive
     ("Search the archive", "Archiv durchsuchen"),
     (
-        "Search titles and show notes…",
-        "Titel und Shownotes durchsuchen…",
+        "Search titles, show notes and transcripts…",
+        "Titel, Shownotes und Transkripte durchsuchen…",
     ),
     ("Search", "Suchen"),
     (
-        "Every word has to occur in the title or the show notes of an episode. The last word may be the beginning of a word.",
-        "Jedes Wort muss im Titel oder in den Shownotes einer Episode vorkommen. Das letzte Wort darf ein Wortanfang sein.",
+        "Every word has to occur in the title, the show notes or the transcript of an episode. The last word may be the beginning of a word.",
+        "Jedes Wort muss im Titel, in den Shownotes oder im Transkript einer Episode vorkommen. Das letzte Wort darf ein Wortanfang sein.",
     ),
     ("No episode matches “", "Keine Episode passt zu „"),
     ("”.", "“."),
@@ -319,8 +319,8 @@ const GERMAN: &[(&str, &str)] = &[
     ),
     ("Add your first podcast", "Ersten Podcast hinzufügen"),
     (
-        "Search titles and show notes in your archive…",
-        "Titel und Shownotes in deinem Archiv durchsuchen…",
+        "Search titles, show notes and transcripts in your archive…",
+        "Titel, Shownotes und Transkripte in deinem Archiv durchsuchen…",
     ),
     ("Podcasts", "Podcasts"),
     ("Episodes archived", "Episoden archiviert"),

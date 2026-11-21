@@ -91,6 +91,71 @@ pub fn slugify(input: &str, max_chars: usize) -> String {
     }
 }
 
+/// The spoken words of a transcript, for searching. Transcripts come as WebVTT, SubRip, the
+/// JSON of the podcast namespace, HTML or plain text; cue numbers, time codes and markup are
+/// left out. `extension` is that of the archived file.
+pub fn transcript_text(bytes: &[u8], extension: &str) -> String {
+    let text = String::from_utf8_lossy(bytes);
+    let text = text.trim_start_matches('\u{feff}');
+    let mut out = match extension {
+        "json" => {
+            let mut words = String::new();
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(text) {
+                collect_bodies(&value, &mut words);
+            }
+            words
+        }
+        "html" | "htm" => html_to_text(text),
+        _ => {
+            let mut words = String::new();
+            for line in text.lines() {
+                let line = line.trim();
+                let is_cue_number = !line.is_empty() && line.chars().all(|c| c.is_ascii_digit());
+                if line.contains("-->")
+                    || is_cue_number
+                    || line.starts_with("WEBVTT")
+                    || line.starts_with("NOTE")
+                {
+                    continue;
+                }
+                // Voice and formatting tags of WebVTT (`<v Name>`, `<i>`).
+                words.push_str(&html_to_text(line));
+                words.push(' ');
+            }
+            words
+        }
+    };
+    const MAX_CHARS: usize = 2_000_000;
+    if out.len() > MAX_CHARS {
+        let mut end = MAX_CHARS;
+        while !out.is_char_boundary(end) {
+            end -= 1;
+        }
+        out.truncate(end);
+    }
+    out
+}
+
+/// Gathers every `body` (and `text`) string of a JSON transcript, in document order.
+fn collect_bodies(value: &serde_json::Value, out: &mut String) {
+    match value {
+        serde_json::Value::Array(items) => items.iter().for_each(|item| collect_bodies(item, out)),
+        serde_json::Value::Object(fields) => {
+            for (name, field) in fields {
+                match field {
+                    serde_json::Value::String(text) if name == "body" || name == "text" => {
+                        out.push_str(text);
+                        out.push(' ');
+                    }
+                    serde_json::Value::String(_) => {}
+                    other => collect_bodies(other, out),
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 /// HTML as plain text for searching: tags become spaces, the common character references are
 /// decoded. Not meant for display.
 pub fn html_to_text(html: &str) -> String {
@@ -136,6 +201,45 @@ pub fn xml_escape(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn transcripts_as_text() {
+        let vtt = "WEBVTT\n\nNOTE made by hand\n\n1\n00:01.000 --> 00:04.000 align:start\n\
+                   <v Ada>Hello &amp; welcome.</v>\n\n00:05.000 --> 00:06.000\n<i>Second</i> cue\n";
+        assert_eq!(
+            super::transcript_text(vtt.as_bytes(), "vtt")
+                .split_whitespace()
+                .collect::<Vec<_>>(),
+            ["Hello", "&", "welcome.", "Second", "cue"]
+        );
+        let srt = "1\r\n00:00:01,000 --> 00:00:02,000\r\nFirst line\r\n\r\n2\r\n\
+                   00:00:03,000 --> 00:00:04,000\r\nIn 2024 we went\r\n";
+        assert_eq!(
+            super::transcript_text(srt.as_bytes(), "srt")
+                .split_whitespace()
+                .collect::<Vec<_>>(),
+            ["First", "line", "In", "2024", "we", "went"]
+        );
+        let json = r#"{"version":"1.0.0","segments":[
+            {"speaker":"Ada","startTime":0.5,"body":"Good"},
+            {"speaker":"Ada","startTime":0.9,"body":"evening"}]}"#;
+        assert_eq!(
+            super::transcript_text(json.as_bytes(), "json").trim(),
+            "Good evening"
+        );
+        assert_eq!(super::transcript_text(b"{ not json", "json"), "");
+        let html = "<p><cite>Ada:</cite> Good <b>night</b></p>";
+        assert_eq!(
+            super::transcript_text(html.as_bytes(), "html")
+                .split_whitespace()
+                .collect::<Vec<_>>(),
+            ["Ada:", "Good", "night"]
+        );
+        assert_eq!(
+            super::transcript_text(b"Just words.", "txt").trim(),
+            "Just words."
+        );
+    }
+
     use super::*;
 
     #[test]

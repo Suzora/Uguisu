@@ -456,11 +456,11 @@ pub fn find_page(query: &str, results: &[uguisu_core::model::SearchResult]) -> M
             h1 { (t("Search the archive")) }
             form.inline.find method="get" action="/find" role="search" {
                 input type="search" name="q" value=(query) autofocus
-                    placeholder=(t("Search titles and show notes…")) aria-label=(t("Search the archive"));
+                    placeholder=(t("Search titles, show notes and transcripts…")) aria-label=(t("Search the archive"));
                 button.button.is-primary type="submit" { (t("Search")) }
             }
             @if query.is_empty() {
-                p.muted { (t("Every word has to occur in the title or the show notes of an episode. The last word may be the beginning of a word.")) }
+                p.muted { (t("Every word has to occur in the title, the show notes or the transcript of an episode. The last word may be the beginning of a word.")) }
             } @else if results.is_empty() {
                 p.muted { (t("No episode matches “")) (query) (t("”.")) }
             } @else {
@@ -672,7 +672,7 @@ pub fn library_page(
             } @else {
                 h1.visually-hidden { (t("Library")) }
                 form.inline.find method="get" action="/find" role="search" {
-                    input type="search" name="q" placeholder=(t("Search titles and show notes in your archive…")) aria-label=(t("Search the archive"));
+                    input type="search" name="q" placeholder=(t("Search titles, show notes and transcripts in your archive…")) aria-label=(t("Search the archive"));
                     button.button type="submit" { (t("Search")) }
                 }
                 section.stats {
