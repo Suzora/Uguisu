@@ -1648,6 +1648,30 @@ mod tests {
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
     }
 
+    /// A password set with an earlier version of the hashing library still opens the door.
+    #[tokio::test]
+    async fn passwords_from_earlier_versions_still_work() {
+        let (data, _router, _) = archive().await;
+        let app = uguisu_core::Uguisu::open(uguisu_core::Config::new(data.path()))
+            .await
+            .unwrap();
+        // Written by Uguisu 0.3.0 for the password below.
+        let stored = "$argon2id$v=19$m=19456,t=2,p=1$MTMxMGU2Yjg2ZTExNGU5NWRjNWE1MjI0MmUzMDhmYzU$x9kdARS62eRvYWZC5gOt8ATDRVVDdr1xLJ6nstnyvrk";
+        uguisu_core::db::set_setting(app.pool(), "admin_password_hash", stored)
+            .await
+            .unwrap();
+        assert!(
+            crate::auth::check_password(app.pool(), "correct horse battery staple".into())
+                .await
+                .unwrap()
+        );
+        assert!(
+            !crate::auth::check_password(app.pool(), "correct horse battery stapler".into())
+                .await
+                .unwrap()
+        );
+    }
+
     #[test]
     fn guessing_the_password_gets_slower() {
         let start = std::time::Instant::now();
