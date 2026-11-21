@@ -7,3 +7,7 @@ extend-exclude = [
     "LICENSE",
     "crates/uguisu/assets/htmx.min.js",
 ]
+
+[default]
+# Password hashes in tests are random letters, not words.
+extend-ignore-re = ['\$argon2id\$[A-Za-z0-9$=,+/]+']

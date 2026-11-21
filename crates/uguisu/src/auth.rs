@@ -2,7 +2,8 @@
 
 use anyhow::{Result, anyhow};
 use argon2::Argon2;
-use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::password_hash::phc::PasswordHash;
+use argon2::password_hash::{PasswordHasher, PasswordVerifier};
 use axum::http::HeaderMap;
 use axum::http::header::COOKIE;
 use sqlx::SqlitePool;
@@ -20,10 +21,8 @@ pub async fn password_is_set(pool: &SqlitePool) -> Result<bool> {
 
 pub async fn set_password(pool: &SqlitePool, password: String) -> Result<()> {
     let hash = tokio::task::spawn_blocking(move || {
-        let salt = SaltString::encode_b64(random_token(16).as_bytes())
-            .map_err(|e| anyhow!("cannot create salt: {e}"))?;
         Argon2::default()
-            .hash_password(password.as_bytes(), &salt)
+            .hash_password(password.as_bytes())
             .map(|h| h.to_string())
             .map_err(|e| anyhow!("cannot hash password: {e}"))
     })
