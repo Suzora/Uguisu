@@ -48,6 +48,9 @@ Uguisu is not a player and does not sync listening progress. That is the job of 
   RSS 1.0; the published feed is always RSS 2.0.
 - **Keeps the archive readable without Uguisu.** The database is only an index. Everything needed
   to understand the archive is on disk as plain files, and the database can be rebuilt from them.
+- **Speaks English and German.** The language of the web interface is chosen in the settings.
+- **Says when something is wrong.** Damaged files and feeds that keep failing can be reported to
+  a webhook.
 
 ## Archive layout
 

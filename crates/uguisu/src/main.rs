@@ -1,6 +1,7 @@
 //! Uguisu – a self-hosted podcast archiver that re-publishes its archive as feeds.
 
 mod auth;
+mod i18n;
 mod ui;
 mod web;
 
