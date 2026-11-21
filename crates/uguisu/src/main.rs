@@ -167,7 +167,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 .base_url
                 .map(|u| u.trim_end_matches('/').to_string())
                 .filter(|u| !u.is_empty());
-            let router = web::router(web::AppState { app, base_url });
+            let router = web::router(web::AppState::new(app, base_url));
             let listener = tokio::net::TcpListener::bind(cli.listen)
                 .await
                 .with_context(|| format!("cannot listen on {}", cli.listen))?;

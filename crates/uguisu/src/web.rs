@@ -27,6 +27,57 @@ use crate::{auth, ui};
 pub struct AppState {
     pub app: Uguisu,
     pub base_url: Option<String>,
+    login_guard: std::sync::Arc<std::sync::Mutex<LoginGuard>>,
+}
+
+impl AppState {
+    pub fn new(app: Uguisu, base_url: Option<String>) -> Self {
+        Self {
+            app,
+            base_url,
+            login_guard: Default::default(),
+        }
+    }
+}
+
+/// Slows down guessing the password. After a few wrong attempts in a row, the next attempt is
+/// only looked at after a pause that doubles with every further failure, from four seconds up
+/// to a minute. There
+/// is one account and Uguisu usually sits behind a proxy, so the count is for everyone
+/// together; the owner is held up by a minute at most, never locked out.
+#[derive(Default)]
+struct LoginGuard {
+    failures: u32,
+    last_failure: Option<std::time::Instant>,
+}
+
+impl LoginGuard {
+    /// Wrong attempts that cost nothing extra.
+    const FREE: u32 = 5;
+
+    /// How long to wait before the next attempt is looked at.
+    fn wait(&self, now: std::time::Instant) -> Option<Duration> {
+        let last = self.last_failure?;
+        let over = self.failures.checked_sub(Self::FREE)?;
+        // Every attempt already takes about a second (password hashing and a fixed pause), so
+        // the pauses start well above that: 4, 8, 16, 32 seconds, then a minute.
+        let pause = Duration::from_secs(4u64 << over.min(4)).min(Duration::from_secs(60));
+        pause
+            .checked_sub(now.duration_since(last))
+            .filter(|left| !left.is_zero())
+    }
+
+    fn failed(&mut self, now: std::time::Instant) {
+        // A quiet quarter of an hour forgets earlier failures.
+        if self
+            .last_failure
+            .is_some_and(|last| now.duration_since(last) > Duration::from_secs(900))
+        {
+            self.failures = 0;
+        }
+        self.failures += 1;
+        self.last_failure = Some(now);
+    }
 }
 
 // ── Errors ─────────────────────────────────────────────────────────────────────────────────
@@ -319,9 +370,22 @@ async fn login(
     headers: HeaderMap,
     Form(form): Form<LoginForm>,
 ) -> AppResult {
+    let now = std::time::Instant::now();
+    if let Some(wait) = state.login_guard.lock().unwrap().wait(now) {
+        let seconds = wait.as_secs().max(1);
+        let message = format!("Too many wrong attempts. Please try again in {seconds} seconds.");
+        return Ok((
+            StatusCode::TOO_MANY_REQUESTS,
+            [(axum::http::header::RETRY_AFTER, seconds.to_string())],
+            page(ui::login_page(Some(&message))),
+        )
+            .into_response());
+    }
     if auth::check_password(state.app.pool(), form.password).await? {
+        *state.login_guard.lock().unwrap() = LoginGuard::default();
         return start_session(&state, &headers).await;
     }
+    state.login_guard.lock().unwrap().failed(now);
     // Slows down guessing; Argon2 already makes every attempt expensive.
     tokio::time::sleep(Duration::from_millis(800)).await;
     Ok((
@@ -1064,10 +1128,7 @@ mod tests {
         .execute(app.pool())
         .await
         .unwrap();
-        let router = router(AppState {
-            app,
-            base_url: Some("https://archive.example".into()),
-        });
+        let router = router(AppState::new(app, Some("https://archive.example".into())));
         (data, router, "/feed/secret-token.xml".to_string())
     }
 
@@ -1552,6 +1613,65 @@ mod tests {
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
         let response = send(Request::post("/status/retry")).await.unwrap();
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    }
+
+    #[test]
+    fn guessing_the_password_gets_slower() {
+        let start = std::time::Instant::now();
+        let at = |seconds: u64| start + Duration::from_secs(seconds);
+        let wait = |guard: &LoginGuard, seconds: u64| guard.wait(at(seconds)).map(|w| w.as_secs());
+        let mut guard = LoginGuard::default();
+        for _ in 0..4 {
+            guard.failed(at(0));
+            assert_eq!(wait(&guard, 0), None, "the first failures cost nothing");
+        }
+        guard.failed(at(0));
+        assert_eq!(wait(&guard, 0), Some(4));
+        assert_eq!(wait(&guard, 3), Some(1));
+        assert_eq!(wait(&guard, 4), None);
+        guard.failed(at(4));
+        assert_eq!(wait(&guard, 4), Some(8));
+        for _ in 0..20 {
+            guard.failed(at(12));
+        }
+        assert_eq!(wait(&guard, 12), Some(60), "never more than a minute");
+        assert_eq!(wait(&guard, 72), None);
+        // After a quiet quarter of an hour the count starts over.
+        guard.failed(at(2000));
+        assert_eq!(wait(&guard, 2000), None);
+    }
+
+    #[tokio::test]
+    async fn the_login_refuses_attempts_that_come_too_fast() {
+        let (data, router, _) = archive().await;
+        let app = uguisu_core::Uguisu::open(uguisu_core::Config::new(data.path()))
+            .await
+            .unwrap();
+        crate::auth::set_password(app.pool(), "the right password".into())
+            .await
+            .unwrap();
+        let attempt = |password: &'static str| {
+            let request = Request::post("/login")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header("sec-fetch-site", "same-origin")
+                .body(Body::from(format!("password={password}")))
+                .unwrap();
+            router.clone().oneshot(request)
+        };
+        for _ in 0..5 {
+            let response = attempt("wrong").await.unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        }
+        // The sixth comes within the pause: it is not even checked, right or wrong.
+        let response = attempt("the+right+password").await.unwrap();
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert!(response.headers().contains_key(header::RETRY_AFTER));
+        // After the pause the right password works and clears the count.
+        tokio::time::sleep(Duration::from_millis(4100)).await;
+        let response = attempt("the+right+password").await.unwrap();
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        let response = attempt("wrong").await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
