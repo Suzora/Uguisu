@@ -140,7 +140,7 @@ The promise "readable without Uguisu" is made good and tested.
       cross-compiling; the finished ARM image is started once in an emulator before a release
       is published.
 - [x] Provenance and SBOM for released images, attached to the image in the registry. (A
-      signature was considered and dropped.) First used by the release after 0.3.0, where it
+      signature was considered and dropped.) First used by release 0.4.0, where it
       is to be checked in the registry.
 - [x] Automatic dependency updates and a scheduled `cargo deny` run.
 - [x] Notifications about damaged files and feeds that keep failing, as a webhook that other
