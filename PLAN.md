@@ -120,7 +120,7 @@ The promise "readable without Uguisu" is made good and tested.
 ### 0.5 – Web interface
 
 - [x] Episode page: show notes, attachments, media versions, revisions with their differences.
-- [ ] History per podcast: feed snapshots, changes, errors.
+- [~] History per podcast: feed snapshots, changes, errors.
 - [x] Full-text search in the archive over titles and show notes (SQLite FTS5).
 - [ ] Full-text search over transcripts as well.
 - [x] Overview: running, waiting and failed downloads, state of verification, disk usage.
@@ -134,7 +134,7 @@ The promise "readable without Uguisu" is made good and tested.
 
 - [~] Images for x86-64 and ARM64.
 - [ ] Provenance, SBOM and signature for released images.
-- [~] Automatic dependency updates and a scheduled `cargo deny` run.
+- [x] Automatic dependency updates and a scheduled `cargo deny` run.
 - [ ] Notifications about damaged files and feeds that keep failing (webhook, ntfy); optional
       `/metrics`.
 - [x] `uguisu reset-password` for a lost password.
@@ -142,7 +142,7 @@ The promise "readable without Uguisu" is made good and tested.
       in place.)
 - [x] `SECURITY.md`: how to report a problem, what is protected and what is out of scope.
 - [ ] Security review (requests to private networks, paths, XML, headers).
-- [~] Operations guide: reverse proxy examples, backup and restore, moving, upgrading.
+- [x] Operations guide: reverse proxy examples, backup and restore, moving, upgrading.
 - [ ] Faster shutdown (about 2 seconds today) and safe behaviour when stopped mid-download.
 
 ### 1.0 – The finished product

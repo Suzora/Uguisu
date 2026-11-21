@@ -189,6 +189,90 @@ pub fn setup_page(error: Option<&str>) -> Markup {
     )
 }
 
+/// What the source feed of a podcast did over time, and every stored version of it.
+pub fn history_page(
+    podcast: &Podcast,
+    snapshots: &[uguisu_core::model::FeedSnapshot],
+    events: &[uguisu_core::model::HistoryEvent],
+) -> Markup {
+    // Events of the same kind seen at the same check belong together: adding a podcast
+    // brings hundreds of episodes at once.
+    let mut groups: Vec<&[uguisu_core::model::HistoryEvent]> = Vec::new();
+    let mut start = 0;
+    for index in 1..=events.len() {
+        let ends = index == events.len()
+            || events[index].at != events[start].at
+            || events[index].kind != events[start].kind;
+        if ends {
+            groups.push(&events[start..index]);
+            start = index;
+        }
+    }
+    shell(
+        &format!("History of {}", podcast.title),
+        "library",
+        html! {
+            p.muted.small { a href=(format!("/podcasts/{}", podcast.id)) { "← " (podcast.title) } }
+            h1 { "History" }
+            @if let Some(error) = &podcast.last_fetch_error {
+                p.notice.is-error { "The last check of the source feed failed: " (error) }
+            }
+            section.panel {
+                h2 { "What changed in the source feed" }
+                @if groups.is_empty() {
+                    p.muted { "Nothing yet." }
+                }
+                ol.revision-list {
+                    @for group in &groups {
+                        @let first = &group[0];
+                        li {
+                            strong { (format_datetime(first.at)) }
+                            " "
+                            @match first.kind.as_str() {
+                                "added" => span.tag { "New" },
+                                "changed" => span.tag { "Changed" },
+                                _ => span.tag.is-error { "Gone from feed" },
+                            }
+                            @if group.len() > 8 {
+                                span.muted { " " (group.len()) " episodes" }
+                            } @else {
+                                ul.plain {
+                                    @for event in group.iter() {
+                                        li { a href=(format!("/podcasts/{}/episodes/{}", podcast.id, event.episode_id)) { (event.title) } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                @if events.len() >= 500 {
+                    p.muted.small { "Older events are not listed here; they are in the archive." }
+                }
+            }
+            section.panel {
+                h2 { "Stored versions of the source feed" }
+                p.muted.small {
+                    "Every distinct version of the feed is kept exactly as the server sent it. "
+                    (snapshots.len()) @if snapshots.len() == 1 { " version" } @else { " versions" } " so far."
+                }
+                ul.file-list {
+                    @for snapshot in snapshots {
+                        li {
+                            div {
+                                a href=(format!("/podcasts/{}/snapshots/{}", podcast.id, snapshot.id)) download {
+                                    (format_datetime(snapshot.fetched_at))
+                                }
+                                span.muted.small { " · " (format_bytes(snapshot.size)) }
+                                div.muted.small { "BLAKE3 " code { (snapshot.blake3) } }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    )
+}
+
 /// What the status page shows.
 pub struct StatusReport<'a> {
     pub podcasts: &'a [PodcastSummary],
@@ -757,6 +841,7 @@ pub fn podcast_page(
                         button.button.is-quiet type="submit" { "New feed address" }
                     }
                 }
+                p.small { a href=(format!("/podcasts/{}/history", p.id)) { "History of the source feed" } }
                 @let source = uguisu_core::http::redact(&p.feed_url);
                 p.muted.small { "Source: " a href=(source) rel="noreferrer noopener" { (source) } }
             }

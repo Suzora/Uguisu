@@ -138,6 +138,8 @@ pub fn router(state: AppState) -> Router {
         .route("/podcasts/{id}", get(podcast_page))
         .route("/podcasts/{id}/episodes", get(episodes_fragment))
         .route("/podcasts/{id}/episodes/{episode_id}", get(episode_page))
+        .route("/podcasts/{id}/history", get(history_page))
+        .route("/podcasts/{id}/snapshots/{snapshot_id}", get(snapshot_file))
         .route("/podcasts/{id}/refresh", post(refresh_podcast))
         .route("/podcasts/{id}/settings", post(update_settings))
         .route("/podcasts/{id}/token", post(regenerate_token))
@@ -664,6 +666,37 @@ async fn episode_page(
         &state.app.downloading(),
     ))
     .into_response())
+}
+
+/// What the source feed of a podcast did over time.
+async fn history_page(State(state): State<AppState>, Path(id): Path<i64>) -> AppResult {
+    let podcast = state.app.podcast(id).await?.ok_or(AppError::NotFound)?;
+    let snapshots = state.app.snapshots(id).await?;
+    let events = state.app.history(id, 500).await?;
+    Ok(page(ui::history_page(&podcast, &snapshots, &events)).into_response())
+}
+
+/// A stored version of the source feed, exactly as it was fetched. Offered as a download: it
+/// is third-party content and is not to be shown as a page of this site.
+async fn snapshot_file(
+    State(state): State<AppState>,
+    Path((id, snapshot_id)): Path<(i64, i64)>,
+    request: Request,
+) -> AppResult {
+    let snapshot = state
+        .app
+        .snapshot(id, snapshot_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let path = state.app.archive_path(&snapshot.path);
+    let name = snapshot.path.rsplit('/').next().unwrap_or("feed.xml");
+    let mut response = serve_file(&path, "application/xml", request).await?;
+    if let Ok(value) = HeaderValue::from_str(&format!("attachment; filename=\"{name}\"")) {
+        response
+            .headers_mut()
+            .insert(axum::http::header::CONTENT_DISPOSITION, value);
+    }
+    Ok(response)
 }
 
 async fn podcast_page(
@@ -1672,6 +1705,100 @@ mod tests {
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
         let response = attempt("wrong").await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn the_history_of_a_podcast_is_shown() {
+        let (data, router, _) = archive().await;
+        let app = uguisu_core::Uguisu::open(uguisu_core::Config::new(data.path()))
+            .await
+            .unwrap();
+        let pool = app.pool();
+        std::fs::create_dir_all(data.path().join("archive/test/feeds")).unwrap();
+        std::fs::write(
+            data.path()
+                .join("archive/test/feeds/20240101T000000Z-abcd1234.xml"),
+            "<rss>the feed as it was</rss>",
+        )
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO feed_snapshots (id, podcast_id, fetched_at, blake3, size, path) \
+             VALUES (4, 1, 1704067200, 'abcd1234', 29, 'test/feeds/20240101T000000Z-abcd1234.xml')",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO episodes (id, podcast_id, guid, title, dir, meta_hash, first_seen_at, \
+             last_seen_at, removed_at) VALUES \
+             (1, 1, 'a', 'Stayed and changed', 'e1', 'h2', 100, 100, NULL), \
+             (2, 1, 'b', 'Left the feed', 'e2', 'h', 100, 100, 300)",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO episode_revisions (episode_id, seen_at, meta_hash, raw_xml) VALUES \
+             (1, 100, 'h1', '<item/>'), (1, 200, 'h2', '<item/>')",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        let events = app.history(1, 50).await.unwrap();
+        let summary: Vec<(i64, &str, &str)> = events
+            .iter()
+            .map(|event| (event.at, event.kind.as_str(), event.title.as_str()))
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                (300, "removed", "Left the feed"),
+                (200, "changed", "Stayed and changed"),
+                (100, "added", "Left the feed"),
+                (100, "added", "Stayed and changed"),
+            ]
+        );
+
+        let session = crate::auth::create_session(pool).await.unwrap();
+        let get = |address: &'static str, cookie: bool| {
+            let mut request = Request::get(address);
+            if cookie {
+                request = request.header(header::COOKIE, format!("uguisu_session={session}"));
+            }
+            router.clone().oneshot(request.body(Body::empty()).unwrap())
+        };
+        let response = get("/podcasts/1/history", true).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        let page = String::from_utf8_lossy(&body);
+        for expected in [
+            "Left the feed",
+            "Stayed and changed",
+            "/podcasts/1/snapshots/4",
+        ] {
+            assert!(page.contains(expected), "missing: {expected}");
+        }
+
+        // The stored feed is handed out as a file, byte for byte, and only to the owner.
+        let response = get("/podcasts/1/snapshots/4", true).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(
+            response.headers()[header::CONTENT_DISPOSITION]
+                .to_str()
+                .unwrap()
+                .starts_with("attachment")
+        );
+        let body = axum::body::to_bytes(response.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        assert_eq!(&body[..], b"<rss>the feed as it was</rss>");
+        let response = get("/podcasts/1/snapshots/4", false).await.unwrap();
+        assert_ne!(response.status(), StatusCode::OK);
+        let response = get("/podcasts/2/snapshots/4", true).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

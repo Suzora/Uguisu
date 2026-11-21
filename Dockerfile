@@ -2,8 +2,11 @@
 FROM rust:1-bookworm AS build
 WORKDIR /src
 COPY . .
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/src/target \
+# Each platform gets caches of its own: two platforms built at once must not write into the
+# same registry and target directories.
+ARG TARGETARCH
+RUN --mount=type=cache,id=cargo-registry-${TARGETARCH},target=/usr/local/cargo/registry \
+    --mount=type=cache,id=cargo-target-${TARGETARCH},target=/src/target \
     cargo build --release --locked -p uguisu \
     && cp target/release/uguisu /uguisu \
     && mkdir /data

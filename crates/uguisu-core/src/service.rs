@@ -16,7 +16,7 @@ use crate::feed::{self, ParsedFeed, ParsedItem, without_query};
 use crate::http::{build_client, check_url, lend_credentials, parse_user_url, redact};
 use crate::model::{
     Attachment, AttachmentDetail, DamagedFile, DownloadProblem, Episode, EpisodeView, FeedEpisode,
-    MediaFile, Podcast, PodcastSummary, Revision, SearchResult, Stats,
+    FeedSnapshot, HistoryEvent, MediaFile, Podcast, PodcastSummary, Revision, SearchResult, Stats,
 };
 use crate::util::{now, random_token, short_hash, slugify};
 use crate::{db, search};
@@ -727,6 +727,53 @@ impl Uguisu {
     /// The reserve of free disk space that downloads leave untouched, in bytes.
     pub fn space_reserve(&self) -> u64 {
         self.inner.cfg.min_free_space
+    }
+
+    /// The stored versions of a podcast's source feed, newest first.
+    pub async fn snapshots(&self, podcast_id: i64) -> Result<Vec<FeedSnapshot>> {
+        Ok(sqlx::query_as(
+            "SELECT id, fetched_at, blake3, size, path FROM feed_snapshots WHERE podcast_id = ? \
+             ORDER BY fetched_at DESC, id DESC",
+        )
+        .bind(podcast_id)
+        .fetch_all(self.pool())
+        .await?)
+    }
+
+    pub async fn snapshot(
+        &self,
+        podcast_id: i64,
+        snapshot_id: i64,
+    ) -> Result<Option<FeedSnapshot>> {
+        Ok(sqlx::query_as(
+            "SELECT id, fetched_at, blake3, size, path FROM feed_snapshots \
+             WHERE podcast_id = ? AND id = ?",
+        )
+        .bind(podcast_id)
+        .bind(snapshot_id)
+        .fetch_optional(self.pool())
+        .await?)
+    }
+
+    /// What happened to the episodes of a podcast in its source feed, newest first: episodes
+    /// that appeared, entries the publisher changed, episodes that left the feed.
+    pub async fn history(&self, podcast_id: i64, limit: i64) -> Result<Vec<HistoryEvent>> {
+        Ok(sqlx::query_as(
+            "SELECT first_seen_at AS at, 'added' AS kind, id AS episode_id, title FROM episodes \
+             WHERE podcast_id = ?1 \
+             UNION ALL \
+             SELECT r.seen_at, 'changed', e.id, e.title FROM episode_revisions r \
+             JOIN episodes e ON e.id = r.episode_id \
+             WHERE e.podcast_id = ?1 AND r.seen_at > e.first_seen_at \
+             UNION ALL \
+             SELECT removed_at, 'removed', id, title FROM episodes \
+             WHERE podcast_id = ?1 AND removed_at IS NOT NULL \
+             ORDER BY 1 DESC, 3 DESC LIMIT ?2",
+        )
+        .bind(podcast_id)
+        .bind(limit)
+        .fetch_all(self.pool())
+        .await?)
     }
 
     /// Every copy of an episode's media file, oldest first.
