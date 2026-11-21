@@ -134,21 +134,27 @@ fn shell(title: &str, active: &str, content: Markup) -> Markup {
         title,
         "app",
         html! {
+            a.skip-link href="#content" { (t("Skip to the content")) }
             header.topbar {
                 div.topbar-inner {
                     a.brand href="/" { (icon()) span { "Uguisu" } }
-                    nav {
-                        a class=(nav_class("library")) href="/" { (t("Library")) }
-                        a class=(nav_class("add")) href="/add" { (t("Add podcast")) }
-                        a class=(nav_class("status")) href="/status" { (t("Status")) }
-                        a class=(nav_class("settings")) href="/settings" { (t("Settings")) }
+                    nav aria-label=(t("Main")) {
+                        @for (name, address, label) in [
+                            ("library", "/", "Library"),
+                            ("add", "/add", "Add podcast"),
+                            ("status", "/status", "Status"),
+                            ("settings", "/settings", "Settings"),
+                        ] {
+                            a class=(nav_class(name)) href=(address)
+                                aria-current=[(name == active).then_some("page")] { (t(label)) }
+                        }
                     }
                     form.logout method="post" action="/logout" {
                         button.button.is-quiet type="submit" { (t("Sign out")) }
                     }
                 }
             }
-            main.container { (content) }
+            main.container #content tabindex="-1" { (content) }
             footer.footer {
                 "Uguisu " (env!("CARGO_PKG_VERSION")) (t(" · free software under the AGPL-3.0-or-later"))
             }
@@ -644,6 +650,7 @@ pub fn library_page(
                     a.button.is-primary href="/add" { (t("Add your first podcast")) }
                 }
             } @else {
+                h1.visually-hidden { (t("Library")) }
                 form.inline.find method="get" action="/find" role="search" {
                     input type="search" name="q" placeholder=(t("Search titles and show notes in your archive…")) aria-label=(t("Search the archive"));
                     button.button type="submit" { (t("Search")) }
@@ -741,7 +748,7 @@ pub fn add_page(error: Option<&str>, url: &str) -> Markup {
                     h2 { (t("Import OPML")) }
                     p.muted { (t("Bring the subscription list exported from your podcast app.")) }
                     form.inline method="post" action="/opml" enctype="multipart/form-data" {
-                        input type="file" name="file" accept=".opml,.xml,text/xml,application/xml,text/x-opml" required;
+                        input type="file" name="file" aria-label=(t("OPML file")) accept=".opml,.xml,text/xml,application/xml,text/x-opml" required;
                         button.button type="submit" { (t("Import")) }
                     }
                 }
