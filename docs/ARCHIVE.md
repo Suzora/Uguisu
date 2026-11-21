@@ -54,7 +54,8 @@ archive in an older format is brought up to date in the background after the sta
 | 4 | `id` for episodes and files |
 
 The `uguisu.json` next to it holds the secret part of the address of the feed over all podcasts
-(`combined_feed_token`). Like the file of the same name in each podcast's directory it belongs to
+(`combined_feed_token`) and, once they have been changed, the options that podcasts get when
+they are added (`new_podcasts`: `include_removed`, `keep_versions`, `only_new`). Like the file of the same name in each podcast's directory it belongs to
 the installation, not to the record of the sources; leave it out when passing an archive on.
 
 ## Directory names

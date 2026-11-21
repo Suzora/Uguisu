@@ -243,6 +243,19 @@ const GERMAN: &[(&str, &str)] = &[
         "Podcast apps are not affected: feeds are protected by their secret addresses, not by the login.",
         "Podcast-Apps sind nicht betroffen: Feeds sind durch ihre geheimen Adressen geschützt, nicht durch die Anmeldung.",
     ),
+    ("New podcasts", "Neue Podcasts"),
+    (
+        "What a podcast starts with when it is added. Each podcast can be set differently afterwards; podcasts already in the archive are not changed.",
+        "Womit ein Podcast startet, wenn er hinzugefügt wird. Jeder Podcast lässt sich danach einzeln anders einstellen; Podcasts, die schon im Archiv sind, ändern sich nicht.",
+    ),
+    (
+        "Only episodes from the day it is added",
+        "Nur Episoden ab dem Tag des Hinzufügens",
+    ),
+    (
+        "The options for new podcasts are saved.",
+        "Die Optionen für neue Podcasts sind gespeichert.",
+    ),
     ("Language", "Sprache"),
     ("Language of this interface", "Sprache dieser Oberfläche"),
     (

@@ -166,6 +166,7 @@ pub fn router(state: AppState) -> Router {
         .route("/settings/sessions", post(end_other_sessions))
         .route("/settings/notification", post(test_notification))
         .route("/settings/language", post(change_language))
+        .route("/settings/new-podcasts", post(change_new_podcasts))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_login));
 
     let public = Router::new()
@@ -531,16 +532,40 @@ async fn settings_page(
         )),
         Some("sessions") => Some(t("All other devices have been signed out.")),
         Some("language") => Some(t("The language is changed.")),
+        Some("new-podcasts") => Some(t("The options for new podcasts are saved.")),
         _ => None,
     };
     let webhook = state.app.webhook_host();
     Ok(page(ui::settings_page(
         sessions,
+        state.app.new_podcast_defaults().await?,
         webhook.as_deref(),
         notice,
         None,
     ))
     .into_response())
+}
+
+#[derive(Deserialize)]
+struct NewPodcastsForm {
+    include_removed: Option<String>,
+    keep_versions: Option<String>,
+    only_new: Option<String>,
+}
+
+async fn change_new_podcasts(
+    State(state): State<AppState>,
+    Form(form): Form<NewPodcastsForm>,
+) -> AppResult {
+    state
+        .app
+        .set_new_podcast_defaults(uguisu_core::model::NewPodcastDefaults {
+            include_removed: form.include_removed.is_some(),
+            keep_versions: form.keep_versions.is_some(),
+            only_new: form.only_new.is_some(),
+        })
+        .await?;
+    Ok(see_other("/settings?done=new-podcasts"))
 }
 
 /// Sends a test notification and shows whether the receiver accepted it.
@@ -556,6 +581,7 @@ async fn test_notification(State(state): State<AppState>) -> AppResult {
     };
     Ok(page(ui::settings_page(
         sessions,
+        state.app.new_podcast_defaults().await?,
         webhook.as_deref(),
         Some(&outcome),
         None,
@@ -596,6 +622,7 @@ async fn change_password(
             StatusCode::UNPROCESSABLE_ENTITY,
             page(ui::settings_page(
                 sessions,
+                state.app.new_podcast_defaults().await?,
                 state.app.webhook_host().as_deref(),
                 None,
                 Some(&problem),
@@ -657,8 +684,9 @@ async fn library(
     .into_response())
 }
 
-async fn add_page() -> Html<String> {
-    page(ui::add_page(None, ""))
+async fn add_page(State(state): State<AppState>) -> AppResult {
+    let only_new = state.app.new_podcast_defaults().await?.only_new;
+    Ok(page(ui::add_page(None, "", only_new)).into_response())
 }
 
 #[derive(Deserialize)]
@@ -688,7 +716,13 @@ async fn search_provider(
     if let Err(e) = &outcome {
         tracing::warn!("search on {} failed: {e:#}", provider.name());
     }
-    Ok(page(ui::provider_results(provider, outcome.as_deref().ok())).into_response())
+    let only_new = state.app.new_podcast_defaults().await?.only_new;
+    Ok(page(ui::provider_results(
+        provider,
+        outcome.as_deref().ok(),
+        only_new,
+    ))
+    .into_response())
 }
 
 #[derive(Deserialize)]
@@ -699,10 +733,10 @@ struct AddForm {
 }
 
 async fn add_podcast(State(state): State<AppState>, Form(form): Form<AddForm>) -> AppResult {
-    let archive_from = form.only_new.is_some().then(|| {
-        let now = uguisu_core::util::now();
-        now - now.rem_euclid(86_400)
-    });
+    let archive_from = form
+        .only_new
+        .is_some()
+        .then(uguisu_core::service::start_of_today);
     // In a task of its own: a browser that gives up waiting must not stop the work half way,
     // which would leave a podcast without its files written.
     let added = {
@@ -720,7 +754,11 @@ async fn add_podcast(State(state): State<AppState>, Form(form): Form<AddForm>) -
             let message = format!("{e:#}");
             Ok((
                 StatusCode::UNPROCESSABLE_ENTITY,
-                page(ui::add_page(Some(&message), &form.url)),
+                page(ui::add_page(
+                    Some(&message),
+                    &form.url,
+                    form.only_new.is_some(),
+                )),
             )
                 .into_response())
         }
@@ -1013,6 +1051,7 @@ async fn opml_import(State(state): State<AppState>, mut multipart: Multipart) ->
         }
     }
     let content = content.ok_or_else(|| anyhow!("no file uploaded"))?;
+    let only_new = state.app.new_podcast_defaults().await?.only_new;
     let urls = match opml::parse(&content) {
         Ok(urls) if !urls.is_empty() => urls,
         Ok(_) => {
@@ -1021,6 +1060,7 @@ async fn opml_import(State(state): State<AppState>, mut multipart: Multipart) ->
                 page(ui::add_page(
                     Some(t("The file contains no feed addresses.")),
                     "",
+                    only_new,
                 )),
             )
                 .into_response());
@@ -1028,7 +1068,7 @@ async fn opml_import(State(state): State<AppState>, mut multipart: Multipart) ->
         Err(e) => {
             return Ok((
                 StatusCode::UNPROCESSABLE_ENTITY,
-                page(ui::add_page(Some(&format!("{e:#}")), "")),
+                page(ui::add_page(Some(&format!("{e:#}")), "", only_new)),
             )
                 .into_response());
         }
@@ -1686,6 +1726,53 @@ mod tests {
         assert_eq!(choose("xx").await.unwrap().status(), StatusCode::NOT_FOUND);
         assert_eq!(choose("en").await.unwrap().status(), StatusCode::SEE_OTHER);
         assert!(get("/settings").await.contains("Signed-in devices"));
+    }
+
+    #[tokio::test]
+    async fn options_for_new_podcasts_are_set_in_the_settings() {
+        let (data, router, _) = archive().await;
+        let app = uguisu_core::Uguisu::open(uguisu_core::Config::new(data.path()))
+            .await
+            .unwrap();
+        let session = crate::auth::create_session(app.pool()).await.unwrap();
+        let page = |address: &'static str| {
+            let router = router.clone();
+            let session = session.clone();
+            async move {
+                let request = Request::get(address)
+                    .header(header::COOKIE, format!("uguisu_session={session}"))
+                    .body(Body::empty())
+                    .unwrap();
+                let response = router.oneshot(request).await.unwrap();
+                let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap();
+                String::from_utf8(body.to_vec()).unwrap()
+            }
+        };
+        assert!(!page("/add").await.contains("name=\"only_new\" checked"));
+
+        let request = Request::post("/settings/new-podcasts")
+            .header(header::COOKIE, format!("uguisu_session={session}"))
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .header("sec-fetch-site", "same-origin")
+            .body(Body::from("keep_versions=on&only_new=on"))
+            .unwrap();
+        let response = router.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_eq!(
+            app.new_podcast_defaults().await.unwrap(),
+            uguisu_core::model::NewPodcastDefaults {
+                include_removed: false,
+                keep_versions: true,
+                only_new: true,
+            }
+        );
+        // The form for adding a podcast starts from the chosen option.
+        assert!(page("/add").await.contains("name=\"only_new\" checked"));
+        let settings = page("/settings").await;
+        assert!(settings.contains("name=\"keep_versions\" checked"));
+        assert!(!settings.contains("name=\"include_removed\" checked"));
     }
 
     #[tokio::test]
