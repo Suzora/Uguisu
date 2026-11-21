@@ -40,13 +40,31 @@ fn is_public_v4(ip: Ipv4Addr) -> bool {
 
 fn is_public_v6(ip: Ipv6Addr) -> bool {
     let s = ip.segments();
+    // Addresses that carry an IPv4 address inside are judged by that address: a gateway
+    // would deliver the request there.
+    let embedded = |high: u16, low: u16| {
+        let [a, b] = high.to_be_bytes();
+        let [c, d] = low.to_be_bytes();
+        is_public_v4(Ipv4Addr::new(a, b, c, d))
+    };
+    if s[0] == 0x2002 {
+        return embedded(s[1], s[2]); // 6to4
+    }
+    if s[0] == 0x0064 && s[1] == 0xff9b && s[2..6] == [0, 0, 0, 0] {
+        return embedded(s[6], s[7]); // NAT64, well-known prefix
+    }
     !(ip.is_loopback()
         || ip.is_unspecified()
         || ip.is_multicast()
+        || s[..6] == [0, 0, 0, 0, 0, 0] // ::/96, IPv4-compatible and other reserved addresses
         || (s[0] & 0xfe00) == 0xfc00 // unique local
         || (s[0] & 0xffc0) == 0xfe80 // link local
+        || (s[0] & 0xffc0) == 0xfec0 // site local (deprecated)
+        || (s[0] == 0x2001 && s[1] < 0x0200) // 2001::/23: Teredo and other protocol ranges
         || (s[0] == 0x2001 && s[1] == 0x0db8) // documentation
-        || (s[0] == 0x0064 && s[1] == 0xff9b)) // NAT64
+        || (s[0] == 0x3fff && s[1] < 0x1000) // 3fff::/20, documentation
+        || (s[0] == 0x0064 && s[1] == 0xff9b) // NAT64, local-use prefixes
+        || (s[0] == 0x0100 && s[1..4] == [0, 0, 0])) // 100::/64, discard only
 }
 
 /// Checks scheme and, for IP literals, the address itself. Host names are checked when resolved.
@@ -233,13 +251,28 @@ mod tests {
             "fd00::1",
             "fe80::1",
             "::ffff:10.0.0.1",
+            "::10.0.0.1",
+            "2002:7f00:1::1",
+            "2002:c0a8:1::",
+            "64:ff9b::10.0.0.1",
+            "64:ff9b:1::1",
+            "2001::1",
+            "fec0::1",
+            "100::1",
         ] {
             assert!(
                 !is_public_ip(private.parse().unwrap()),
                 "{private} must be blocked"
             );
         }
-        for public in ["1.1.1.1", "93.184.216.34", "2606:4700::1111"] {
+        for public in [
+            "1.1.1.1",
+            "93.184.216.34",
+            "2606:4700::1111",
+            "2001:4860:4860::8888",
+            "2002:101:101::1",
+            "64:ff9b::1.1.1.1",
+        ] {
             assert!(
                 is_public_ip(public.parse().unwrap()),
                 "{public} must be allowed"

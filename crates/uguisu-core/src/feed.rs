@@ -359,6 +359,57 @@ pub fn parse_duration(input: &str) -> Option<i64> {
     Some(total)
 }
 
+/// How much text the entities a document declares itself may add when they are expanded.
+const MAX_ENTITY_EXPANSION: usize = 16 * 1024 * 1024;
+
+/// Refuses documents whose own entity declarations would blow them up when parsed.
+///
+/// A document may declare entities (`<!ENTITY a "…">`) and refer to them as often as it likes.
+/// The parser stops entities that refer to each other in depth, but not one long entity that is
+/// referred to many thousand times: a few hundred kilobytes then expand to gigabytes. The
+/// estimate here is deliberately coarse and errs on the side of refusing: every reference is
+/// counted as if it expanded to the whole declaration block.
+pub fn check_entities(text: &str) -> Result<()> {
+    const DECLARATION: &str = "<!ENTITY";
+    let (Some(first), Some(last)) = (text.find(DECLARATION), text.rfind(DECLARATION)) else {
+        return Ok(());
+    };
+    // The block of declarations ends with the value of the last one: the text between the
+    // first quotation mark after it and the next mark of the same kind.
+    let after = last + DECLARATION.len();
+    let end = text[after..]
+        .char_indices()
+        .find(|(_, c)| matches!(c, '"' | '\''))
+        .and_then(|(open, quote)| {
+            let value = after + open + 1;
+            text[value..].find(quote).map(|close| value + close)
+        })
+        .unwrap_or(text.len());
+    let declarations = &text[first..end];
+    if own_references(declarations) > 0 {
+        bail!("the document declares entities that refer to other entities");
+    }
+    let references = own_references(&text[end..]);
+    if references.saturating_mul(declarations.len()) > MAX_ENTITY_EXPANSION {
+        bail!("the document expands its own entities too often");
+    }
+    Ok(())
+}
+
+/// Counts references to entities other than the five every XML document knows and character
+/// references such as `&#160;`.
+fn own_references(text: &str) -> usize {
+    text.match_indices('&')
+        .filter(|(at, _)| {
+            let rest = &text[at + 1..];
+            !(rest.starts_with('#')
+                || ["amp;", "lt;", "gt;", "quot;", "apos;"]
+                    .iter()
+                    .any(|known| rest.starts_with(known)))
+        })
+        .count()
+}
+
 pub fn parse(bytes: &[u8]) -> Result<ParsedFeed> {
     let text = String::from_utf8_lossy(bytes);
     let text = text.trim_start_matches('\u{feff}');
@@ -366,6 +417,7 @@ pub fn parse(bytes: &[u8]) -> Result<ParsedFeed> {
         allow_dtd: true,
         ..ParsingOptions::default()
     };
+    check_entities(text)?;
     let doc = Document::parse_with_options(text, options).context("the feed is not valid XML")?;
     let root = doc.root_element();
     let namespace = root.tag_name().namespace();
@@ -590,6 +642,49 @@ fn parse_atom_entry(entry: Node, source: &str) -> ParsedItem {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn entities_that_would_blow_up_are_refused() {
+        let feed = |declarations: &str, title: &str| {
+            format!(
+                "<?xml version=\"1.0\"?><!DOCTYPE rss [{declarations}]>\
+                 <rss><channel><title>{title}</title></channel></rss>"
+            )
+        };
+        // Ordinary use: a few named characters.
+        let fine = feed(
+            "<!ENTITY nbsp \"&#160;\"><!ENTITY auml \"&#228;\">",
+            "M&auml;rchen&nbsp;&amp; mehr",
+        );
+        assert_eq!(
+            super::parse(fine.as_bytes()).unwrap().title,
+            "Märchen\u{a0}& mehr"
+        );
+
+        // One long entity, referred to thousands of times: 300 KB that would become 300 MB.
+        let long = format!("<!ENTITY a \"{}\">", "x".repeat(100_000));
+        let many = feed(&long, &"&a;".repeat(3_000));
+        let error = super::parse(many.as_bytes()).unwrap_err();
+        assert!(format!("{error:#}").contains("too often"), "{error:#}");
+
+        // Entities built from entities.
+        let nested = feed("<!ENTITY a \"ha\"><!ENTITY b \"&a;&a;\">", "&b;");
+        assert!(super::parse(nested.as_bytes()).is_err());
+
+        // A second declaration block hidden behind text that looks like the end of the first.
+        let hidden = feed(
+            &format!("<!ENTITY z \"]>\"><!ENTITY a \"{}\">", "x".repeat(100_000)),
+            &"&a;".repeat(3_000),
+        );
+        assert!(super::parse(hidden.as_bytes()).is_err());
+
+        // Without declarations nothing is counted, however many references there are.
+        let plain = format!(
+            "<rss><channel><title>{}</title></channel></rss>",
+            "&amp;".repeat(50_000)
+        );
+        assert!(super::parse(plain.as_bytes()).is_ok());
+    }
+
     use super::*;
 
     const FEED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>

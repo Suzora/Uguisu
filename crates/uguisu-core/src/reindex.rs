@@ -71,6 +71,12 @@ async fn subdirectories(dir: &Path) -> Result<Vec<String>> {
     Ok(names)
 }
 
+/// A name from a file in the archive must be a file in the same directory, nothing else. An
+/// archive may come from elsewhere, and what it says must not lead out of it.
+fn is_plain_name(name: &str) -> bool {
+    !(name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.'))
+}
+
 async fn file_names(dir: &Path) -> Result<Vec<String>> {
     let mut names = Vec::new();
     let Ok(mut entries) = tokio::fs::read_dir(dir).await else {
@@ -265,6 +271,9 @@ impl Uguisu {
             else {
                 continue;
             };
+            if !is_plain_name(file) {
+                continue;
+            }
             let Ok(raw_xml) = tokio::fs::read_to_string(path.join(file)).await else {
                 continue;
             };
@@ -326,8 +335,7 @@ impl Uguisu {
             ) else {
                 continue;
             };
-            // A name is a file in this directory, nothing else.
-            if name.contains(['/', '\\']) || name.starts_with('.') {
+            if !is_plain_name(name) {
                 continue;
             }
             let present = tokio::fs::try_exists(path.join(name))

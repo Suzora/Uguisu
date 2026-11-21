@@ -140,7 +140,9 @@ The promise "readable without Uguisu" is made good and tested.
 - [x] Login: slow down repeated wrong passwords. (`Secure` cookies behind HTTPS were already
       in place.)
 - [x] `SECURITY.md`: how to report a problem, what is protected and what is out of scope.
-- [ ] Security review (requests to private networks, paths, XML, headers).
+- [~] Security review (requests to private networks, paths, XML, headers). Found and fixed: a
+      feed could exhaust memory through its own XML entities; IPv6 addresses that lead to
+      private IPv4 addresses were let through; `reindex` followed file names out of the archive.
 - [x] Operations guide: reverse proxy examples, backup and restore, moving, upgrading.
 - [ ] Faster shutdown (about 2 seconds today) and safe behaviour when stopped mid-download.
 
