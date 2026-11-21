@@ -10,7 +10,7 @@ you already use (AntennaPod, PinePods, Apple Podcasts, …) plays from your arch
 
 Uguisu is not a player and does not sync listening progress. That is the job of your podcast app.
 
-> Status: early development (0.1). The archive format may still change.
+> Status: early development (0.3). The archive format may still change before 1.0.
 
 ## What it does
 
