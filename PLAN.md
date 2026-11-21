@@ -110,7 +110,7 @@ The promise "readable without Uguisu" is made good and tested.
       need it.
 - [x] Cover thumbnails for the web interface. Originals stay untouched in the archive.
 - [x] One combined feed over all podcasts.
-- [~] Access to removed episodes and earlier media versions. Removed episodes stay in the
+- [x] Access to removed episodes and earlier media versions. Removed episodes stay in the
       published feed (an option per podcast). Earlier versions of a media file each have an
       address of their own, linked from the episode page; they are not put into the feed,
       where an app would show them as duplicate episodes.
@@ -136,11 +136,12 @@ The promise "readable without Uguisu" is made good and tested.
 
 ### 0.6 – Operation and security
 
-- [x] Images for x86-64 and ARM64. The ARM image is built by emulation, which takes about
-      40 minutes per release.
+- [x] Images for x86-64 and ARM64. Both are compiled on the build machine, the ARM one by
+      cross-compiling; the finished ARM image is started once in an emulator before a release
+      is published.
 - [x] Provenance and SBOM for released images, attached to the image in the registry. (A
       signature was considered and dropped.) First used by the release after 0.3.0, where it
-      is to be checked in the registry; the build with these options takes about 75 minutes.
+      is to be checked in the registry.
 - [x] Automatic dependency updates and a scheduled `cargo deny` run.
 - [x] Notifications about damaged files and feeds that keep failing, as a webhook that other
       services can be attached to (`UGUISU_WEBHOOK_URL`).
