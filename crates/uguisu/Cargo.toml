@@ -12,7 +12,7 @@ publish.workspace = true
 [dependencies]
 uguisu-core = { path = "../uguisu-core" }
 anyhow.workspace = true
-argon2 = "0.5"
+argon2 = "0.6"
 axum = { version = "0.8", features = ["multipart"] }
 blake3.workspace = true
 clap = { version = "4", features = ["derive", "env"] }
@@ -23,7 +23,7 @@ serde.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
 tower = { version = "0.5", features = ["util"] }
-tower-http = { version = "0.6", features = ["compression-br", "compression-gzip", "fs", "trace"] }
+tower-http = { version = "0.7", features = ["compression-br", "compression-gzip", "fs", "trace"] }
 tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
