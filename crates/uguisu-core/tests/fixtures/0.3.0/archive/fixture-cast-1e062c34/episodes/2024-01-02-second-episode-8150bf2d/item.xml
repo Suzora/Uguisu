@@ -1,0 +1,4 @@
+<item><title>Second episode</title><guid>fixture-2</guid><pubDate>Tue, 02 Jan 2024 10:00:00 +0000</pubDate>
+<description><![CDATA[<p>Notes about the <b>heron</b>.</p>]]></description>
+<podcast:transcript url="http://127.0.0.1:8496/talk.vtt" type="text/vtt"/>
+<enclosure url="http://127.0.0.1:8496/audio/2.mp3" type="audio/mpeg" length="20"/></item>

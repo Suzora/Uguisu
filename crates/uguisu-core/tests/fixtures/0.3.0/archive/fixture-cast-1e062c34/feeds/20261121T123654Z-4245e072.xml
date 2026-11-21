@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:podcast="https://podcastindex.org/namespace/1.0">
+<channel><title>Fixture Cast</title><link>https://example.org</link><description>An archive written by Uguisu 0.3.0</description>
+<itunes:author>Fixture Author</itunes:author>
+<item><title>Second episode</title><guid>fixture-2</guid><pubDate>Tue, 02 Jan 2024 10:00:00 +0000</pubDate>
+<description><![CDATA[<p>Notes about the <b>heron</b>.</p>]]></description>
+<podcast:transcript url="http://127.0.0.1:8496/talk.vtt" type="text/vtt"/>
+<enclosure url="http://127.0.0.1:8496/audio/2.mp3" type="audio/mpeg" length="20"/></item>
+<item><title>First episode</title><guid>fixture-1</guid><pubDate>Mon, 01 Jan 2024 10:00:00 +0000</pubDate>
+<description>Notes about the wren.</description>
+<enclosure url="http://127.0.0.1:8496/audio/1.mp3" type="audio/mpeg" length="20"/></item>
+</channel></rss>

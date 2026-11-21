@@ -155,9 +155,11 @@ The promise "readable without Uguisu" is made good and tested.
 ### 1.0 – The finished product
 
 - [ ] Archive format and feed addresses are frozen. Later versions read 1.0 archives.
-- [ ] Migrations are tested from every released version.
-- [ ] Complete documentation: installation, operation, archive format, FAQ, legal notes.
-- [ ] `CHANGELOG.md`, `CONTRIBUTING.md`, versioning rules (SemVer).
+- [~] Migrations are tested from every released version: a real data directory written by
+      each release is kept as a test fixture and must open, verify, publish and reindex with
+      the current code. So far: 0.3.0.
+- [~] Complete documentation: installation, operation, archive format, FAQ, legal notes.
+- [~] `CHANGELOG.md`, `CONTRIBUTING.md`, versioning rules (SemVer).
 
 Uguisu is "finished" when:
 
