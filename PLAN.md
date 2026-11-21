@@ -123,7 +123,7 @@ The promise "readable without Uguisu" is made good and tested.
 - [ ] History per podcast: feed snapshots, changes, errors.
 - [x] Full-text search in the archive over titles and show notes (SQLite FTS5).
 - [ ] Full-text search over transcripts as well.
-- [~] Overview: running, waiting and failed downloads, state of verification, disk usage.
+- [x] Overview: running, waiting and failed downloads, state of verification, disk usage.
 - [x] Settings: change the password, sign out other devices.
 - [ ] Settings: defaults for new podcasts.
 - [ ] German and English.
@@ -138,8 +138,10 @@ The promise "readable without Uguisu" is made good and tested.
 - [ ] Notifications about damaged files and feeds that keep failing (webhook, ntfy); optional
       `/metrics`.
 - [x] `uguisu reset-password` for a lost password.
-- [ ] Login: limit failed attempts, `Secure` cookies behind HTTPS.
-- [ ] Security review (requests to private networks, paths, XML, headers) and `SECURITY.md`.
+- [~] Login: slow down repeated wrong passwords. (`Secure` cookies behind HTTPS were already
+      in place.)
+- [~] `SECURITY.md`: how to report a problem, what is protected and what is out of scope.
+- [ ] Security review (requests to private networks, paths, XML, headers).
 - [ ] Operations guide: reverse proxy examples, backup and restore, moving, upgrading.
 - [ ] Faster shutdown (about 2 seconds today) and safe behaviour when stopped mid-download.
 
