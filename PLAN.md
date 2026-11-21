@@ -63,8 +63,6 @@ Everything a podcast offers ends up in the archive.
       (`<link rel="alternate">`), instead of reporting an error.
 - [x] Archive images embedded in show notes and point the published show notes at the copies.
 - [x] Several transcripts per episode, in whatever formats the feed offers.
-- [ ] `podcast:alternateEnclosure`: further versions of an episode (other formats, video). These
-      can be large, so this becomes an option per podcast.
 - [x] Resume interrupted downloads with range requests.
 - [x] Be polite to sources: a pause between requests per host, respect `Retry-After`.
 - [x] Feeds that need credentials (HTTP Basic, for example paid feeds). Credentials never appear
@@ -120,23 +118,24 @@ The promise "readable without Uguisu" is made good and tested.
 ### 0.5 – Web interface
 
 - [x] Episode page: show notes, attachments, media versions, revisions with their differences.
-- [~] History per podcast: feed snapshots, changes, errors.
+- [x] History per podcast: feed snapshots, changes, errors.
 - [x] Full-text search in the archive over titles and show notes (SQLite FTS5).
 - [ ] Full-text search over transcripts as well.
 - [x] Overview: running, waiting and failed downloads, state of verification, disk usage.
 - [x] Settings: change the password, sign out other devices.
 - [ ] Settings: defaults for new podcasts.
-- [ ] German and English.
+- [ ] German and English, chosen in the settings.
 - [ ] Accessibility (keyboard, contrast, screen readers) and a layout for phones.
 - [ ] Final logo and icons. The current logo is provisional.
 
 ### 0.6 – Operation and security
 
-- [~] Images for x86-64 and ARM64.
-- [ ] Provenance, SBOM and signature for released images.
+- [x] Images for x86-64 and ARM64. The ARM image is built by emulation, which takes about
+      40 minutes per release.
+- [ ] Provenance and SBOM for released images. (A signature was considered and dropped.)
 - [x] Automatic dependency updates and a scheduled `cargo deny` run.
-- [ ] Notifications about damaged files and feeds that keep failing (webhook, ntfy); optional
-      `/metrics`.
+- [ ] Notifications about damaged files and feeds that keep failing, as a webhook that other
+      services can be attached to.
 - [x] `uguisu reset-password` for a lost password.
 - [x] Login: slow down repeated wrong passwords. (`Secure` cookies behind HTTPS were already
       in place.)
@@ -166,6 +165,8 @@ Ideas without commitment:
 - Taking over libraries from PinePods or Audiobookshelf.
 - Faster updates through Podping or WebSub.
 - Archiving the podcast's web pages along with the episodes.
+- `podcast:alternateEnclosure`: further versions of an episode (other formats, video), as an
+  option per podcast. These files can be large.
 - Multiple users – only if a real need shows up.
 
 ## 5. How the work is done
