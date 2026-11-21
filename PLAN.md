@@ -135,7 +135,8 @@ The promise "readable without Uguisu" is made good and tested.
 
 - [x] Images for x86-64 and ARM64. The ARM image is built by emulation, which takes about
       40 minutes per release.
-- [ ] Provenance and SBOM for released images. (A signature was considered and dropped.)
+- [~] Provenance and SBOM for released images, attached to the image in the registry. (A
+      signature was considered and dropped.) First used by the release after 0.3.0.
 - [x] Automatic dependency updates and a scheduled `cargo deny` run.
 - [x] Notifications about damaged files and feeds that keep failing, as a webhook that other
       services can be attached to (`UGUISU_WEBHOOK_URL`).
@@ -147,16 +148,18 @@ The promise "readable without Uguisu" is made good and tested.
       feed could exhaust memory through its own XML entities; IPv6 addresses that lead to
       private IPv4 addresses were let through; `reindex` followed file names out of the archive.
 - [x] Operations guide: reverse proxy examples, backup and restore, moving, upgrading.
-- [~] Stopping: at most a few seconds, and safe in the middle of a download. Measured: under
+- [x] Stopping: at most a few seconds, and safe in the middle of a download. Measured: under
       0.2 s when idle or downloading; a download interrupted by a stop or a kill is continued
       and ends byte-identical. Requests still running are cut off after three seconds.
 
 ### 1.0 – The finished product
 
 - [ ] Archive format and feed addresses are frozen. Later versions read 1.0 archives.
-- [ ] Migrations are tested from every released version.
-- [ ] Complete documentation: installation, operation, archive format, FAQ, legal notes.
-- [ ] `CHANGELOG.md`, `CONTRIBUTING.md`, versioning rules (SemVer).
+- [~] Migrations are tested from every released version: a real data directory written by
+      each release is kept as a test fixture and must open, verify, publish and reindex with
+      the current code. So far: 0.3.0.
+- [~] Complete documentation: installation, operation, archive format, FAQ, legal notes.
+- [~] `CHANGELOG.md`, `CONTRIBUTING.md`, versioning rules (SemVer).
 
 Uguisu is "finished" when:
 

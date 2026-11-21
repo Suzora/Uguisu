@@ -2033,3 +2033,78 @@ async fn transcripts_are_searchable() {
         1
     );
 }
+
+/// Copies a directory with everything in it.
+fn copy_directory(from: &std::path::Path, to: &std::path::Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_directory(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}
+
+/// Archives written by released versions keep working. The fixtures are real data
+/// directories, made with the released program: a podcast with two episodes and a transcript.
+#[tokio::test]
+async fn archives_of_released_versions_are_upgraded() {
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let mut versions: Vec<String> = std::fs::read_dir(&fixtures)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    versions.sort();
+    assert!(versions.contains(&"0.3.0".to_string()));
+
+    for version in versions {
+        let data = tempfile::tempdir().unwrap();
+        copy_directory(&fixtures.join(&version), data.path());
+        let config = || {
+            let mut cfg = Config::new(data.path());
+            cfg.min_free_space = 0;
+            cfg
+        };
+
+        // The database is migrated on opening.
+        let uguisu = Uguisu::open(config()).await.unwrap();
+        let podcasts = uguisu.podcasts().await.unwrap();
+        assert_eq!(podcasts.len(), 1, "{version}");
+        let podcast = &podcasts[0].podcast;
+        assert_eq!(podcast.title, "Fixture Cast");
+        assert_eq!(podcasts[0].archived_count, 2, "{version}");
+
+        // Every file still matches the checksum recorded back then.
+        let report = uguisu.verify().await.unwrap();
+        assert_eq!((report.checked, report.ok), (3, 3), "{version}");
+
+        // The feed is published under the address it had.
+        let published = uguisu.feed_episodes(podcast.id).await.unwrap();
+        assert_eq!(published.len(), 2, "{version}");
+        let xml = rss::build_feed(podcast, &published, &[], "https://archive.example");
+        assert_valid_feed(&xml);
+        assert!(xml.contains(&podcast.feed_token));
+
+        // What newer versions added works on the old data: search, also in the transcript.
+        uguisu.sync_search_index().await.unwrap();
+        assert_eq!(uguisu.search_episodes("heron", 5).await.unwrap().len(), 1);
+        assert_eq!(uguisu.search_episodes("bittern", 5).await.unwrap().len(), 1);
+
+        // And the archive alone is enough: without the database everything is found again.
+        let token = podcast.feed_token.clone();
+        uguisu.pool().close().await;
+        drop(uguisu);
+        for name in ["uguisu.db", "uguisu.db-wal", "uguisu.db-shm"] {
+            let _ = std::fs::remove_file(data.path().join(name));
+        }
+        let uguisu = Uguisu::open(config()).await.unwrap();
+        uguisu.reindex().await.unwrap();
+        let podcasts = uguisu.podcasts().await.unwrap();
+        assert_eq!(podcasts[0].archived_count, 2, "{version}");
+        assert_eq!(podcasts[0].podcast.feed_token, token, "{version}");
+        assert_eq!(uguisu.search_episodes("bittern", 5).await.unwrap().len(), 1);
+    }
+}
