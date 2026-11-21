@@ -95,6 +95,12 @@ pub fn router(state: AppState) -> Router {
         .route("/opml", get(opml_export).post(opml_import))
         .route("/logout", post(logout))
         .route("/find", get(find))
+        .route("/status", get(status_page))
+        .route("/status/retry", post(retry_all))
+        .route(
+            "/podcasts/{id}/episodes/{episode_id}/retry",
+            post(retry_episode),
+        )
         .route("/settings", get(settings_page))
         .route("/settings/password", post(change_password))
         .route("/settings/sessions", post(end_other_sessions))
@@ -336,6 +342,43 @@ async fn start_session(state: &AppState, headers: &HeaderMap) -> AppResult {
         ],
     )
         .into_response())
+}
+
+/// What the archive is doing and what needs attention.
+async fn status_page(State(state): State<AppState>) -> AppResult {
+    let app = &state.app;
+    let podcasts = app.podcasts().await?;
+    let stats = app.stats().await?;
+    let problems = app.download_problems(200).await?;
+    let damaged = app.damaged_files(200).await?;
+    Ok(page(ui::status_page(&ui::StatusReport {
+        podcasts: &podcasts,
+        stats: &stats,
+        problems: &problems,
+        damaged: &damaged,
+        downloading: app.downloading().len(),
+        free_space: app.free_space(),
+        reserve: app.space_reserve(),
+    }))
+    .into_response())
+}
+
+async fn retry_all(State(state): State<AppState>) -> AppResult {
+    state.app.retry_all().await?;
+    Ok(see_other("/status"))
+}
+
+async fn retry_episode(
+    State(state): State<AppState>,
+    Path((id, episode_id)): Path<(i64, i64)>,
+) -> AppResult {
+    state
+        .app
+        .episode(id, episode_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    state.app.retry_episode(episode_id).await?;
+    Ok(see_other(&format!("/podcasts/{id}/episodes/{episode_id}")))
 }
 
 #[derive(Deserialize, Default)]
@@ -1436,6 +1479,79 @@ mod tests {
         // Nothing typed, and something that would be query syntax elsewhere.
         get("/find").await;
         get("/find?q=%22%3Cscript%3E+OR+*").await;
+    }
+
+    #[tokio::test]
+    async fn the_status_page_shows_what_needs_attention() {
+        let (data, router, _) = archive().await;
+        let app = uguisu_core::Uguisu::open(uguisu_core::Config::new(data.path()))
+            .await
+            .unwrap();
+        let pool = app.pool();
+        sqlx::query("UPDATE podcasts SET last_fetch_error = 'the feed server answered 404'")
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO episodes (id, podcast_id, guid, title, published_at, enclosure_url, dir, \
+             meta_hash, first_seen_at, last_seen_at, download_attempts, download_error) VALUES \
+             (1, 1, 'a', 'Gave up', 0, 'https://x.test/a.mp3', 'e1', 'h', 0, 0, 5, 'the media server answered 410'), \
+             (2, 1, 'b', 'Broken copy', 0, 'https://x.test/b.mp3', 'e2', 'h', 0, 0, 0, NULL)",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO media_files (episode_id, path, size, blake3, mime, source_url, \
+             downloaded_at, verified_at, status) \
+             VALUES (2, 'test/episodes/e2/media.mp3', 1, 'b', 'audio/mpeg', 's', 0, 0, 'corrupt')",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        let session = crate::auth::create_session(pool).await.unwrap();
+        let send = |request: axum::http::request::Builder| {
+            let request = request
+                .header(header::COOKIE, format!("uguisu_session={session}"))
+                .header("sec-fetch-site", "same-origin")
+                .body(Body::empty())
+                .unwrap();
+            router.clone().oneshot(request)
+        };
+
+        let response = send(Request::get("/status")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        let page = String::from_utf8_lossy(&body);
+        for expected in [
+            "the feed server answered 404",
+            "Gave up",
+            "the media server answered 410",
+            "Broken copy",
+            "/podcasts/1/episodes/2",
+        ] {
+            assert!(page.contains(expected), "missing: {expected}");
+        }
+
+        // Trying again gives the episode its attempts back.
+        let response = send(Request::post("/podcasts/1/episodes/1/retry"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        let (attempts, error): (i64, Option<String>) =
+            sqlx::query_as("SELECT download_attempts, download_error FROM episodes WHERE id = 1")
+                .fetch_one(pool)
+                .await
+                .unwrap();
+        assert_eq!((attempts, error), (0, None));
+        let response = send(Request::post("/podcasts/2/episodes/1/retry"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let response = send(Request::post("/status/retry")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
     }
 
     #[tokio::test]

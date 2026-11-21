@@ -121,9 +121,9 @@ The promise "readable without Uguisu" is made good and tested.
 
 - [x] Episode page: show notes, attachments, media versions, revisions with their differences.
 - [ ] History per podcast: feed snapshots, changes, errors.
-- [~] Full-text search in the archive over titles and show notes (SQLite FTS5).
+- [x] Full-text search in the archive over titles and show notes (SQLite FTS5).
 - [ ] Full-text search over transcripts as well.
-- [ ] Overview: running, waiting and failed downloads, state of verification, disk usage.
+- [~] Overview: running, waiting and failed downloads, state of verification, disk usage.
 - [x] Settings: change the password, sign out other devices.
 - [ ] Settings: defaults for new podcasts.
 - [ ] German and English.

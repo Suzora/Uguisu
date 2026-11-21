@@ -182,3 +182,27 @@ pub struct SearchResult {
     /// characters U+0001 and U+0002.
     pub snippet: String,
 }
+
+/// An episode whose download has failed at least once and is not archived.
+#[derive(Debug, Clone, FromRow)]
+pub struct DownloadProblem {
+    pub episode_id: i64,
+    pub podcast_id: i64,
+    pub podcast_title: String,
+    pub title: String,
+    pub download_attempts: i64,
+    pub download_error: String,
+    pub next_attempt_at: i64,
+}
+
+/// An archived file that is damaged or missing.
+#[derive(Debug, Clone, FromRow)]
+pub struct DamagedFile {
+    pub episode_id: i64,
+    pub podcast_id: i64,
+    pub podcast_title: String,
+    pub title: String,
+    pub path: String,
+    /// `corrupt` or `missing`.
+    pub status: String,
+}

@@ -15,8 +15,8 @@ use crate::archive::{self, write_atomic};
 use crate::feed::{self, ParsedFeed, ParsedItem, without_query};
 use crate::http::{build_client, check_url, lend_credentials, parse_user_url, redact};
 use crate::model::{
-    Attachment, AttachmentDetail, Episode, EpisodeView, FeedEpisode, MediaFile, Podcast,
-    PodcastSummary, Revision, SearchResult, Stats,
+    Attachment, AttachmentDetail, DamagedFile, DownloadProblem, Episode, EpisodeView, FeedEpisode,
+    MediaFile, Podcast, PodcastSummary, Revision, SearchResult, Stats,
 };
 use crate::util::{now, random_token, short_hash, slugify};
 use crate::{db, search};
@@ -650,6 +650,83 @@ impl Uguisu {
         .bind(limit)
         .fetch_all(self.pool())
         .await?)
+    }
+
+    /// Episodes whose download has failed and that are not archived, those that have given up
+    /// first.
+    pub async fn download_problems(&self, limit: i64) -> Result<Vec<DownloadProblem>> {
+        Ok(sqlx::query_as(
+            "SELECT e.id AS episode_id, e.podcast_id, p.title AS podcast_title, e.title, \
+             e.download_attempts, e.download_error, e.next_attempt_at \
+             FROM episodes e JOIN podcasts p ON p.id = e.podcast_id \
+             WHERE e.download_error IS NOT NULL AND NOT EXISTS \
+               (SELECT 1 FROM media_files m WHERE m.episode_id = e.id AND m.status = 'ok') \
+             ORDER BY e.download_attempts DESC, e.published_at DESC LIMIT ?",
+        )
+        .bind(limit)
+        .fetch_all(self.pool())
+        .await?)
+    }
+
+    /// Archived files that failed their check or are gone.
+    pub async fn damaged_files(&self, limit: i64) -> Result<Vec<DamagedFile>> {
+        Ok(sqlx::query_as(
+            "SELECT e.id AS episode_id, e.podcast_id, p.title AS podcast_title, e.title, \
+             f.path, f.status FROM \
+               (SELECT episode_id, path, status FROM media_files WHERE status != 'ok' \
+                UNION ALL \
+                SELECT episode_id, path, status FROM attachments \
+                WHERE status IN ('corrupt', 'missing') AND path IS NOT NULL) f \
+             JOIN episodes e ON e.id = f.episode_id JOIN podcasts p ON p.id = e.podcast_id \
+             ORDER BY p.title, e.published_at DESC LIMIT ?",
+        )
+        .bind(limit)
+        .fetch_all(self.pool())
+        .await?)
+    }
+
+    /// Gives an episode whose downloads have failed a fresh set of attempts, starting now.
+    pub async fn retry_episode(&self, episode_id: i64) -> Result<()> {
+        sqlx::query(
+            "UPDATE episodes SET download_attempts = 0, next_attempt_at = 0, download_error = NULL \
+             WHERE id = ?",
+        )
+        .bind(episode_id)
+        .execute(self.pool())
+        .await?;
+        sqlx::query(
+            "UPDATE attachments SET attempts = 0, next_attempt_at = 0, error = NULL \
+             WHERE episode_id = ? AND status != 'ok'",
+        )
+        .bind(episode_id)
+        .execute(self.pool())
+        .await?;
+        self.inner.wake_downloader.notify_one();
+        Ok(())
+    }
+
+    /// The same for every episode that has failed.
+    pub async fn retry_all(&self) -> Result<u64> {
+        let episodes = sqlx::query(
+            "UPDATE episodes SET download_attempts = 0, next_attempt_at = 0, download_error = NULL \
+             WHERE download_error IS NOT NULL",
+        )
+        .execute(self.pool())
+        .await?
+        .rows_affected();
+        sqlx::query(
+            "UPDATE attachments SET attempts = 0, next_attempt_at = 0, error = NULL \
+             WHERE status != 'ok' AND error IS NOT NULL",
+        )
+        .execute(self.pool())
+        .await?;
+        self.inner.wake_downloader.notify_one();
+        Ok(episodes)
+    }
+
+    /// The reserve of free disk space that downloads leave untouched, in bytes.
+    pub fn space_reserve(&self) -> u64 {
+        self.inner.cfg.min_free_space
     }
 
     /// Every copy of an episode's media file, oldest first.
