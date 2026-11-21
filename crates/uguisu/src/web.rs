@@ -21,6 +21,7 @@ use uguisu_core::model::Podcast;
 use uguisu_core::search::Provider;
 use uguisu_core::{Uguisu, opml, rss};
 
+use crate::i18n::{self, Lang, t};
 use crate::{auth, ui};
 
 #[derive(Clone)]
@@ -28,6 +29,8 @@ pub struct AppState {
     pub app: Uguisu,
     pub base_url: Option<String>,
     login_guard: std::sync::Arc<std::sync::Mutex<LoginGuard>>,
+    /// The language of the interface, read from the database at the first request.
+    language: std::sync::Arc<std::sync::OnceLock<std::sync::Mutex<Lang>>>,
 }
 
 impl AppState {
@@ -36,6 +39,7 @@ impl AppState {
             app,
             base_url,
             login_guard: Default::default(),
+            language: Default::default(),
         }
     }
 }
@@ -98,7 +102,10 @@ impl IntoResponse for AppError {
         match self {
             Self::NotFound => (
                 StatusCode::NOT_FOUND,
-                page(ui::message_page("Not found", "This page does not exist.")),
+                page(ui::message_page(
+                    t("Not found"),
+                    t("This page does not exist."),
+                )),
             )
                 .into_response(),
             Self::Internal(error) => {
@@ -106,8 +113,8 @@ impl IntoResponse for AppError {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     page(ui::message_page(
-                        "Something went wrong",
-                        "The error was written to the server log.",
+                        t("Something went wrong"),
+                        t("The error was written to the server log."),
                     )),
                 )
                     .into_response()
@@ -158,6 +165,7 @@ pub fn router(state: AppState) -> Router {
         .route("/settings/password", post(change_password))
         .route("/settings/sessions", post(end_other_sessions))
         .route("/settings/notification", post(test_notification))
+        .route("/settings/language", post(change_language))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_login));
 
     let public = Router::new()
@@ -184,8 +192,53 @@ pub fn router(state: AppState) -> Router {
     protected
         .merge(public)
         .fallback(|| async { AppError::NotFound })
+        .layer(middleware::from_fn_with_state(state.clone(), language))
         .layer(middleware::from_fn(security))
         .with_state(state)
+}
+
+const LANGUAGE_KEY: &str = "language";
+
+/// Renders everything inside in the language chosen in the settings.
+async fn language(State(state): State<AppState>, request: Request, next: Next) -> Response {
+    let lang = match state.language.get() {
+        Some(lang) => *lang.lock().unwrap(),
+        None => {
+            let stored = uguisu_core::db::get_setting(state.app.pool(), LANGUAGE_KEY)
+                .await
+                .ok()
+                .flatten();
+            let lang = stored
+                .as_deref()
+                .and_then(Lang::from_code)
+                .unwrap_or_default();
+            *state
+                .language
+                .get_or_init(|| std::sync::Mutex::new(lang))
+                .lock()
+                .unwrap()
+        }
+    };
+    i18n::scope(lang, next.run(request)).await
+}
+
+#[derive(Deserialize)]
+struct LanguageForm {
+    language: String,
+}
+
+async fn change_language(
+    State(state): State<AppState>,
+    Form(form): Form<LanguageForm>,
+) -> AppResult {
+    let lang = Lang::from_code(&form.language).ok_or(AppError::NotFound)?;
+    uguisu_core::db::set_setting(state.app.pool(), LANGUAGE_KEY, lang.code()).await?;
+    *state
+        .language
+        .get_or_init(|| std::sync::Mutex::new(lang))
+        .lock()
+        .unwrap() = lang;
+    Ok(see_other("/settings?done=language"))
 }
 
 /// Rejects cross-site state changes and adds security headers to every response.
@@ -336,12 +389,12 @@ async fn setup(
         return Ok(Redirect::to("/login").into_response());
     }
     let problem = if form.password.chars().count() < auth::MIN_PASSWORD_LENGTH {
-        Some(format!(
-            "Please choose at least {} characters.",
-            auth::MIN_PASSWORD_LENGTH
-        ))
+        Some(
+            t("Please choose at least {} characters.")
+                .replace("{}", &auth::MIN_PASSWORD_LENGTH.to_string()),
+        )
     } else if form.password != form.confirm {
-        Some("The two passwords do not match.".to_string())
+        Some(t("The two passwords do not match.").to_string())
     } else {
         None
     };
@@ -376,7 +429,8 @@ async fn login(
     let now = std::time::Instant::now();
     if let Some(wait) = state.login_guard.lock().unwrap().wait(now) {
         let seconds = wait.as_secs().max(1);
-        let message = format!("Too many wrong attempts. Please try again in {seconds} seconds.");
+        let message = t("Too many wrong attempts. Please try again in {} seconds.")
+            .replace("{}", &seconds.to_string());
         return Ok((
             StatusCode::TOO_MANY_REQUESTS,
             [(axum::http::header::RETRY_AFTER, seconds.to_string())],
@@ -393,7 +447,7 @@ async fn login(
     tokio::time::sleep(Duration::from_millis(800)).await;
     Ok((
         StatusCode::UNAUTHORIZED,
-        page(ui::login_page(Some("That password is not correct."))),
+        page(ui::login_page(Some(t("That password is not correct.")))),
     )
         .into_response())
 }
@@ -472,8 +526,11 @@ async fn settings_page(
 ) -> AppResult {
     let sessions = auth::session_count(state.app.pool()).await?;
     let notice = match query.done.as_deref() {
-        Some("password") => Some("The password is changed. Other devices have been signed out."),
-        Some("sessions") => Some("All other devices have been signed out."),
+        Some("password") => Some(t(
+            "The password is changed. Other devices have been signed out.",
+        )),
+        Some("sessions") => Some(t("All other devices have been signed out.")),
+        Some("language") => Some(t("The language is changed.")),
         _ => None,
     };
     let webhook = state.app.webhook_host();
@@ -491,8 +548,11 @@ async fn test_notification(State(state): State<AppState>) -> AppResult {
     let sessions = auth::session_count(state.app.pool()).await?;
     let webhook = state.app.webhook_host();
     let outcome = match state.app.send_test_notification().await {
-        Ok(()) => "The test notification was accepted by the receiver.".to_string(),
-        Err(e) => format!("The test notification could not be delivered: {e:#}"),
+        Ok(()) => t("The test notification was accepted by the receiver.").to_string(),
+        Err(e) => format!(
+            "{} {e:#}",
+            t("The test notification could not be delivered:")
+        ),
     };
     Ok(page(ui::settings_page(
         sessions,
@@ -519,14 +579,14 @@ async fn change_password(
     // The same pause as at the login: this form checks a password too.
     tokio::time::sleep(Duration::from_millis(800)).await;
     let problem = if !auth::check_password(pool, form.current).await? {
-        Some("The current password is not correct.".to_string())
+        Some(t("The current password is not correct.").to_string())
     } else if form.password.chars().count() < auth::MIN_PASSWORD_LENGTH {
-        Some(format!(
-            "Please choose at least {} characters.",
-            auth::MIN_PASSWORD_LENGTH
-        ))
+        Some(
+            t("Please choose at least {} characters.")
+                .replace("{}", &auth::MIN_PASSWORD_LENGTH.to_string()),
+        )
     } else if form.password != form.confirm {
-        Some("The two new passwords do not match.".to_string())
+        Some(t("The two new passwords do not match.").to_string())
     } else {
         None
     };
@@ -959,7 +1019,7 @@ async fn opml_import(State(state): State<AppState>, mut multipart: Multipart) ->
             return Ok((
                 StatusCode::UNPROCESSABLE_ENTITY,
                 page(ui::add_page(
-                    Some("The file contains no feed addresses."),
+                    Some(t("The file contains no feed addresses.")),
                     "",
                 )),
             )
@@ -1562,6 +1622,70 @@ mod tests {
         crate::auth::reset_password(pool).await.unwrap();
         assert!(!crate::auth::password_is_set(pool).await.unwrap());
         assert!(!crate::auth::session_is_valid(pool, &here).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn the_interface_speaks_the_chosen_language() {
+        let (data, router, _) = archive().await;
+        let app = uguisu_core::Uguisu::open(uguisu_core::Config::new(data.path()))
+            .await
+            .unwrap();
+        crate::auth::set_password(app.pool(), "the first password".into())
+            .await
+            .unwrap();
+        let session = crate::auth::create_session(app.pool()).await.unwrap();
+        let get = |address: &'static str| {
+            let router = router.clone();
+            let session = session.clone();
+            async move {
+                let request = Request::get(address)
+                    .header(header::COOKIE, format!("uguisu_session={session}"))
+                    .body(Body::empty())
+                    .unwrap();
+                let response = router.oneshot(request).await.unwrap();
+                let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap();
+                String::from_utf8(body.to_vec()).unwrap()
+            }
+        };
+        let choose = |language: &'static str| {
+            let request = Request::post("/settings/language")
+                .header(header::COOKIE, format!("uguisu_session={session}"))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header("sec-fetch-site", "same-origin")
+                .body(Body::from(format!("language={language}")))
+                .unwrap();
+            router.clone().oneshot(request)
+        };
+
+        let page = get("/settings").await;
+        assert!(page.contains("<html lang=\"en\">"));
+        assert!(page.contains("Signed-in devices"));
+
+        assert_eq!(choose("de").await.unwrap().status(), StatusCode::SEE_OTHER);
+        let page = get("/settings?done=language").await;
+        assert!(page.contains("<html lang=\"de\">"));
+        assert!(page.contains("Angemeldete Geräte"));
+        assert!(page.contains("Die Sprache"));
+        assert!(
+            get("/no-such-page")
+                .await
+                .contains("Diese Seite gibt es nicht.")
+        );
+        // The choice is stored, and pages without a login follow it too.
+        assert_eq!(
+            uguisu_core::db::get_setting(app.pool(), "language")
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("de")
+        );
+
+        // A language that does not exist changes nothing.
+        assert_eq!(choose("xx").await.unwrap().status(), StatusCode::NOT_FOUND);
+        assert_eq!(choose("en").await.unwrap().status(), StatusCode::SEE_OTHER);
+        assert!(get("/settings").await.contains("Signed-in devices"));
     }
 
     #[tokio::test]

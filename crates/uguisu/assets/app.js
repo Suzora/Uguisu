@@ -9,7 +9,7 @@
     if (!field) return;
     var done = function () {
       var label = button.textContent;
-      button.textContent = "Copied";
+      button.textContent = button.getAttribute("data-copied") || "Copied";
       setTimeout(function () { button.textContent = label; }, 1600);
     };
     if (navigator.clipboard && window.isSecureContext) {

@@ -6,6 +6,8 @@ extend-exclude = [
     "Cargo.lock",
     "LICENSE",
     "crates/uguisu/assets/htmx.min.js",
+    # The German texts of the interface; the checker knows English only.
+    "crates/uguisu/src/i18n.rs",
 ]
 
 [default]

@@ -152,7 +152,7 @@ img { display: block; max-width: 100%; }
 .button.is-quiet { background: transparent; border-color: transparent; color: var(--muted); }
 .button.is-quiet:hover { background: var(--surface-2); color: var(--text); }
 
-input[type="text"], input[type="password"], input[type="search"], input[type="file"] {
+input[type="text"], input[type="password"], input[type="search"], input[type="file"], select {
   width: 100%;
   min-width: 0;
   padding: 10px 14px;

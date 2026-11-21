@@ -7,6 +7,8 @@ use uguisu_core::model::{EpisodeView, Podcast, PodcastSummary, Stats};
 use uguisu_core::rss::media_url;
 use uguisu_core::search::{Provider, SearchHit};
 
+use crate::i18n::{Lang, t};
+
 /// The emblem without the wordmark. Decorative: the name is always written next to it.
 fn icon() -> Markup {
     html! { img.logo src="/assets/icon.webp" alt="" width="256" height="256"; }
@@ -22,21 +24,31 @@ fn format_bytes(bytes: i64) -> String {
         value /= 1024.0;
         unit += 1;
     }
-    if unit == 0 {
-        format!("{value:.0} {}", UNITS[unit])
-    } else if value < 10.0 {
+    let text = if unit > 0 && value < 10.0 {
         format!("{value:.1} {}", UNITS[unit])
     } else {
         format!("{value:.0} {}", UNITS[unit])
+    };
+    match crate::i18n::current() {
+        Lang::En => text,
+        Lang::De => text.replace('.', ","),
     }
 }
 
 fn format_date(timestamp: i64) -> String {
-    uguisu_core::util::format_utc(timestamp, "%-d %b %Y").unwrap_or_default()
+    let pattern = match crate::i18n::current() {
+        Lang::En => "%-d %b %Y",
+        Lang::De => "%d.%m.%Y",
+    };
+    uguisu_core::util::format_utc(timestamp, pattern).unwrap_or_default()
 }
 
 fn format_datetime(timestamp: i64) -> String {
-    uguisu_core::util::format_utc(timestamp, "%-d %b %Y, %H:%M UTC").unwrap_or_default()
+    let pattern = match crate::i18n::current() {
+        Lang::En => "%-d %b %Y, %H:%M UTC",
+        Lang::De => "%d.%m.%Y, %H:%M UTC",
+    };
+    uguisu_core::util::format_utc(timestamp, pattern).unwrap_or_default()
 }
 
 fn format_duration(seconds: i64) -> String {
@@ -92,13 +104,13 @@ fn percent(part: i64, total: i64) -> i64 {
 fn document(title: &str, body_class: &str, content: Markup) -> Markup {
     html! {
         (DOCTYPE)
-        html lang="en" {
+        html lang=(crate::i18n::current().code()) {
             head {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 meta name="color-scheme" content="light dark";
                 meta name="htmx-config" content=r#"{"includeIndicatorStyles":false}"#;
-                title { (title) " · Uguisu" }
+                title { (t(title)) " · Uguisu" }
                 link rel="icon" href="/assets/favicon.png" type="image/png";
                 link rel="stylesheet" href="/assets/app.css";
                 script src="/assets/htmx.min.js" defer {}
@@ -126,19 +138,19 @@ fn shell(title: &str, active: &str, content: Markup) -> Markup {
                 div.topbar-inner {
                     a.brand href="/" { (icon()) span { "Uguisu" } }
                     nav {
-                        a class=(nav_class("library")) href="/" { "Library" }
-                        a class=(nav_class("add")) href="/add" { "Add podcast" }
-                        a class=(nav_class("status")) href="/status" { "Status" }
-                        a class=(nav_class("settings")) href="/settings" { "Settings" }
+                        a class=(nav_class("library")) href="/" { (t("Library")) }
+                        a class=(nav_class("add")) href="/add" { (t("Add podcast")) }
+                        a class=(nav_class("status")) href="/status" { (t("Status")) }
+                        a class=(nav_class("settings")) href="/settings" { (t("Settings")) }
                     }
                     form.logout method="post" action="/logout" {
-                        button.button.is-quiet type="submit" { "Sign out" }
+                        button.button.is-quiet type="submit" { (t("Sign out")) }
                     }
                 }
             }
             main.container { (content) }
             footer.footer {
-                "Uguisu " (env!("CARGO_PKG_VERSION")) " · free software under the AGPL-3.0-or-later"
+                "Uguisu " (env!("CARGO_PKG_VERSION")) (t(" · free software under the AGPL-3.0-or-later"))
             }
         },
     )
@@ -162,9 +174,9 @@ pub fn message_page(title: &str, message: &str) -> Markup {
     card_page(
         title,
         html! {
-            h1 { (title) }
-            p.muted { (message) }
-            a.button href="/" { "Back to the library" }
+            h1 { (t(title)) }
+            p.muted { (t(message)) }
+            a.button href="/" { (t("Back to the library")) }
         },
     )
 }
@@ -173,17 +185,17 @@ pub fn setup_page(error: Option<&str>) -> Markup {
     card_page(
         "Welcome",
         html! {
-            h1 { "Welcome" }
-            p.muted { "Choose a password to protect your archive. It is the only account on this instance." }
-            @if let Some(error) = error { p.notice.is-error role="alert" { (error) } }
+            h1 { (t("Welcome")) }
+            p.muted { (t("Choose a password to protect your archive. It is the only account on this instance.")) }
+            @if let Some(error) = error { p.notice.is-error role="alert" { (t(error)) } }
             form.stack method="post" action="/setup" {
-                label { "Password"
+                label { (t("Password"))
                     input type="password" name="password" required minlength="10" autocomplete="new-password" autofocus;
                 }
-                label { "Repeat password"
+                label { (t("Repeat password"))
                     input type="password" name="confirm" required minlength="10" autocomplete="new-password";
                 }
-                button.button.is-primary type="submit" { "Create archive" }
+                button.button.is-primary type="submit" { (t("Create archive")) }
             }
         },
     )
@@ -209,18 +221,18 @@ pub fn history_page(
         }
     }
     shell(
-        &format!("History of {}", podcast.title),
+        &format!("{} {}", t("History of"), podcast.title),
         "library",
         html! {
             p.muted.small { a href=(format!("/podcasts/{}", podcast.id)) { "← " (podcast.title) } }
-            h1 { "History" }
+            h1 { (t("History")) }
             @if let Some(error) = &podcast.last_fetch_error {
-                p.notice.is-error { "The last check of the source feed failed: " (error) }
+                p.notice.is-error { (t("The last check of the source feed failed: ")) (error) }
             }
             section.panel {
-                h2 { "What changed in the source feed" }
+                h2 { (t("What changed in the source feed")) }
                 @if groups.is_empty() {
-                    p.muted { "Nothing yet." }
+                    p.muted { (t("Nothing yet.")) }
                 }
                 ol.revision-list {
                     @for group in &groups {
@@ -229,12 +241,12 @@ pub fn history_page(
                             strong { (format_datetime(first.at)) }
                             " "
                             @match first.kind.as_str() {
-                                "added" => span.tag { "New" },
-                                "changed" => span.tag { "Changed" },
-                                _ => span.tag.is-error { "Gone from feed" },
+                                "added" => span.tag { (t("New")) },
+                                "changed" => span.tag { (t("Changed")) },
+                                _ => span.tag.is-error { (t("Gone from feed")) },
                             }
                             @if group.len() > 8 {
-                                span.muted { " " (group.len()) " episodes" }
+                                span.muted { " " (group.len()) (t(" episodes")) }
                             } @else {
                                 ul.plain {
                                     @for event in group.iter() {
@@ -246,14 +258,14 @@ pub fn history_page(
                     }
                 }
                 @if events.len() >= 500 {
-                    p.muted.small { "Older events are not listed here; they are in the archive." }
+                    p.muted.small { (t("Older events are not listed here; they are in the archive.")) }
                 }
             }
             section.panel {
-                h2 { "Stored versions of the source feed" }
+                h2 { (t("Stored versions of the source feed")) }
                 p.muted.small {
-                    "Every distinct version of the feed is kept exactly as the server sent it. "
-                    (snapshots.len()) @if snapshots.len() == 1 { " version" } @else { " versions" } " so far."
+                    (t("Every distinct version of the feed is kept exactly as the server sent it. "))
+                    (snapshots.len()) @if snapshots.len() == 1 { (t(" version")) } @else { (t(" versions")) } (t(" so far."))
                 }
                 ul.file-list {
                     @for snapshot in snapshots {
@@ -308,55 +320,55 @@ pub fn status_page(status: &StatusReport) -> Markup {
         "Status",
         "status",
         html! {
-            h1 { "Status" }
+            h1 { (t("Status")) }
             @if all_well {
-                p.notice role="status" { "Everything is in order." }
+                p.notice role="status" { (t("Everything is in order.")) }
             }
             section.stats {
                 div.stat {
                     span.stat-value { (status.downloading) }
-                    span.stat-label { "Downloading now" }
+                    span.stat-label { (t("Downloading now")) }
                 }
-                div.stat title="Episodes whose files are still to be downloaded" {
+                div.stat title=(t("Episodes whose files are still to be downloaded")) {
                     span.stat-value { (waiting) }
-                    span.stat-label { "Waiting" }
+                    span.stat-label { (t("Waiting")) }
                 }
                 div class=(if gave_up.is_empty() { "stat" } else { "stat is-error" }) {
                     span.stat-value { (gave_up.len()) }
-                    span.stat-label { "Downloads given up" }
+                    span.stat-label { (t("Downloads given up")) }
                 }
                 div class=(if status.damaged.is_empty() { "stat" } else { "stat is-error" }) {
                     span.stat-value { (status.damaged.len()) }
-                    span.stat-label { "Damaged or missing files" }
+                    span.stat-label { (t("Damaged or missing files")) }
                 }
                 div.stat {
                     span.stat-value { (format_bytes(status.stats.bytes)) }
-                    span.stat-label { "In the archive" }
+                    span.stat-label { (t("In the archive")) }
                 }
                 @if let Some(free) = status.free_space {
                     div class=(if space_low { "stat is-error" } else { "stat" })
-                        title=(format!("Downloads wait while less than {} is free", format_bytes(status.reserve as i64))) {
+                        title=(t("Downloads wait while less than {} is free").replace("{}", &format_bytes(status.reserve as i64))) {
                         span.stat-value { (format_bytes(free as i64)) }
-                        span.stat-label { "Free on the disk" }
+                        span.stat-label { (t("Free on the disk")) }
                     }
                 }
             }
             @if space_low {
                 p.notice.is-error {
-                    "The disk is almost full. Downloads are on hold until more than "
-                    (format_bytes(status.reserve as i64)) " is free again."
+                    (t("The disk is almost full. Downloads are on hold until more than "))
+                    (format_bytes(status.reserve as i64)) (t(" is free again."))
                 }
             }
             @if let Some(oldest) = status.stats.oldest_check {
                 p.muted.small {
-                    "Every archived file has been checked against its checksum since "
+                    (t("Every archived file has been checked against its checksum since "))
                     (format_date(oldest)) "."
                 }
             }
 
             @if !feed_errors.is_empty() {
                 section.panel {
-                    h2 { "Feeds that could not be checked" }
+                    h2 { (t("Feeds that could not be checked")) }
                     ul.file-list {
                         @for p in &feed_errors {
                             li {
@@ -365,7 +377,7 @@ pub fn status_page(status: &StatusReport) -> Markup {
                                     div.muted.small { (p.podcast.last_fetch_error.as_deref().unwrap_or("")) }
                                 }
                                 @if let Some(checked) = p.podcast.last_fetched_at {
-                                    span.muted.small { "last tried " (format_datetime(checked)) }
+                                    span.muted.small { (t("last tried ")) (format_datetime(checked)) }
                                 }
                             }
                         }
@@ -375,12 +387,12 @@ pub fn status_page(status: &StatusReport) -> Markup {
 
             @if !status.problems.is_empty() {
                 section.panel {
-                    h2 { "Downloads that failed" }
+                    h2 { (t("Downloads that failed")) }
                     p.muted.small {
-                        "A download is tried five times, with growing pauses. After that it is given up until you ask for another try."
+                        (t("A download is tried five times, with growing pauses. After that it is given up until you ask for another try."))
                     }
                     form method="post" action="/status/retry" {
-                        button.button type="submit" { "Try all of them again" }
+                        button.button type="submit" { (t("Try all of them again")) }
                     }
                     ul.file-list {
                         @for problem in gave_up.iter().chain(retrying.iter()) {
@@ -391,9 +403,9 @@ pub fn status_page(status: &StatusReport) -> Markup {
                                     div.muted.small { (problem.download_error) }
                                 }
                                 @if problem.download_attempts >= 5 {
-                                    span.pill.is-error { "Given up" }
+                                    span.pill.is-error { (t("Given up")) }
                                 } @else {
-                                    span.pill.is-warn title=(format!("Next attempt {}", format_datetime(problem.next_attempt_at))) { "Retrying" }
+                                    span.pill.is-warn title=(format!("{} {}", t("Next attempt"), format_datetime(problem.next_attempt_at))) { (t("Retrying")) }
                                 }
                             }
                         }
@@ -403,9 +415,9 @@ pub fn status_page(status: &StatusReport) -> Markup {
 
             @if !status.damaged.is_empty() {
                 section.panel {
-                    h2 { "Damaged or missing files" }
+                    h2 { (t("Damaged or missing files")) }
                     p.muted.small {
-                        "These files no longer match their checksums or are gone from the disk. They are downloaded again while the source still offers them."
+                        (t("These files no longer match their checksums or are gone from the disk. They are downloaded again while the source still offers them."))
                     }
                     ul.file-list {
                         @for file in status.damaged {
@@ -416,9 +428,9 @@ pub fn status_page(status: &StatusReport) -> Markup {
                                     div.muted.small { code { (file.path) } }
                                 }
                                 @if file.status == "missing" {
-                                    span.pill.is-error { "Missing" }
+                                    span.pill.is-error { (t("Missing")) }
                                 } @else {
-                                    span.pill.is-error { "Damaged" }
+                                    span.pill.is-error { (t("Damaged")) }
                                 }
                             }
                         }
@@ -435,21 +447,21 @@ pub fn find_page(query: &str, results: &[uguisu_core::model::SearchResult]) -> M
         "Search",
         "library",
         html! {
-            h1 { "Search the archive" }
+            h1 { (t("Search the archive")) }
             form.inline.find method="get" action="/find" role="search" {
                 input type="search" name="q" value=(query) autofocus
-                    placeholder="Search titles and show notes…" aria-label="Search the archive";
-                button.button.is-primary type="submit" { "Search" }
+                    placeholder=(t("Search titles and show notes…")) aria-label=(t("Search the archive"));
+                button.button.is-primary type="submit" { (t("Search")) }
             }
             @if query.is_empty() {
-                p.muted { "Every word has to occur in the title or the show notes of an episode. The last word may be the beginning of a word." }
+                p.muted { (t("Every word has to occur in the title or the show notes of an episode. The last word may be the beginning of a word.")) }
             } @else if results.is_empty() {
-                p.muted { "No episode matches “" (query) "”." }
+                p.muted { (t("No episode matches “")) (query) (t("”.")) }
             } @else {
                 section.panel {
                     p.muted.small {
-                        (results.len()) @if results.len() == 1 { " episode" } @else { " episodes" }
-                        @if results.len() >= 100 { " – the best 100 matches" }
+                        (results.len()) @if results.len() == 1 { (t(" episode")) } @else { (t(" episodes")) }
+                        @if results.len() >= 100 { (t(" – the best 100 matches")) }
                     }
                     ol.episode-list {
                         @for hit in results {
@@ -496,59 +508,75 @@ pub fn settings_page(
         "Settings",
         "settings",
         html! {
-            h1 { "Settings" }
-            @if let Some(notice) = notice { p.notice role="status" { (notice) } }
+            h1 { (t("Settings")) }
+            @if let Some(notice) = notice { p.notice role="status" { (t(notice)) } }
             div.columns {
                 section.panel {
-                    h2 { "Password" }
-                    @if let Some(error) = error { p.notice.is-error role="alert" { (error) } }
+                    h2 { (t("Password")) }
+                    @if let Some(error) = error { p.notice.is-error role="alert" { (t(error)) } }
                     form.stack method="post" action="/settings/password" {
-                        label { "Current password"
+                        label { (t("Current password"))
                             input type="password" name="current" required autocomplete="current-password";
                         }
-                        label { "New password"
+                        label { (t("New password"))
                             input type="password" name="password" required minlength="10" autocomplete="new-password";
                         }
-                        label { "Repeat new password"
+                        label { (t("Repeat new password"))
                             input type="password" name="confirm" required minlength="10" autocomplete="new-password";
                         }
-                        button.button.is-primary type="submit" { "Change password" }
+                        button.button.is-primary type="submit" { (t("Change password")) }
                     }
                     p.muted.small {
-                        "Changing the password signs out all other devices. If the password is lost, "
-                        code { "uguisu reset-password" } " on the server lets you choose a new one."
+                        (t("Changing the password signs out all other devices. If the password is lost, "))
+                        code { "uguisu reset-password" } (t(" on the server lets you choose a new one."))
                     }
                 }
                 section.panel {
-                    h2 { "Signed-in devices" }
+                    h2 { (t("Signed-in devices")) }
                     p.muted {
                         @if sessions <= 1 {
-                            "Only this browser is signed in."
+                            (t("Only this browser is signed in."))
                         } @else {
-                            (sessions) " browsers are signed in, this one included."
+                            (sessions) (t(" browsers are signed in, this one included."))
                         }
                     }
                     form method="post" action="/settings/sessions" {
-                        button.button type="submit" disabled[sessions <= 1] { "Sign out all other devices" }
+                        button.button type="submit" disabled[sessions <= 1] { (t("Sign out all other devices")) }
                     }
                     p.muted.small {
-                        "Podcast apps are not affected: feeds are protected by their secret addresses, not by the login."
+                        (t("Podcast apps are not affected: feeds are protected by their secret addresses, not by the login."))
                     }
                 }
                 section.panel {
-                    h2 { "Notifications" }
+                    h2 { (t("Language")) }
+                    form.stack method="post" action="/settings/language" {
+                        label { (t("Language of this interface"))
+                            select name="language" {
+                                @for lang in Lang::ALL {
+                                    option value=(lang.code()) selected[lang == crate::i18n::current()] { (lang.name()) }
+                                }
+                            }
+                        }
+                        button.button type="submit" { (t("Save")) }
+                    }
+                    p.muted.small {
+                        (t("Error messages from feeds and servers, and everything in the archive, stay as they are."))
+                    }
+                }
+                section.panel {
+                    h2 { (t("Notifications")) }
                     @if let Some(host) = webhook {
                         p.muted {
-                            "Damaged or missing files and feeds that keep failing are reported to "
+                            (t("Damaged or missing files and feeds that keep failing are reported to "))
                             code { (host) } "."
                         }
                         form method="post" action="/settings/notification" {
-                            button.button type="submit" { "Send a test notification" }
+                            button.button type="submit" { (t("Send a test notification")) }
                         }
                     } @else {
                         p.muted {
-                            "Uguisu can report damaged files and feeds that keep failing to another service. "
-                            "Start it with " code { "UGUISU_WEBHOOK_URL" } " set to the address that should receive the reports."
+                            (t("Uguisu can report damaged files and feeds that keep failing to another service. "))
+                            (t("Start it with ")) code { "UGUISU_WEBHOOK_URL" } (t(" set to the address that should receive the reports."))
                         }
                     }
                 }
@@ -561,13 +589,13 @@ pub fn login_page(error: Option<&str>) -> Markup {
     card_page(
         "Sign in",
         html! {
-            h1 { "Sign in" }
-            @if let Some(error) = error { p.notice.is-error role="alert" { (error) } }
+            h1 { (t("Sign in")) }
+            @if let Some(error) = error { p.notice.is-error role="alert" { (t(error)) } }
             form.stack method="post" action="/login" {
-                label { "Password"
+                label { (t("Password"))
                     input type="password" name="password" required autocomplete="current-password" autofocus;
                 }
-                button.button.is-primary type="submit" { "Sign in" }
+                button.button.is-primary type="submit" { (t("Sign in")) }
             }
         },
     )
@@ -600,56 +628,56 @@ pub fn library_page(
         html! {
             @if space_low {
                 p.notice {
-                    "The disk is almost full. Downloads are on hold until there is free space again; feeds are still checked."
+                    (t("The disk is almost full. Downloads are on hold until there is free space again; feeds are still checked."))
                 }
             }
             @if let Some(count) = import {
                 p.notice {
-                    "Importing " (count) " feeds in the background. Podcasts appear here as they are fetched – reload to see progress."
+                    (t("Importing ")) (count) (t(" feeds in the background. Podcasts appear here as they are fetched – reload to see progress."))
                 }
             }
             @if podcasts.is_empty() {
                 section.empty {
                     (icon())
-                    h1 { "Your archive is empty" }
-                    p.muted { "Add a podcast and Uguisu keeps every episode, even after it disappears from the feed." }
-                    a.button.is-primary href="/add" { "Add your first podcast" }
+                    h1 { (t("Your archive is empty")) }
+                    p.muted { (t("Add a podcast and Uguisu keeps every episode, even after it disappears from the feed.")) }
+                    a.button.is-primary href="/add" { (t("Add your first podcast")) }
                 }
             } @else {
                 form.inline.find method="get" action="/find" role="search" {
-                    input type="search" name="q" placeholder="Search titles and show notes in your archive…" aria-label="Search the archive";
-                    button.button type="submit" { "Search" }
+                    input type="search" name="q" placeholder=(t("Search titles and show notes in your archive…")) aria-label=(t("Search the archive"));
+                    button.button type="submit" { (t("Search")) }
                 }
                 section.stats {
-                    div.stat { span.stat-value { (stats.podcasts) } span.stat-label { "Podcasts" } }
+                    div.stat { span.stat-value { (stats.podcasts) } span.stat-label { (t("Podcasts")) } }
                     div.stat {
                         span.stat-value { (stats.archived) small { " / " (stats.episodes) } }
-                        span.stat-label { "Episodes archived" }
+                        span.stat-label { (t("Episodes archived")) }
                     }
-                    div.stat { span.stat-value { (format_bytes(stats.bytes)) } span.stat-label { "On disk" } }
+                    div.stat { span.stat-value { (format_bytes(stats.bytes)) } span.stat-label { (t("On disk")) } }
                     @if stats.damaged > 0 {
-                        div.stat.is-error title="Damaged or missing files are downloaded again while the source still offers them" {
+                        div.stat.is-error title=(t("Damaged or missing files are downloaded again while the source still offers them")) {
                             span.stat-value { (stats.damaged) }
-                            span.stat-label { "Damaged files" }
+                            span.stat-label { (t("Damaged files")) }
                         }
                     } @else if let Some(oldest) = stats.oldest_check {
-                        div.stat.is-ok title="Every archived file matched its recorded checksum when it was last read" {
-                            span.stat-value { "Intact" }
-                            span.stat-label { "All files checked since " (format_date(oldest)) }
+                        div.stat.is-ok title=(t("Every archived file matched its recorded checksum when it was last read")) {
+                            span.stat-value { (t("Intact")) }
+                            span.stat-label { (t("All files checked since ")) (format_date(oldest)) }
                         }
                     }
                     div.stat-actions {
-                        a.button href="/opml" title="Subscription list of all archive feeds, for import into a podcast app" { "Export OPML" }
+                        a.button href="/opml" title=(t("Subscription list of all archive feeds, for import into a podcast app")) { (t("Export OPML")) }
                     }
                 }
                 section.panel {
-                    h2 { "One feed for everything" }
+                    h2 { (t("One feed for everything")) }
                     p.muted.small {
-                        "The newest 100 episodes of all podcasts in a single feed. Treat the address like a password."
+                        (t("The newest 100 episodes of all podcasts in a single feed. Treat the address like a password."))
                     }
                     div.copy-row {
-                        input #combined-feed type="text" readonly value=(combined_feed) aria-label="Address of the feed over all podcasts";
-                        button.button type="button" data-copy="#combined-feed" { "Copy" }
+                        input #combined-feed type="text" readonly value=(combined_feed) aria-label=(t("Address of the feed over all podcasts"));
+                        button.button type="button" data-copy="#combined-feed" data-copied=(t("Copied")) { (t("Copy")) }
                     }
                 }
                 section.grid {
@@ -659,13 +687,13 @@ pub fn library_page(
                             div.card-cover {
                                 (cover_image(p, "cover"))
                                 @if p.last_fetch_error.is_some() {
-                                    span.badge.is-error title="The last feed check failed" { "!" }
+                                    span.badge.is-error title=(t("The last feed check failed")) { "!" }
                                 }
                             }
                             div.card-body {
                                 h2 { (p.title) }
                                 @if let Some(author) = &p.author { p.muted { (author) } }
-                                div.progress title=(format!("{} of {} episodes archived", summary.archived_count, summary.episode_count)) {
+                                div.progress title=(format!("{}{}{}{}", summary.archived_count, t(" of "), summary.episode_count, t(" episodes archived"))) {
                                     progress max="100" value=(percent(summary.archived_count, summary.episode_count)) {}
                                     span { (summary.archived_count) " / " (summary.episode_count) }
                                 }
@@ -685,12 +713,12 @@ pub fn add_page(error: Option<&str>, url: &str) -> Markup {
         "Add podcast",
         "add",
         html! {
-            h1.page-title { "Add a podcast" }
-            @if let Some(error) = error { p.notice.is-error role="alert" { (error) } }
+            h1.page-title { (t("Add a podcast")) }
+            @if let Some(error) = error { p.notice.is-error role="alert" { (t(error)) } }
 
             section.panel {
-                h2 { "Search" }
-                input.search type="search" name="q" placeholder="Search podcast directories…" autocomplete="off" autofocus
+                h2 { (t("Search")) }
+                input.search type="search" name="q" placeholder=(t("Search podcast directories…")) autocomplete="off" autofocus
                     hx-get="/search" hx-trigger="input changed delay:400ms, search" hx-target="#results"
                     hx-sync="this:replace";
                 div #results {}
@@ -698,23 +726,23 @@ pub fn add_page(error: Option<&str>, url: &str) -> Markup {
 
             div.columns {
                 section.panel {
-                    h2 { "Feed address" }
-                    p.muted { "Paste the feed address of a podcast, including private feeds with a token in the address. The address of the podcast's web page usually works too." }
+                    h2 { (t("Feed address")) }
+                    p.muted { (t("Paste the feed address of a podcast, including private feeds with a token in the address. The address of the podcast's web page usually works too.")) }
                     form.inline method="post" action="/podcasts" {
                         input type="text" name="url" value=(url) placeholder="https://example.org/feed.xml" required inputmode="url";
-                        button.button.is-primary type="submit" { "Archive" }
-                        label.check title="Earlier episodes are listed, but their files are not downloaded. This can be changed later." {
+                        button.button.is-primary type="submit" { (t("Archive")) }
+                        label.check title=(t("Earlier episodes are listed, but their files are not downloaded. This can be changed later.")) {
                             input type="checkbox" name="only_new";
-                            "Only episodes from today on"
+                            (t("Only episodes from today on"))
                         }
                     }
                 }
                 section.panel {
-                    h2 { "Import OPML" }
-                    p.muted { "Bring the subscription list exported from your podcast app." }
+                    h2 { (t("Import OPML")) }
+                    p.muted { (t("Bring the subscription list exported from your podcast app.")) }
                     form.inline method="post" action="/opml" enctype="multipart/form-data" {
                         input type="file" name="file" accept=".opml,.xml,text/xml,application/xml,text/x-opml" required;
-                        button.button type="submit" { "Import" }
+                        button.button type="submit" { (t("Import")) }
                     }
                 }
             }
@@ -730,7 +758,7 @@ pub fn search_placeholders(query: &str) -> Markup {
                 div.provider-results
                     hx-get=(format!("/search/{}", provider.key())) hx-vals=(serde_query(query))
                     hx-trigger="load" hx-swap="outerHTML" {
-                    p.muted.searching { "Searching " (provider.name()) "…" }
+                    p.muted.searching { (t("Searching ")) (provider.name()) "…" }
                 }
             }
         }
@@ -756,8 +784,8 @@ pub fn provider_results(provider: Provider, hits: Option<&[SearchHit]>) -> Marku
     html! {
         div.provider-results {
             @match hits {
-                None => p.muted.small { (provider.name()) " did not answer." },
-                Some([]) => p.muted.small { "No further results from " (provider.name()) "." },
+                None => p.muted.small { (provider.name()) (t(" did not answer.")) },
+                Some([]) => p.muted.small { (t("No further results from ")) (provider.name()) "." },
                 Some(hits) => div.results {
                     @for hit in hits {
                         form.result method="post" action="/podcasts" {
@@ -769,10 +797,10 @@ pub fn provider_results(provider: Provider, hits: Option<&[SearchHit]>) -> Marku
                             div.result-body {
                                 strong { (hit.title) }
                                 @if let Some(author) = &hit.author { span.muted { (author) } }
-                                span.muted.small { "via " (hit.provider) }
+                                span.muted.small { (t("via ")) (hit.provider) }
                             }
                             input type="hidden" name="url" value=(hit.feed_url);
-                            button.button.is-primary type="submit" { "Archive" }
+                            button.button.is-primary type="submit" { (t("Archive")) }
                         }
                     }
                 },
@@ -809,13 +837,13 @@ pub fn podcast_page(
                             p.hero-description { (plain_text(description, 420)) }
                         }
                         ul.facts {
-                            li { strong { (summary.archived_count) } " of " (summary.episode_count) " episodes archived" }
-                            li { strong { (format_bytes(summary.archived_bytes)) } " on disk" }
+                            li { strong { (summary.archived_count) } (t(" of ")) (summary.episode_count) (t(" episodes archived")) }
+                            li { strong { (format_bytes(summary.archived_bytes)) } (t(" on disk")) }
                             @if removed > 0 {
-                                li { strong { (removed) } " no longer in the source feed" }
+                                li { strong { (removed) } (t(" no longer in the source feed")) }
                             }
                             @if let Some(checked) = p.last_fetched_at {
-                                li { "Checked " (format_datetime(checked)) }
+                                li { (t("Checked ")) (format_datetime(checked)) }
                             }
                         }
                     }
@@ -823,67 +851,67 @@ pub fn podcast_page(
             }
 
             @if let Some(error) = &p.last_fetch_error {
-                p.notice.is-error role="alert" { strong { "The last feed check failed. " } (error) }
+                p.notice.is-error role="alert" { strong { (t("The last feed check failed. ")) } (error) }
             }
 
             section.panel {
-                h2 { "Archive feed" }
+                h2 { (t("Archive feed")) }
                 p.muted {
-                    "Subscribe to this address in your podcast app. It serves the archived files and keeps working when the original feed is gone. Anyone who knows the address can listen, so treat it like a password."
+                    (t("Subscribe to this address in your podcast app. It serves the archived files and keeps working when the original feed is gone. Anyone who knows the address can listen, so treat it like a password."))
                 }
                 div.copy-row {
-                    input #feed-url type="text" readonly value=(feed_url) aria-label="Archive feed address";
-                    button.button.is-primary type="button" data-copy="#feed-url" { "Copy" }
+                    input #feed-url type="text" readonly value=(feed_url) aria-label=(t("Archive feed address"));
+                    button.button.is-primary type="button" data-copy="#feed-url" data-copied=(t("Copied")) { (t("Copy")) }
                 }
                 p.muted.small {
-                    "For a shorter feed, add " code { "?limit=50" } " to the address: only the newest 50 episodes are published."
+                    (t("For a shorter feed, add ")) code { "?limit=50" } (t(" to the address: only the newest 50 episodes are published."))
                 }
                 div.actions {
                     form method="post" action=(format!("/podcasts/{}/refresh", p.id)) {
-                        button.button type="submit" { "Check source feed now" }
+                        button.button type="submit" { (t("Check source feed now")) }
                     }
                     form method="post" action=(format!("/podcasts/{}/settings", p.id)) {
                         label.check {
                             input type="checkbox" name="include_removed" checked[p.include_removed] data-autosubmit;
-                            "Publish episodes that left the source feed"
+                            (t("Publish episodes that left the source feed"))
                         }
-                        label.check title="When the address of an episode's media file changes, download it again and keep both copies. Uses more disk space if a podcast moves to another host." {
+                        label.check title=(t("When the address of an episode's media file changes, download it again and keep both copies. Uses more disk space if a podcast moves to another host.")) {
                             input type="checkbox" name="keep_versions" checked[p.keep_versions] data-autosubmit;
-                            "Keep a new copy when the source replaces a file"
+                            (t("Keep a new copy when the source replaces a file"))
                         }
-                        label.check title="Episodes published before this day are listed, but their files are not downloaded. Leave empty to archive everything. Files already archived are never removed." {
-                            "Archive episodes from "
+                        label.check title=(t("Episodes published before this day are listed, but their files are not downloaded. Leave empty to archive everything. Files already archived are never removed.")) {
+                            (t("Archive episodes from "))
                             input type="date" name="archive_from" data-autosubmit
                                 value=[p.archive_from.and_then(|t| uguisu_core::util::format_utc(t, "%Y-%m-%d"))];
                         }
-                        noscript { button.button type="submit" { "Save" } }
+                        noscript { button.button type="submit" { (t("Save")) } }
                     }
                     form method="post" action=(format!("/podcasts/{}/token", p.id))
-                        data-confirm="Create a new feed address? Apps using the current address lose access." {
-                        button.button.is-quiet type="submit" { "New feed address" }
+                        data-confirm=(t("Create a new feed address? Apps using the current address lose access.")) {
+                        button.button.is-quiet type="submit" { (t("New feed address")) }
                     }
                 }
-                p.small { a href=(format!("/podcasts/{}/history", p.id)) { "History of the source feed" } }
+                p.small { a href=(format!("/podcasts/{}/history", p.id)) { (t("History of the source feed")) } }
                 @let source = uguisu_core::http::redact(&p.feed_url);
-                p.muted.small { "Source: " a href=(source) rel="noreferrer noopener" { (source) } }
+                p.muted.small { (t("Source: ")) a href=(source) rel="noreferrer noopener" { (source) } }
             }
 
             (episode_list(summary, episodes, downloading, page))
 
             details.panel.danger {
-                summary { "Remove this podcast" }
+                summary { (t("Remove this podcast")) }
                 p.muted {
-                    "Uguisu stops checking the source feed and the archive feed stops working. The archived files stay in "
+                    (t("Uguisu stops checking the source feed and the archive feed stops working. The archived files stay in "))
                     code { "archive/" (p.dir) }
-                    " unless you choose to delete them."
+                    (t(" unless you choose to delete them."))
                 }
                 form.actions method="post" action=(format!("/podcasts/{}/remove", p.id))
-                    data-confirm="Remove this podcast from Uguisu?" {
+                    data-confirm=(t("Remove this podcast from Uguisu?")) {
                     label.check {
                         input type="checkbox" name="delete_files";
-                        "Also delete the archived files (" (format_bytes(summary.archived_bytes)) ")"
+                        (t("Also delete the archived files (")) (format_bytes(summary.archived_bytes)) ")"
                     }
-                    button.button.is-danger type="submit" { "Remove podcast" }
+                    button.button.is-danger type="submit" { (t("Remove podcast")) }
                 }
             }
         },
@@ -1114,42 +1142,42 @@ pub fn episode_page(
                     @if let Some(date) = e.published_at { span { (format_date(date)) } }
                     @if let Some(duration) = e.duration { span { (format_duration(duration)) } }
                     @if let (Some(season), Some(number)) = (e.season, e.episode_no) {
-                        span { "Season " (season) ", episode " (number) }
+                        span { (t("Season ")) (season) (t(", episode ")) (number) }
                     } @else if let Some(number) = e.episode_no {
-                        span { "Episode " (number) }
+                        span { (t("Episode ")) (number) }
                     }
                     @if let Some(removed) = e.removed_at {
-                        span.tag title="This episode is no longer listed in the source feed" {
-                            "Gone from feed since " (format_date(removed))
+                        span.tag title=(t("This episode is no longer listed in the source feed")) {
+                            (t("Gone from feed since ")) (format_date(removed))
                         }
                     }
                     @match status_of(view, downloading, podcast.archive_from) {
-                        Status::Archived(size) => span.pill.is-ok { "Archived · " (format_bytes(size)) },
-                        Status::Damaged => span.pill.is-error { "Damaged" },
-                        Status::Downloading => span.pill.is-busy { "Downloading" },
-                        Status::Queued => span.pill { "Queued" },
-                        Status::Skipped => span.pill { "Not archived" },
-                        Status::Retrying(_) => span.pill.is-warn { "Retrying" },
-                        Status::Failed(_) => span.pill.is-error { "Failed" },
-                        Status::NoMedia => span.pill { "No media" },
+                        Status::Archived(size) => span.pill.is-ok { (t("Archived · ")) (format_bytes(size)) },
+                        Status::Damaged => span.pill.is-error { (t("Damaged")) },
+                        Status::Downloading => span.pill.is-busy { (t("Downloading")) },
+                        Status::Queued => span.pill { (t("Queued")) },
+                        Status::Skipped => span.pill { (t("Not archived")) },
+                        Status::Retrying(_) => span.pill.is-warn { (t("Retrying")) },
+                        Status::Failed(_) => span.pill.is-error { (t("Failed")) },
+                        Status::NoMedia => span.pill { (t("No media")) },
                     }
                 }
                 @if let Some(error) = &e.download_error {
-                    p.notice.is-error { "Last download attempt: " (error) }
+                    p.notice.is-error { (t("Last download attempt: ")) (error) }
                     form method="post" action=(format!("/podcasts/{}/episodes/{}/retry", podcast.id, e.id)) {
-                        button.button type="submit" { "Try the download again" }
+                        button.button type="submit" { (t("Try the download again")) }
                     }
                 }
                 @if let Some(link) = e.link.as_deref().filter(|l| l.starts_with("https://") || l.starts_with("http://")) {
                     p.small { a href=(link) rel="noreferrer noopener" { (link) } }
                 }
-                p.muted.small { "First seen " (format_datetime(e.first_seen_at)) " · identifier " code { (shorten(&e.guid, 80)) } }
+                p.muted.small { (t("First seen ")) (format_datetime(e.first_seen_at)) (t(" · identifier ")) code { (shorten(&e.guid, 80)) } }
             }
 
             section.panel {
-                h2 { "Files" }
+                h2 { (t("Files")) }
                 @if media.is_empty() && attachments.is_empty() {
-                    p.muted { "Nothing is archived for this episode yet." }
+                    p.muted { (t("Nothing is archived for this episode yet.")) }
                 }
                 ul.file-list {
                     @for m in media {
@@ -1167,18 +1195,18 @@ pub fn episode_page(
                                 }
                                 span.muted.small {
                                     " · " (format_bytes(m.size)) " · " (m.mime)
-                                    " · downloaded " (format_datetime(m.downloaded_at))
+                                    (t(" · downloaded ")) (format_datetime(m.downloaded_at))
                                 }
                                 div.muted.small {
                                     "BLAKE3 " code { (m.blake3) }
-                                    " · last verified " (format_datetime(m.verified_at))
+                                    (t(" · last verified ")) (format_datetime(m.verified_at))
                                 }
                             }
                             @match m.status.as_str() {
-                                "ok" if Some(m.id) == newest_ok => span.pill.is-ok { "Published" },
-                                "ok" => span.pill { "Earlier version" },
-                                "missing" => span.pill.is-error { "Missing" },
-                                _ => span.pill.is-error { "Damaged" },
+                                "ok" if Some(m.id) == newest_ok => span.pill.is-ok { (t("Published")) },
+                                "ok" => span.pill { (t("Earlier version")) },
+                                "missing" => span.pill.is-error { (t("Missing")) },
+                                _ => span.pill.is-error { (t("Damaged")) },
                             }
                         }
                     }
@@ -1201,12 +1229,12 @@ pub fn episode_page(
                                 }
                             }
                             @match a.status.as_str() {
-                                "ok" => span.pill.is-ok { "Archived" },
-                                "pending" if a.error.is_some() => span.pill.is-warn { "Not archived" },
-                                "pending" if skipped => span.pill { "Not archived" },
-                                "pending" => span.pill { "Queued" },
-                                "missing" => span.pill.is-error { "Missing" },
-                                _ => span.pill.is-error { "Damaged" },
+                                "ok" => span.pill.is-ok { (t("Archived")) },
+                                "pending" if a.error.is_some() => span.pill.is-warn { (t("Not archived")) },
+                                "pending" if skipped => span.pill { (t("Not archived")) },
+                                "pending" => span.pill { (t("Queued")) },
+                                "missing" => span.pill.is-error { (t("Missing")) },
+                                _ => span.pill.is-error { (t("Damaged")) },
                             }
                         }
                     }
@@ -1215,34 +1243,34 @@ pub fn episode_page(
 
             @if let Some(description) = e.description.as_deref().filter(|d| !d.trim().is_empty()) {
                 section.panel {
-                    h2 { "Show notes" }
-                    p.muted.small { "As text. The published feed carries the original formatting." }
+                    h2 { (t("Show notes")) }
+                    p.muted.small { (t("As text. The published feed carries the original formatting.")) }
                     p.show-notes { (notes_text(description, 20_000)) }
                 }
             }
 
             section.panel {
-                h2 { "History of the feed entry" }
+                h2 { (t("History of the feed entry")) }
                 @if revisions.len() <= 1 {
-                    p.muted { "The publisher has not changed this entry since it was first seen." }
+                    p.muted { (t("The publisher has not changed this entry since it was first seen.")) }
                 } @else {
                     p.muted.small {
-                        "The publisher changed this entry " (revisions.len() - 1)
-                        @if revisions.len() == 2 { " time" } @else { " times" }
-                        ". Every state is kept in the archive."
+                        (t("The publisher changed this entry ")) (revisions.len() - 1)
+                        @if revisions.len() == 2 { (t(" time")) } @else { (t(" times")) }
+                        (t(". Every state is kept in the archive."))
                     }
                 }
                 ol.revision-list {
                     @for (index, revision) in revisions.iter().enumerate().rev() {
                         li {
                             strong { (format_datetime(revision.seen_at)) }
-                            @if revision.meta_hash == e.meta_hash { " " span.tag { "Current" } }
+                            @if revision.meta_hash == e.meta_hash { " " span.tag { (t("Current")) } }
                             @if index == 0 {
-                                span.muted.small { " · first seen" }
+                                span.muted.small { (t(" · first seen")) }
                             } @else {
                                 @match entry_changes(&revisions[index - 1].raw_xml, &revision.raw_xml) {
                                     Some(changes) if changes.is_empty() => {
-                                        p.muted.small { "Only spacing or the order of attributes changed." }
+                                        p.muted.small { (t("Only spacing or the order of attributes changed.")) }
                                     }
                                     Some(changes) => {
                                         pre.diff {
@@ -1254,11 +1282,11 @@ pub fn episode_page(
                                                 }
                                             }
                                             @if changes.len() > 60 {
-                                                span.muted { "… and " (changes.len() - 60) " more lines\n" }
+                                                span.muted { (t("… and ")) (changes.len() - 60) (t(" more lines\n")) }
                                             }
                                         }
                                     }
-                                    None => p.muted.small { "Too long to compare here; both states are in the archive." },
+                                    None => p.muted.small { (t("Too long to compare here; both states are in the archive.")) },
                                 }
                             }
                         }
@@ -1297,27 +1325,27 @@ pub fn episode_list(
             hx-trigger=[busy.then_some("every 4s")]
             hx-swap=[busy.then_some("outerHTML")] {
             h2 {
-                "Episodes"
-                @if busy { span.pill.is-busy { "Archiving · " (summary.pending_count) " left" } }
+                (t("Episodes"))
+                @if busy { span.pill.is-busy { (t("Archiving · ")) (summary.pending_count) (t(" left")) } }
             }
             @if summary.episode_count == 0 {
-                p.muted { "The feed has no episodes yet." }
+                p.muted { (t("The feed has no episodes yet.")) }
             } @else if episodes.is_empty() {
-                p.muted { "There is no page " (page) "." }
+                p.muted { (t("There is no page ")) (page) "." }
             }
             @if pages > 1 {
-                nav.pager aria-label="Episode pages" {
+                nav.pager aria-label=(t("Episode pages")) {
                     @if page > 1 {
-                        a.button href=(page_link(page - 1)) rel="prev" { "Newer" }
+                        a.button href=(page_link(page - 1)) rel="prev" { (t("Newer")) }
                     }
                     span.muted {
                         @if !episodes.is_empty() {
-                            (first) "–" (first + episodes.len() as i64 - 1) " of "
+                            (first) "–" (first + episodes.len() as i64 - 1) (t(" of "))
                         }
                         (summary.episode_count)
                     }
                     @if page < pages {
-                        a.button href=(page_link(page + 1)) rel="next" { "Older" }
+                        a.button href=(page_link(page + 1)) rel="next" { (t("Older")) }
                     }
                 }
             }
@@ -1331,35 +1359,35 @@ pub fn episode_list(
                                 @if let Some(date) = e.published_at { span { (format_date(date)) } }
                                 @if let Some(duration) = e.duration { span { (format_duration(duration)) } }
                                 @if e.removed_at.is_some() {
-                                    span.tag title="This episode is no longer listed in the source feed" { "Gone from feed" }
+                                    span.tag title=(t("This episode is no longer listed in the source feed")) { (t("Gone from feed")) }
                                 }
                                 @if view.attachment_count > 0 {
-                                    span.tag title="Transcripts, chapter files and episode images archived with this episode" {
-                                        "+" (view.attachment_count) @if view.attachment_count == 1 { " file" } @else { " files" }
+                                    span.tag title=(t("Transcripts, chapter files and episode images archived with this episode")) {
+                                        "+" (view.attachment_count) @if view.attachment_count == 1 { (t(" file")) } @else { (t(" files")) }
                                     }
                                 }
                                 @if refetching(view) {
-                                    span.tag title="The source replaced the media file; the new copy is being downloaded" { "Fetching new version" }
+                                    span.tag title=(t("The source replaced the media file; the new copy is being downloaded")) { (t("Fetching new version")) }
                                 }
                                 @if view.media_versions - view.media_damaged > 1 {
-                                    span.tag title="The source replaced the media file; earlier copies are kept in the archive and the newest is published" {
-                                        (view.media_versions - view.media_damaged) " versions"
+                                    span.tag title=(t("The source replaced the media file; earlier copies are kept in the archive and the newest is published")) {
+                                        (view.media_versions - view.media_damaged) (t(" versions"))
                                     }
                                 }
                                 @if view.media_damaged > 0 && view.media_size.is_some() {
-                                    span.tag.is-error title="An earlier copy failed its integrity check" { "Damaged copy" }
+                                    span.tag.is-error title=(t("An earlier copy failed its integrity check")) { (t("Damaged copy")) }
                                 }
                             }
                         }
                         @match status {
-                            Status::Archived(size) => span.pill.is-ok title="Archived and hashed" { "Archived · " (format_bytes(*size)) },
-                            Status::Damaged => span.pill.is-error title="The archived file failed its integrity check and could not be downloaded again" { "Damaged" },
-                            Status::Downloading => span.pill.is-busy { "Downloading" },
-                            Status::Queued => span.pill { "Queued" },
-                            Status::Skipped => span.pill title="Published before this podcast's start date; the file is not downloaded" { "Not archived" },
-                            Status::Retrying(error) => span.pill.is-warn title=(error) { "Retrying" },
-                            Status::Failed(error) => span.pill.is-error title=(error) { "Failed" },
-                            Status::NoMedia => span.pill title="The feed lists no media file for this episode" { "No media" },
+                            Status::Archived(size) => span.pill.is-ok title=(t("Archived and hashed")) { (t("Archived · ")) (format_bytes(*size)) },
+                            Status::Damaged => span.pill.is-error title=(t("The archived file failed its integrity check and could not be downloaded again")) { (t("Damaged")) },
+                            Status::Downloading => span.pill.is-busy { (t("Downloading")) },
+                            Status::Queued => span.pill { (t("Queued")) },
+                            Status::Skipped => span.pill title=(t("Published before this podcast's start date; the file is not downloaded")) { (t("Not archived")) },
+                            Status::Retrying(error) => span.pill.is-warn title=(error) { (t("Retrying")) },
+                            Status::Failed(error) => span.pill.is-error title=(error) { (t("Failed")) },
+                            Status::NoMedia => span.pill title=(t("The feed lists no media file for this episode")) { (t("No media")) },
                         }
                     }
                 }

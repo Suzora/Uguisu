@@ -124,7 +124,8 @@ The promise "readable without Uguisu" is made good and tested.
 - [x] Overview: running, waiting and failed downloads, state of verification, disk usage.
 - [x] Settings: change the password, sign out other devices.
 - [ ] Settings: defaults for new podcasts.
-- [ ] German and English, chosen in the settings.
+- [~] German and English, chosen in the settings. Error messages that come from feeds, servers
+      and the archive engine stay in English.
 - [ ] Accessibility (keyboard, contrast, screen readers) and a layout for phones.
 - [ ] Final logo and icons. The current logo is provisional.
 
@@ -134,7 +135,7 @@ The promise "readable without Uguisu" is made good and tested.
       40 minutes per release.
 - [ ] Provenance and SBOM for released images. (A signature was considered and dropped.)
 - [x] Automatic dependency updates and a scheduled `cargo deny` run.
-- [~] Notifications about damaged files and feeds that keep failing, as a webhook that other
+- [x] Notifications about damaged files and feeds that keep failing, as a webhook that other
       services can be attached to (`UGUISU_WEBHOOK_URL`).
 - [x] `uguisu reset-password` for a lost password.
 - [x] Login: slow down repeated wrong passwords. (`Secure` cookies behind HTTPS were already
