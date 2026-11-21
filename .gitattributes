@@ -3,3 +3,5 @@
 * text=auto eol=lf
 *.png binary
 *.webp binary
+# Archives written by released versions, used by the upgrade tests. Byte for byte as written.
+/crates/uguisu-core/tests/fixtures/** -text

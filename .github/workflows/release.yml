@@ -51,6 +51,10 @@ jobs:
           push: ${{ startsWith(github.ref, 'refs/tags/v') }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Attached to the image in the registry: a signed-by-nobody but complete record of
+          # how it was built (commit, workflow, build steps), and a list of what is inside.
+          provenance: mode=max
+          sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

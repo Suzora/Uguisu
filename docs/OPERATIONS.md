@@ -119,6 +119,26 @@ The same holds when the process is killed or the machine loses power: files are 
 another name and moved into place only when they are complete, and the database is a SQLite
 database in WAL mode.
 
+## Checking what an image contains and where it comes from
+
+Released images carry two attachments in the registry:
+
+- a **provenance** record: the repository, the commit and the workflow that built the image,
+  and the steps of the build;
+- an **SBOM** (software bill of materials): the packages in the image and the Rust libraries
+  it was built from.
+
+Both can be read without pulling the image:
+
+```sh
+docker buildx imagetools inspect ghcr.io/suzora/uguisu:<version> --format '{{ json .Provenance }}'
+docker buildx imagetools inspect ghcr.io/suzora/uguisu:<version> --format '{{ json .SBOM }}'
+```
+
+The records are made by the build itself and stored next to the image. They are not signed:
+they tell you what the registry holds, and are as trustworthy as the registry and the
+project's GitHub account.
+
 ## Upgrading
 
 Pull or build the new image and restart. The database is migrated at the start, and an archive

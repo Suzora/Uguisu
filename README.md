@@ -96,6 +96,7 @@ Each release also publishes the image as `ghcr.io/suzora/uguisu:<version>`; to u
 `build: .` in `compose.yaml` with `image: ghcr.io/suzora/uguisu:<version>`.
 
 [docs/OPERATIONS.md](docs/OPERATIONS.md) covers HTTPS, backup and restore, moving and upgrading.
+[docs/FAQ.md](docs/FAQ.md) answers common questions, including what to mind legally.
 
 Set `UGUISU_BASE_URL` to the address your podcast app will use to reach Uguisu. Put a reverse
 proxy with HTTPS in front of it if the instance is reachable from outside your network.
@@ -203,12 +204,16 @@ CI additionally runs [`cargo deny check`](https://github.com/EmbarkStudios/cargo
 
 Set the version in `Cargo.toml`, then push a tag with the same version, for example `v0.2.0`. The
 release workflow publishes the container image to `ghcr.io` and creates the GitHub release.
+The image carries a provenance record and an SBOM (see the
+[operations guide](docs/OPERATIONS.md)).
 Starting the workflow by hand from the Actions page is a dry run that builds the image and
 publishes nothing.
 
 ## Roadmap
 
 [PLAN.md](PLAN.md) lists what is done, what comes next, and what Uguisu will not do.
+[CHANGELOG.md](CHANGELOG.md) lists what changed from release to release, and
+[CONTRIBUTING.md](CONTRIBUTING.md) says how to take part.
 
 ## License
 

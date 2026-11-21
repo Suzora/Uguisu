@@ -1,0 +1,39 @@
+{
+  "description": "Notes about the wren.",
+  "duration_seconds": null,
+  "enclosure": {
+    "length": 20,
+    "type": "audio/mpeg",
+    "url": "http://127.0.0.1:8496/audio/1.mp3"
+  },
+  "episode": null,
+  "files": [
+    {
+      "blake3": "a2d93fd9194c104f3e56eba2769e3262c05d42d4a81d9d07b299c3c8e9100a0e",
+      "downloaded": "2026-11-21T12:36:55Z",
+      "id": 2,
+      "kind": "media",
+      "name": "media.mp3",
+      "size": 16,
+      "source": "http://127.0.0.1:8496/audio/1.mp3",
+      "type": "audio/mpeg"
+    }
+  ],
+  "first_seen": "2026-11-21T12:36:54Z",
+  "guid": "fixture-1",
+  "hash": "46c02e4637fb091d2a11035e44cb94dcf34b0862dc3367b92414a35f72be2425",
+  "id": 2,
+  "image": null,
+  "link": null,
+  "published": "2024-01-01T10:00:00Z",
+  "removed": null,
+  "revisions": [
+    {
+      "file": "item.xml",
+      "hash": "46c02e4637fb091d2a11035e44cb94dcf34b0862dc3367b92414a35f72be2425",
+      "seen": "2026-11-21T12:36:54Z"
+    }
+  ],
+  "season": null,
+  "title": "First episode"
+}

@@ -1,5 +1,10 @@
 # syntax=docker/dockerfile:1
+# The list of contents (SBOM) made at release also covers the sources and the build stage, so
+# that it names the Rust libraries from Cargo.lock and not only the files of the final image.
+ARG BUILDKIT_SBOM_SCAN_CONTEXT=true
+
 FROM rust:1-bookworm AS build
+ARG BUILDKIT_SBOM_SCAN_STAGE=true
 WORKDIR /src
 COPY . .
 # Each platform gets caches of its own: two platforms built at once must not write into the
