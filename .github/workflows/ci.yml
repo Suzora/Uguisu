@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Once a week even without changes: new advisories concern code that is already merged.
+  schedule:
+    - cron: "23 5 * * 1"
 
 permissions:
   contents: read

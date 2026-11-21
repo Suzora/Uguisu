@@ -132,17 +132,17 @@ The promise "readable without Uguisu" is made good and tested.
 
 ### 0.6 – Operation and security
 
-- [ ] Images for x86-64 and ARM64.
+- [~] Images for x86-64 and ARM64.
 - [ ] Provenance, SBOM and signature for released images.
-- [ ] Automatic dependency updates and a scheduled `cargo deny` run.
+- [~] Automatic dependency updates and a scheduled `cargo deny` run.
 - [ ] Notifications about damaged files and feeds that keep failing (webhook, ntfy); optional
       `/metrics`.
 - [x] `uguisu reset-password` for a lost password.
-- [~] Login: slow down repeated wrong passwords. (`Secure` cookies behind HTTPS were already
+- [x] Login: slow down repeated wrong passwords. (`Secure` cookies behind HTTPS were already
       in place.)
-- [~] `SECURITY.md`: how to report a problem, what is protected and what is out of scope.
+- [x] `SECURITY.md`: how to report a problem, what is protected and what is out of scope.
 - [ ] Security review (requests to private networks, paths, XML, headers).
-- [ ] Operations guide: reverse proxy examples, backup and restore, moving, upgrading.
+- [~] Operations guide: reverse proxy examples, backup and restore, moving, upgrading.
 - [ ] Faster shutdown (about 2 seconds today) and safe behaviour when stopped mid-download.
 
 ### 1.0 – The finished product
