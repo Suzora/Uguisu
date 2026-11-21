@@ -1878,3 +1878,69 @@ async fn a_webhook_that_does_not_answer_stops_nothing() {
     cfg.webhook_url = Some("ftp://example.org/".to_string());
     assert!(Uguisu::open(cfg).await.is_err());
 }
+
+#[tokio::test]
+async fn new_podcasts_start_with_the_chosen_options() {
+    use uguisu_core::model::NewPodcastDefaults;
+
+    let old = "<item><title>Old</title><guid>old</guid>\
+        <pubDate>Mon, 01 Jan 2001 00:00:00 +0000</pubDate>\
+        <enclosure url=\"BASE/audio/old.mp3\" length=\"1\" type=\"audio/mpeg\"/></item>";
+    let source_feed: FeedBody = Arc::new(Mutex::new(feed(old)));
+    let base = start_source(source_feed).await;
+    let data = tempfile::tempdir().unwrap();
+    let config = || {
+        let mut cfg = Config::new(data.path());
+        cfg.allow_private_networks = true;
+        cfg.min_free_space = 0;
+        cfg.host_pause = std::time::Duration::ZERO;
+        cfg
+    };
+    let uguisu = Uguisu::open(config()).await.unwrap();
+
+    // Out of the box: removed episodes stay published, nothing else.
+    assert_eq!(
+        uguisu.new_podcast_defaults().await.unwrap(),
+        NewPodcastDefaults {
+            include_removed: true,
+            keep_versions: false,
+            only_new: false
+        }
+    );
+
+    let chosen = NewPodcastDefaults {
+        include_removed: false,
+        keep_versions: true,
+        only_new: true,
+    };
+    uguisu.set_new_podcast_defaults(chosen).await.unwrap();
+    // The address of the feed over all podcasts shares the file and must survive.
+    let token = uguisu.combined_feed_token().await.unwrap();
+    uguisu.set_new_podcast_defaults(chosen).await.unwrap();
+    assert_eq!(uguisu.combined_feed_token().await.unwrap(), token);
+
+    // An imported list follows all three options.
+    let report = uguisu.import_feeds(&[format!("{base}/feed.xml")]).await;
+    assert_eq!(report.added, 1);
+    let podcast = uguisu.podcasts().await.unwrap().remove(0).podcast;
+    assert!(!podcast.include_removed);
+    assert!(podcast.keep_versions);
+    assert!(podcast.archive_from.is_some());
+    uguisu.download_pending().await.unwrap();
+    assert_eq!(
+        uguisu.stats().await.unwrap().archived,
+        0,
+        "the old episode is skipped"
+    );
+
+    // A rebuilt index finds the options in the archive.
+    uguisu.pool().close().await;
+    drop(uguisu);
+    for name in ["uguisu.db", "uguisu.db-wal", "uguisu.db-shm"] {
+        let _ = std::fs::remove_file(data.path().join(name));
+    }
+    let uguisu = Uguisu::open(config()).await.unwrap();
+    uguisu.reindex().await.unwrap();
+    assert_eq!(uguisu.new_podcast_defaults().await.unwrap(), chosen);
+    assert_eq!(uguisu.combined_feed_token().await.unwrap(), token);
+}

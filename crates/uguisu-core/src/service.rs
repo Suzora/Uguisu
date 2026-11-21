@@ -16,7 +16,8 @@ use crate::feed::{self, ParsedFeed, ParsedItem, without_query};
 use crate::http::{build_client, check_url, lend_credentials, parse_user_url, redact};
 use crate::model::{
     Attachment, AttachmentDetail, DamagedFile, DownloadProblem, Episode, EpisodeView, FeedEpisode,
-    FeedSnapshot, HistoryEvent, MediaFile, Podcast, PodcastSummary, Revision, SearchResult, Stats,
+    FeedSnapshot, HistoryEvent, MediaFile, NewPodcastDefaults, Podcast, PodcastSummary, Revision,
+    SearchResult, Stats,
 };
 use crate::util::{now, random_token, short_hash, slugify};
 use crate::{db, search};
@@ -40,6 +41,8 @@ const MAX_DOWNLOAD_ATTEMPTS: i64 = 5;
 const MAX_HOST_BREAK: u64 = 3600;
 /// How often an interrupted download is continued within one attempt.
 const MAX_RESUMES: u32 = 5;
+/// Under this name the options for new podcasts are stored, in the database and the archive.
+const NEW_PODCASTS_KEY: &str = "new_podcasts";
 /// A feed is reported as failing when fetching it has failed this many times in a row.
 const FEED_FAILING_AFTER: i64 = 3;
 /// A notification names at most this many files; the counts are always complete.
@@ -247,6 +250,13 @@ struct Inner {
     downloading: Mutex<HashSet<i64>>,
     search_cache: Mutex<search::SearchCache>,
     hosts: Mutex<HashMap<String, HostState>>,
+}
+
+/// Midnight (UTC) of the current day: the start date of a podcast added with "only episodes
+/// from today on".
+pub fn start_of_today() -> i64 {
+    let now = now();
+    now - now.rem_euclid(86_400)
 }
 
 /// When a host may be asked again.
@@ -532,6 +542,26 @@ impl Uguisu {
         )
     }
 
+    /// What `uguisu.json` in the archive root holds: the settings of this installation that a
+    /// rebuilt index must find again.
+    async fn installation_settings(&self) -> serde_json::Map<String, serde_json::Value> {
+        let file = self.archive_dir().join("uguisu.json");
+        match tokio::fs::read(&file).await {
+            Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
+            Err(_) => Default::default(),
+        }
+    }
+
+    async fn write_installation_setting(&self, key: &str, value: serde_json::Value) -> Result<()> {
+        let mut settings = self.installation_settings().await;
+        settings.insert(key.to_string(), value);
+        write_atomic(
+            &self.archive_dir().join("uguisu.json"),
+            &serde_json::to_vec_pretty(&settings)?,
+        )
+        .await
+    }
+
     /// The secret part of the address of the feed over all podcasts; created at first use. It
     /// is kept in the archive as well, so that a rebuilt index publishes the same address.
     pub async fn combined_feed_token(&self) -> Result<String> {
@@ -539,24 +569,42 @@ impl Uguisu {
         if let Some(token) = db::get_setting(self.pool(), KEY).await? {
             return Ok(token);
         }
-        let file = self.archive_dir().join("uguisu.json");
-        let stored = match tokio::fs::read(&file).await {
-            Ok(bytes) => serde_json::from_slice::<serde_json::Value>(&bytes)
-                .ok()
-                .and_then(|value| value["combined_feed_token"].as_str().map(str::to_string)),
-            Err(_) => None,
-        };
-        let token = match stored {
-            Some(token) => token,
+        let stored = self.installation_settings().await;
+        let token = match stored.get(KEY).and_then(|token| token.as_str()) {
+            Some(token) => token.to_string(),
             None => {
                 let token = random_token(24);
-                let content = serde_json::json!({ "combined_feed_token": token });
-                write_atomic(&file, &serde_json::to_vec_pretty(&content)?).await?;
+                self.write_installation_setting(KEY, token.clone().into())
+                    .await?;
                 token
             }
         };
         db::set_setting(self.pool(), KEY, &token).await?;
         Ok(token)
+    }
+
+    /// The options a podcast gets when it is added.
+    pub async fn new_podcast_defaults(&self) -> Result<NewPodcastDefaults> {
+        if let Some(stored) = db::get_setting(self.pool(), NEW_PODCASTS_KEY).await? {
+            return Ok(serde_json::from_str(&stored).unwrap_or_default());
+        }
+        // A rebuilt index finds them in the archive.
+        let stored = self.installation_settings().await;
+        Ok(stored
+            .get(NEW_PODCASTS_KEY)
+            .and_then(|value| serde_json::from_value(value.clone()).ok())
+            .unwrap_or_default())
+    }
+
+    pub async fn set_new_podcast_defaults(&self, defaults: NewPodcastDefaults) -> Result<()> {
+        self.write_installation_setting(NEW_PODCASTS_KEY, serde_json::to_value(defaults)?)
+            .await?;
+        db::set_setting(
+            self.pool(),
+            NEW_PODCASTS_KEY,
+            &serde_json::to_string(&defaults)?,
+        )
+        .await
     }
 
     /// The newest archived episodes across all podcasts, each with the id of its podcast.
@@ -1013,9 +1061,11 @@ impl Uguisu {
         }
 
         let dir = format!("{}-{}", slugify(&parsed.title, 60), short_hash(url));
+        let defaults = self.new_podcast_defaults().await?;
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO podcasts (feed_url, original_feed_url, title, dir, feed_token, created_at, \
-             archive_from) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
+             archive_from, include_removed, keep_versions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) \
+             RETURNING id",
         )
         .bind(url)
         .bind(url)
@@ -1024,6 +1074,8 @@ impl Uguisu {
         .bind(random_token(24))
         .bind(now())
         .bind(archive_from)
+        .bind(defaults.include_removed)
+        .bind(defaults.keep_versions)
         .fetch_one(self.pool())
         .await?;
 
@@ -1289,8 +1341,13 @@ impl Uguisu {
     /// Adds every URL of an OPML import. Failures are logged and counted, not fatal.
     pub async fn import_feeds(&self, urls: &[String]) -> ImportReport {
         let mut report = ImportReport::default();
+        let only_new = self
+            .new_podcast_defaults()
+            .await
+            .is_ok_and(|defaults| defaults.only_new);
+        let archive_from = only_new.then(start_of_today);
         for url in urls {
-            match self.add_podcast(url).await {
+            match self.add_podcast_from(url, archive_from).await {
                 Ok(_) => report.added += 1,
                 Err(e) => {
                     report.failed += 1;

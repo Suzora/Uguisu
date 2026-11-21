@@ -506,6 +506,7 @@ fn marked(snippet: &str) -> Markup {
 
 pub fn settings_page(
     sessions: i64,
+    defaults: uguisu_core::model::NewPodcastDefaults,
     webhook: Option<&str>,
     notice: Option<&str>,
     error: Option<&str>,
@@ -551,6 +552,25 @@ pub fn settings_page(
                     }
                     p.muted.small {
                         (t("Podcast apps are not affected: feeds are protected by their secret addresses, not by the login."))
+                    }
+                }
+                section.panel {
+                    h2 { (t("New podcasts")) }
+                    p.muted.small { (t("What a podcast starts with when it is added. Each podcast can be set differently afterwards; podcasts already in the archive are not changed.")) }
+                    form.stack method="post" action="/settings/new-podcasts" {
+                        label.check {
+                            input type="checkbox" name="include_removed" checked[defaults.include_removed];
+                            (t("Publish episodes that left the source feed"))
+                        }
+                        label.check {
+                            input type="checkbox" name="keep_versions" checked[defaults.keep_versions];
+                            (t("Keep a new copy when the source replaces a file"))
+                        }
+                        label.check {
+                            input type="checkbox" name="only_new" checked[defaults.only_new];
+                            (t("Only episodes from the day it is added"))
+                        }
+                        button.button type="submit" { (t("Save")) }
                     }
                 }
                 section.panel {
@@ -715,7 +735,7 @@ pub fn library_page(
 
 // ── Add ────────────────────────────────────────────────────────────────────────────────────
 
-pub fn add_page(error: Option<&str>, url: &str) -> Markup {
+pub fn add_page(error: Option<&str>, url: &str, only_new: bool) -> Markup {
     shell(
         "Add podcast",
         "add",
@@ -739,7 +759,7 @@ pub fn add_page(error: Option<&str>, url: &str) -> Markup {
                         input type="text" name="url" value=(url) placeholder="https://example.org/feed.xml" required inputmode="url";
                         button.button.is-primary type="submit" { (t("Archive")) }
                         label.check title=(t("Earlier episodes are listed, but their files are not downloaded. This can be changed later.")) {
-                            input type="checkbox" name="only_new";
+                            input type="checkbox" name="only_new" checked[only_new];
                             (t("Only episodes from today on"))
                         }
                     }
@@ -787,7 +807,7 @@ fn serde_query(query: &str) -> String {
 }
 
 /// Results of one directory; `None` means the directory could not be reached.
-pub fn provider_results(provider: Provider, hits: Option<&[SearchHit]>) -> Markup {
+pub fn provider_results(provider: Provider, hits: Option<&[SearchHit]>, only_new: bool) -> Markup {
     html! {
         div.provider-results {
             @match hits {
@@ -807,6 +827,7 @@ pub fn provider_results(provider: Provider, hits: Option<&[SearchHit]>) -> Marku
                                 span.muted.small { (t("via ")) (hit.provider) }
                             }
                             input type="hidden" name="url" value=(hit.feed_url);
+                            @if only_new { input type="hidden" name="only_new" value="on"; }
                             button.button.is-primary type="submit" { (t("Archive")) }
                         }
                     }

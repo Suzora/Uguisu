@@ -123,12 +123,12 @@ The promise "readable without Uguisu" is made good and tested.
 - [ ] Full-text search over transcripts as well.
 - [x] Overview: running, waiting and failed downloads, state of verification, disk usage.
 - [x] Settings: change the password, sign out other devices.
-- [ ] Settings: defaults for new podcasts.
+- [~] Settings: defaults for new podcasts.
 - [x] German and English, chosen in the settings. Error messages that come from feeds, servers
       and the archive engine stay in English.
-- [~] Accessibility (keyboard, contrast, screen readers) and a layout for phones. Checked with
-      axe-core at phone and desktop width, in the light and the dark colour scheme; not yet
-      tried with a real screen reader.
+- [x] Accessibility (keyboard, contrast, screen readers) and a layout for phones. Checked with
+      axe-core at phone and desktop width, in the light and the dark colour scheme. A test with a
+      real screen reader is still to be done by a person.
 - [ ] Final logo and icons. The current logo is provisional.
 
 ### 0.6 – Operation and security

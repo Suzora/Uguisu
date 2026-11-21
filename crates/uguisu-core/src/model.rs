@@ -134,6 +134,28 @@ pub struct MediaFile {
     pub status: String,
 }
 
+/// The options a podcast gets when it is added. They can be changed per podcast afterwards.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct NewPodcastDefaults {
+    /// Keep publishing episodes that left the source feed.
+    pub include_removed: bool,
+    /// Keep a new copy when the source replaces a media file.
+    pub keep_versions: bool,
+    /// Archive only episodes published from the day the podcast is added.
+    pub only_new: bool,
+}
+
+impl Default for NewPodcastDefaults {
+    fn default() -> Self {
+        Self {
+            include_removed: true,
+            keep_versions: false,
+            only_new: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, FromRow)]
 pub struct Stats {
     pub podcasts: i64,
