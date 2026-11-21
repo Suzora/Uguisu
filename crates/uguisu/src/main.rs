@@ -116,8 +116,30 @@ enum Command {
     Healthcheck,
 }
 
-#[tokio::main]
-async fn main() -> ExitCode {
+/// How long requests that are being answered get to finish after the signal to stop. A podcast
+/// app may be in the middle of a file of hundreds of megabytes; it will ask again.
+const STOP_GRACE: Duration = Duration::from_secs(3);
+
+fn main() -> ExitCode {
+    let runtime = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(e) => {
+            eprintln!("cannot start: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let code = runtime.block_on(start());
+    // Work on other threads is not waited for: re-hashing a large file to verify it can take
+    // a long time, and nothing it does is lost by stopping. Downloads are continued from
+    // their partial files at the next start.
+    runtime.shutdown_timeout(Duration::from_millis(500));
+    code
+}
+
+async fn start() -> ExitCode {
     // Logs go to stderr so that command output on stdout stays clean.
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
@@ -175,6 +197,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
     match cli.command.unwrap_or(Command::Serve) {
         Command::Serve => {
             app.spawn_workers();
+            let pool = app.pool().clone();
             let base_url = cli
                 .base_url
                 .map(|u| u.trim_end_matches('/').to_string())
@@ -184,9 +207,25 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 .await
                 .with_context(|| format!("cannot listen on {}", cli.listen))?;
             tracing::info!("Uguisu is listening on http://{}", cli.listen);
-            axum::serve(listener, router)
-                .with_graceful_shutdown(shutdown_signal())
-                .await?;
+            let (stop, stopping) = tokio::sync::watch::channel(false);
+            tokio::spawn(async move {
+                shutdown_signal().await;
+                let _ = stop.send(true);
+            });
+            let mut asked = stopping.clone();
+            let mut deadline = stopping;
+            let server = axum::serve(listener, router).with_graceful_shutdown(async move {
+                let _ = asked.wait_for(|stop| *stop).await;
+            });
+            tokio::select! {
+                result = server => result?,
+                _ = async {
+                    let _ = deadline.wait_for(|stop| *stop).await;
+                    tokio::time::sleep(STOP_GRACE).await;
+                } => tracing::info!("requests still running were cut off"),
+            }
+            // Leaves the database as one tidy file where nothing else is using it.
+            let _ = tokio::time::timeout(Duration::from_secs(2), pool.close()).await;
             Ok(ExitCode::SUCCESS)
         }
         Command::Healthcheck => unreachable!("handled before the archive is opened"),
