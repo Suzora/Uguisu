@@ -174,7 +174,7 @@ Every document also has `time` (UTC), `software` and `text`, a sentence a person
 {
   "event": "feed.failing",
   "time": "2026-11-21T12:00:00Z",
-  "software": "uguisu 0.3.0",
+  "software": "uguisu 0.4.0",
   "text": "The feed of \"Example\" has failed 3 times in a row: the feed is not valid XML",
   "podcast": { "id": 4, "title": "Example", "feed": "https://example.org/feed.xml" },
   "error": "the feed is not valid XML"

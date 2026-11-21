@@ -5,6 +5,12 @@ Versions follow [semantic versioning](CONTRIBUTING.md#versions).
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.4.0
+
+The first release published as a container image.
+
 ### Added
 
 - The web interface in German; the language is chosen in the settings.
@@ -41,7 +47,8 @@ Versions follow [semantic versioning](CONTRIBUTING.md#versions).
 
 ## 0.3.0
 
-The first release.
+The state of the code under this version number. No image was published for it; everything
+listed here is part of 0.4.0.
 
 ### Archiving
 
