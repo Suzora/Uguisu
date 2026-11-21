@@ -82,6 +82,8 @@ const GERMAN: &[(&str, &str)] = &[
     ("Status", "Status"),
     ("Settings", "Einstellungen"),
     ("Sign out", "Abmelden"),
+    ("Main", "Hauptnavigation"),
+    ("Skip to the content", "Zum Inhalt springen"),
     (
         " · free software under the AGPL-3.0-or-later",
         " · freie Software unter der AGPL-3.0-or-later",
@@ -366,6 +368,7 @@ const GERMAN: &[(&str, &str)] = &[
         "Übernimm die Abo-Liste, die du aus deiner Podcast-App exportiert hast.",
     ),
     ("Import", "Importieren"),
+    ("OPML file", "OPML-Datei"),
     (
         "The file contains no feed addresses.",
         "Die Datei enthält keine Feed-Adressen.",

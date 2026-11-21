@@ -12,7 +12,7 @@
   --accent-strong: #525b1f;
   --accent-ink: #ffffff;
   --accent-soft: #e8ebcf;
-  --ok: #2f7a45;
+  --ok: #286b3c;
   --ok-soft: #dcefe0;
   --warn: #8a5a00;
   --warn-soft: #f6e8c6;
@@ -67,6 +67,20 @@ a:hover { color: var(--accent-strong); }
 img { display: block; max-width: 100%; }
 
 .muted { color: var(--muted); }
+
+/* For screen readers only. */
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+/* First stop of the keyboard: jump over the navigation. Visible only while focused. */
+.skip-link {
+  position: absolute; left: 12px; top: -60px; z-index: 100;
+  padding: 10px 16px; border-radius: 10px;
+  background: var(--accent); color: var(--accent-ink); font-weight: 600; text-decoration: none;
+}
+.skip-link:focus { top: 12px; color: var(--accent-ink); }
+main:focus { outline: none; }
 .small { font-size: 0.85rem; }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
@@ -202,6 +216,7 @@ input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent);
   align-content: start;
   min-width: 0;
 }
+.panel > * { min-width: 0; }
 .columns { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
 
 /* ── Sign in / setup ───────────────────────────────────────────────────── */
@@ -328,7 +343,7 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 .copy-row { display: flex; gap: 10px; }
 .copy-row input { flex: 1; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
-.actions form { margin: 0; display: flex; align-items: center; gap: 10px; }
+.actions form { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; min-width: 0; }
 .panel .small { overflow-wrap: anywhere; }
 
 details.danger > summary { cursor: pointer; font-weight: 600; color: var(--muted); }
@@ -380,6 +395,8 @@ a.episode-title:hover { color: var(--accent-strong); text-decoration: underline;
 
 @media (max-width: 640px) {
   .container { padding: 20px 16px 40px; gap: 18px; }
+  /* The navigation takes several lines here; it scrolls away instead of covering the page. */
+  .topbar { position: static; }
   .topbar-inner { padding: 10px 16px; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 16px; }
   .hero-content { padding: 20px; gap: 18px; }
