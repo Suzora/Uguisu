@@ -34,6 +34,8 @@ releases.
 - **Feeds are untrusted XML.** External entities are never loaded. A feed whose own entity
   declarations would expand to many times its size is refused; feeds, covers and attachments
   have size limits, and downloads stop before the disk reserve is used up.
+- **Notifications** go to one address set by the operator when starting Uguisu, not through
+  the web interface. They contain podcast titles, file names and error messages.
 - **Archived content is untrusted.** Show notes are shown as text, never as HTML. Archived files
   are served with a policy that forbids scripts, and images are decoded with limits on size and
   memory.

@@ -157,6 +157,7 @@ pub fn router(state: AppState) -> Router {
         .route("/settings", get(settings_page))
         .route("/settings/password", post(change_password))
         .route("/settings/sessions", post(end_other_sessions))
+        .route("/settings/notification", post(test_notification))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_login));
 
     let public = Router::new()
@@ -475,7 +476,31 @@ async fn settings_page(
         Some("sessions") => Some("All other devices have been signed out."),
         _ => None,
     };
-    Ok(page(ui::settings_page(sessions, notice, None)).into_response())
+    let webhook = state.app.webhook_host();
+    Ok(page(ui::settings_page(
+        sessions,
+        webhook.as_deref(),
+        notice,
+        None,
+    ))
+    .into_response())
+}
+
+/// Sends a test notification and shows whether the receiver accepted it.
+async fn test_notification(State(state): State<AppState>) -> AppResult {
+    let sessions = auth::session_count(state.app.pool()).await?;
+    let webhook = state.app.webhook_host();
+    let outcome = match state.app.send_test_notification().await {
+        Ok(()) => "The test notification was accepted by the receiver.".to_string(),
+        Err(e) => format!("The test notification could not be delivered: {e:#}"),
+    };
+    Ok(page(ui::settings_page(
+        sessions,
+        webhook.as_deref(),
+        Some(&outcome),
+        None,
+    ))
+    .into_response())
 }
 
 #[derive(Deserialize)]
@@ -509,7 +534,12 @@ async fn change_password(
         let sessions = auth::session_count(pool).await?;
         return Ok((
             StatusCode::UNPROCESSABLE_ENTITY,
-            page(ui::settings_page(sessions, None, Some(&problem))),
+            page(ui::settings_page(
+                sessions,
+                state.app.webhook_host().as_deref(),
+                None,
+                Some(&problem),
+            )),
         )
             .into_response());
     }

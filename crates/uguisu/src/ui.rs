@@ -486,7 +486,12 @@ fn marked(snippet: &str) -> Markup {
     maud::PreEscaped(escaped)
 }
 
-pub fn settings_page(sessions: i64, notice: Option<&str>, error: Option<&str>) -> Markup {
+pub fn settings_page(
+    sessions: i64,
+    webhook: Option<&str>,
+    notice: Option<&str>,
+    error: Option<&str>,
+) -> Markup {
     shell(
         "Settings",
         "settings",
@@ -528,6 +533,23 @@ pub fn settings_page(sessions: i64, notice: Option<&str>, error: Option<&str>) -
                     }
                     p.muted.small {
                         "Podcast apps are not affected: feeds are protected by their secret addresses, not by the login."
+                    }
+                }
+                section.panel {
+                    h2 { "Notifications" }
+                    @if let Some(host) = webhook {
+                        p.muted {
+                            "Damaged or missing files and feeds that keep failing are reported to "
+                            code { (host) } "."
+                        }
+                        form method="post" action="/settings/notification" {
+                            button.button type="submit" { "Send a test notification" }
+                        }
+                    } @else {
+                        p.muted {
+                            "Uguisu can report damaged files and feeds that keep failing to another service. "
+                            "Start it with " code { "UGUISU_WEBHOOK_URL" } " set to the address that should receive the reports."
+                        }
                     }
                 }
             }

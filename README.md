@@ -117,6 +117,7 @@ cargo run -p uguisu
 | `--verify-days` | `UGUISU_VERIFY_DAYS` | `30` | Re-hash every file at least this often; `0` turns it off |
 | `--min-free-gb` | `UGUISU_MIN_FREE_GB` | `1` | Downloads wait while less than this is free on the disk; `0` turns it off |
 | `--backups` | `UGUISU_BACKUPS` | `7` | Daily copies of the database kept in `backups/`; `0` turns them off |
+| `--webhook-url` | `UGUISU_WEBHOOK_URL` | none | Address that is told about damaged files and failing feeds (see the [operations guide](docs/OPERATIONS.md)) |
 | `--allow-private-networks` | `UGUISU_ALLOW_PRIVATE_NETWORKS` | off | Allow sources on local and private addresses |
 
 Commands: `uguisu serve` (default), `uguisu verify`, `uguisu reindex`, `uguisu import` and
