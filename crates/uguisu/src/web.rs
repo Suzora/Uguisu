@@ -188,6 +188,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/media/{token}/{episode_id}/a/{attachment_id}/{file}",
             get(attachment),
+        )
+        .route(
+            "/media/{token}/{episode_id}/v/{media_id}/{file}",
+            get(media_version),
         );
 
     protected
@@ -1221,6 +1225,34 @@ async fn media(
     serve_file(&state.app.archive_path(path), mime, request).await
 }
 
+/// One particular archived media file of an episode: also an earlier one that the source has
+/// replaced since. The feed publishes only the newest; the episode page links to all of them.
+async fn media_version(
+    State(state): State<AppState>,
+    Path((token, episode_id, media_id, _file)): Path<(String, i64, i64, String)>,
+    request: Request,
+) -> AppResult {
+    let podcast = state
+        .app
+        .podcast_by_token(&token)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    // The episode must belong to the podcast whose address was given.
+    state
+        .app
+        .episode(podcast.id, episode_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let file = state
+        .app
+        .media_files(episode_id)
+        .await?
+        .into_iter()
+        .find(|file| file.id == media_id && file.status == "ok")
+        .ok_or(AppError::NotFound)?;
+    serve_file(&state.app.archive_path(&file.path), &file.mime, request).await
+}
+
 async fn attachment(
     State(state): State<AppState>,
     Path((token, episode_id, attachment_id, _file)): Path<(String, i64, i64, String)>,
@@ -1773,6 +1805,84 @@ mod tests {
         let settings = page("/settings").await;
         assert!(settings.contains("name=\"keep_versions\" checked"));
         assert!(!settings.contains("name=\"include_removed\" checked"));
+    }
+
+    #[tokio::test]
+    async fn earlier_versions_of_a_media_file_can_be_fetched() {
+        let (data, router, _) = archive().await;
+        let app = uguisu_core::Uguisu::open(uguisu_core::Config::new(data.path()))
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO episodes (id, podcast_id, guid, title, enclosure_url, dir, meta_hash, \
+             first_seen_at, last_seen_at) \
+             VALUES (7, 1, 'ep-7', 'Seventh', 'https://x.test/a.mp3', 'e7', 'h', 0, 0)",
+        )
+        .execute(app.pool())
+        .await
+        .unwrap();
+        let directory = data.path().join("archive/test/episodes/e7");
+        std::fs::create_dir_all(&directory).unwrap();
+        for (id, name, content, status) in [
+            (1, "media.mp3", "the first cut", "ok"),
+            (2, "media-2.mp3", "the second cut", "ok"),
+            (3, "media-3.mp3", "broken", "corrupt"),
+        ] {
+            std::fs::write(directory.join(name), content).unwrap();
+            sqlx::query(
+                "INSERT INTO media_files (id, episode_id, path, size, blake3, mime, source_url, \
+                 downloaded_at, verified_at, status) \
+                 VALUES (?, 7, 'test/episodes/e7/' || ?, 1, 'x', 'audio/mpeg', 's', 0, 0, ?)",
+            )
+            .bind(id)
+            .bind(name)
+            .bind(status)
+            .execute(app.pool())
+            .await
+            .unwrap();
+        }
+        let fetch = |address: &'static str| {
+            let router = router.clone();
+            async move {
+                let request = Request::get(address).body(Body::empty()).unwrap();
+                let response = router.oneshot(request).await.unwrap();
+                let status = response.status();
+                let body = axum::body::to_bytes(response.into_body(), 1 << 20)
+                    .await
+                    .unwrap();
+                (status, String::from_utf8_lossy(&body).into_owned())
+            }
+        };
+
+        // Each intact version under its own address, without a login like all published files.
+        let (status, body) = fetch("/media/secret-token/7/v/1/media.mp3").await;
+        assert_eq!((status, body.as_str()), (StatusCode::OK, "the first cut"));
+        let (status, body) = fetch("/media/secret-token/7/v/2/media-2.mp3").await;
+        assert_eq!((status, body.as_str()), (StatusCode::OK, "the second cut"));
+
+        // Not a damaged one, not with a wrong address, not a file of another episode.
+        for address in [
+            "/media/secret-token/7/v/3/media-3.mp3",
+            "/media/wrong-token/7/v/1/media.mp3",
+            "/media/secret-token/8/v/1/media.mp3",
+            "/media/secret-token/7/v/99/media.mp3",
+        ] {
+            assert_eq!(fetch(address).await.0, StatusCode::NOT_FOUND, "{address}");
+        }
+
+        // The episode page links to the earlier version.
+        let session = crate::auth::create_session(app.pool()).await.unwrap();
+        let request = Request::get("/podcasts/1/episodes/7")
+            .header(header::COOKIE, format!("uguisu_session={session}"))
+            .body(Body::empty())
+            .unwrap();
+        let response = router.clone().oneshot(request).await.unwrap();
+        let body = axum::body::to_bytes(response.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        let page = String::from_utf8_lossy(&body);
+        assert!(page.contains("/media/secret-token/7/v/1/media.mp3"));
+        assert!(!page.contains("/v/3/"), "a damaged file has no link");
     }
 
     #[tokio::test]

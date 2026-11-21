@@ -110,7 +110,10 @@ The promise "readable without Uguisu" is made good and tested.
       need it.
 - [x] Cover thumbnails for the web interface. Originals stay untouched in the archive.
 - [x] One combined feed over all podcasts.
-- [ ] Access to removed episodes and earlier media versions through the published feed.
+- [~] Access to removed episodes and earlier media versions. Removed episodes stay in the
+      published feed (an option per podcast). Earlier versions of a media file each have an
+      address of their own, linked from the episode page; they are not put into the feed,
+      where an app would show them as duplicate episodes.
 - [ ] Compatibility check with real apps – AntennaPod, PinePods, Apple Podcasts, Pocket Casts,
       gPodder – documented as a table. Not checked with any app so far.
 - [x] Validate generated feeds in the test suite.
@@ -135,8 +138,9 @@ The promise "readable without Uguisu" is made good and tested.
 
 - [x] Images for x86-64 and ARM64. The ARM image is built by emulation, which takes about
       40 minutes per release.
-- [~] Provenance and SBOM for released images, attached to the image in the registry. (A
-      signature was considered and dropped.) First used by the release after 0.3.0.
+- [x] Provenance and SBOM for released images, attached to the image in the registry. (A
+      signature was considered and dropped.) First used by the release after 0.3.0, where it
+      is to be checked in the registry; the build with these options takes about 75 minutes.
 - [x] Automatic dependency updates and a scheduled `cargo deny` run.
 - [x] Notifications about damaged files and feeds that keep failing, as a webhook that other
       services can be attached to (`UGUISU_WEBHOOK_URL`).
@@ -155,11 +159,11 @@ The promise "readable without Uguisu" is made good and tested.
 ### 1.0 – The finished product
 
 - [ ] Archive format and feed addresses are frozen. Later versions read 1.0 archives.
-- [~] Migrations are tested from every released version: a real data directory written by
+- [x] Migrations are tested from every released version: a real data directory written by
       each release is kept as a test fixture and must open, verify, publish and reindex with
       the current code. So far: 0.3.0.
-- [~] Complete documentation: installation, operation, archive format, FAQ, legal notes.
-- [~] `CHANGELOG.md`, `CONTRIBUTING.md`, versioning rules (SemVer).
+- [x] Complete documentation: installation, operation, archive format, FAQ, legal notes.
+- [x] `CHANGELOG.md`, `CONTRIBUTING.md`, versioning rules (SemVer).
 
 Uguisu is "finished" when:
 

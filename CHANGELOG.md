@@ -15,6 +15,7 @@ Versions follow [semantic versioning](CONTRIBUTING.md#versions).
 - A skip link, a marked current page and other improvements for keyboard and screen reader
   users; a layout for phones that no longer scrolls sideways.
 - Provenance and an SBOM attached to released images.
+- Earlier versions of a replaced media file can be downloaded from the episode page.
 
 ### Changed
 

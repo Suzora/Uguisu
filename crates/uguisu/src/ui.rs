@@ -1216,7 +1216,7 @@ pub fn episode_page(
                                     @if Some(m.id) == newest_ok {
                                         a href=(media_url("", &podcast.feed_token, e.id, &name)) { (name) }
                                     } @else {
-                                        span { (name) }
+                                        a href=(format!("/media/{}/{}/v/{}/{}", podcast.feed_token, e.id, m.id, name)) { (name) }
                                     }
                                 } @else {
                                     span { (name) }
