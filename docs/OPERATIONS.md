@@ -121,6 +121,42 @@ damaging it. Keep a backup from before the upgrade if you want a way back.
   run from cron and its result mailed or monitored.
 - Downloads stop while less than `UGUISU_MIN_FREE_GB` (1 by default) is free on the disk.
 
+### Notifications
+
+Set `UGUISU_WEBHOOK_URL` to an address, and Uguisu sends it a JSON document by HTTP POST when
+something needs attention. Any service that accepts such a request can turn it into a message:
+ntfy, Gotify, Home Assistant, a chat webhook behind a small adapter, or a script of your own.
+
+| `event` | When | Further fields |
+| --- | --- | --- |
+| `archive.damaged` | A check found damaged or missing files | `damaged`, `missing` (counts), `damaged_files`, `missing_files` (at most 50 names each) |
+| `feed.failing` | Fetching a feed failed three times in a row; sent once | `podcast` (`id`, `title`, `feed`), `error` |
+| `feed.recovered` | A feed reported as failing works again | `podcast` |
+| `test` | "Send a test notification" on the settings page | none |
+
+Every document also has `time` (UTC), `software` and `text`, a sentence a person can read:
+
+```json
+{
+  "event": "feed.failing",
+  "time": "2026-11-21T12:00:00Z",
+  "software": "uguisu 0.3.0",
+  "text": "The feed of \"Example\" has failed 3 times in a row: the feed is not valid XML",
+  "podcast": { "id": 4, "title": "Example", "feed": "https://example.org/feed.xml" },
+  "error": "the feed is not valid XML"
+}
+```
+
+Good to know:
+
+- The address is yours to choose and may point into your own network; the protection against
+  private addresses that applies to feeds does not apply to it. It may contain a secret and
+  is never shown or logged; the settings page names only its host.
+- A notification is tried once, with ten seconds to answer, and redirects are not followed.
+  If the receiver is down, the failure is logged and the notification is lost. The status page
+  still shows the problem.
+- Any answer with a 2xx status counts as delivered.
+
 ## Lost password
 
 ```bash

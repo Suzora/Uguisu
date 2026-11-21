@@ -134,13 +134,13 @@ The promise "readable without Uguisu" is made good and tested.
       40 minutes per release.
 - [ ] Provenance and SBOM for released images. (A signature was considered and dropped.)
 - [x] Automatic dependency updates and a scheduled `cargo deny` run.
-- [ ] Notifications about damaged files and feeds that keep failing, as a webhook that other
-      services can be attached to.
+- [~] Notifications about damaged files and feeds that keep failing, as a webhook that other
+      services can be attached to (`UGUISU_WEBHOOK_URL`).
 - [x] `uguisu reset-password` for a lost password.
 - [x] Login: slow down repeated wrong passwords. (`Secure` cookies behind HTTPS were already
       in place.)
 - [x] `SECURITY.md`: how to report a problem, what is protected and what is out of scope.
-- [~] Security review (requests to private networks, paths, XML, headers). Found and fixed: a
+- [x] Security review (requests to private networks, paths, XML, headers). Found and fixed: a
       feed could exhaust memory through its own XML entities; IPv6 addresses that lead to
       private IPv4 addresses were let through; `reindex` followed file names out of the archive.
 - [x] Operations guide: reverse proxy examples, backup and restore, moving, upgrading.

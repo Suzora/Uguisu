@@ -1755,3 +1755,126 @@ async fn the_archive_is_searchable() {
     uguisu.remove_podcast(id, false).await.unwrap();
     assert!(titles(uguisu.clone(), "wrens").await.is_empty());
 }
+
+#[tokio::test]
+async fn problems_are_reported_to_a_webhook() {
+    // The receiver keeps every document it is sent.
+    let received: Arc<Mutex<Vec<serde_json::Value>>> = Arc::default();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let receiver = format!("http://{}/hook/secret", listener.local_addr().unwrap());
+    let sink = received.clone();
+    let app = Router::new().route(
+        "/hook/secret",
+        axum::routing::post(move |body: String| {
+            let sink = sink.clone();
+            async move {
+                sink.lock()
+                    .unwrap()
+                    .push(serde_json::from_str(&body).unwrap())
+            }
+        }),
+    );
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let events = || -> Vec<String> {
+        received
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|document| document["event"].as_str().unwrap().to_string())
+            .collect()
+    };
+
+    let good = feed(&item_with_file(1, "1.mp3"));
+    let source_feed: FeedBody = Arc::new(Mutex::new(good.clone()));
+    let base = start_source(source_feed.clone()).await;
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = Config::new(data.path());
+    cfg.allow_private_networks = true;
+    cfg.min_free_space = 0;
+    cfg.host_pause = std::time::Duration::ZERO;
+    cfg.webhook_url = Some(receiver);
+    let uguisu = Uguisu::open(cfg).await.unwrap();
+    let id = uguisu
+        .add_podcast(&format!("{base}/feed.xml"))
+        .await
+        .unwrap();
+    uguisu.download_pending().await.unwrap();
+    assert!(events().is_empty());
+
+    // A feed that fails is reported once, at the third failure in a row.
+    *source_feed.lock().unwrap() = "this is not a feed".to_string();
+    for _ in 0..2 {
+        assert!(uguisu.refresh(id).await.is_err());
+    }
+    assert!(events().is_empty());
+    for _ in 0..3 {
+        assert!(uguisu.refresh(id).await.is_err());
+    }
+    assert_eq!(events(), ["feed.failing"]);
+    {
+        let documents = received.lock().unwrap();
+        let document = &documents[0];
+        assert_eq!(document["podcast"]["id"], id);
+        assert!(document["text"].as_str().unwrap().contains("3 times"));
+        assert!(document["error"].as_str().is_some());
+        assert!(document["time"].as_str().unwrap().ends_with('Z'));
+    }
+
+    // … and once more when it works again.
+    *source_feed.lock().unwrap() = good;
+    uguisu.refresh(id).await.unwrap();
+    uguisu.refresh(id).await.unwrap();
+    assert_eq!(events(), ["feed.failing", "feed.recovered"]);
+
+    // A damaged file is reported by the check that finds it.
+    let file = uguisu.episodes(id).await.unwrap()[0]
+        .media_path
+        .clone()
+        .unwrap();
+    std::fs::write(uguisu.archive_path(&file), "bit rot").unwrap();
+    uguisu.verify().await.unwrap();
+    assert_eq!(events().last().unwrap(), "archive.damaged");
+    {
+        let documents = received.lock().unwrap();
+        let document = documents.last().unwrap();
+        assert_eq!(document["damaged"], 1);
+        assert_eq!(document["damaged_files"][0], file);
+    }
+
+    uguisu.send_test_notification().await.unwrap();
+    assert_eq!(events().last().unwrap(), "test");
+    assert_eq!(uguisu.webhook_host().as_deref(), Some("127.0.0.1"));
+}
+
+#[tokio::test]
+async fn a_webhook_that_does_not_answer_stops_nothing() {
+    let source_feed: FeedBody = Arc::new(Mutex::new(feed(&item_with_file(1, "1.mp3"))));
+    let base = start_source(source_feed).await;
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = Config::new(data.path());
+    cfg.allow_private_networks = true;
+    cfg.min_free_space = 0;
+    cfg.host_pause = std::time::Duration::ZERO;
+    // Nothing listens here, and the path would be a secret.
+    cfg.webhook_url = Some("http://127.0.0.1:9/hook/secret-token".to_string());
+    let uguisu = Uguisu::open(cfg).await.unwrap();
+    let id = uguisu
+        .add_podcast(&format!("{base}/feed.xml"))
+        .await
+        .unwrap();
+    uguisu.download_pending().await.unwrap();
+    let file = uguisu.episodes(id).await.unwrap()[0]
+        .media_path
+        .clone()
+        .unwrap();
+    std::fs::write(uguisu.archive_path(&file), "bit rot").unwrap();
+    assert_eq!(uguisu.verify().await.unwrap().corrupt, vec![file]);
+
+    let error = uguisu.send_test_notification().await.unwrap_err();
+    assert!(!format!("{error:#}").contains("secret-token"), "{error:#}");
+    assert!(format!("{error:#}").contains("could not be reached"));
+
+    let mut cfg = Config::new(data.path());
+    cfg.webhook_url = Some("ftp://example.org/".to_string());
+    assert!(Uguisu::open(cfg).await.is_err());
+}

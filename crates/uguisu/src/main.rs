@@ -68,6 +68,16 @@ struct Cli {
     #[arg(long, env = "UGUISU_BACKUPS", default_value_t = 7, global = true)]
     backups: usize,
 
+    /// Address that is told about damaged files and feeds that keep failing: a JSON document
+    /// sent by HTTP POST. The address may contain a secret; it is never shown or logged.
+    #[arg(
+        long,
+        env = "UGUISU_WEBHOOK_URL",
+        global = true,
+        hide_env_values = true
+    )]
+    webhook_url: Option<String>,
+
     /// Allow fetching feeds and media from loopback and private addresses.
     #[arg(long, env = "UGUISU_ALLOW_PRIVATE_NETWORKS", global = true)]
     allow_private_networks: bool,
@@ -133,6 +143,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
     cfg.download_concurrency = cli.download_concurrency.max(1);
     cfg.min_free_space = cli.min_free_gb.saturating_mul(1 << 30);
     cfg.backups = cli.backups;
+    cfg.webhook_url = cli.webhook_url.clone().filter(|url| !url.trim().is_empty());
     cfg.verify_interval =
         (cli.verify_days > 0).then(|| Duration::from_secs(cli.verify_days * 24 * 3600));
     if matches!(cli.command, Some(Command::Healthcheck)) {

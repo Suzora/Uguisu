@@ -40,6 +40,10 @@ const MAX_DOWNLOAD_ATTEMPTS: i64 = 5;
 const MAX_HOST_BREAK: u64 = 3600;
 /// How often an interrupted download is continued within one attempt.
 const MAX_RESUMES: u32 = 5;
+/// A feed is reported as failing when fetching it has failed this many times in a row.
+const FEED_FAILING_AFTER: i64 = 3;
+/// A notification names at most this many files; the counts are always complete.
+const MAX_NOTIFIED_FILES: usize = 50;
 
 /// All podcasts with their numbers. Unlike `podcast_summary_sql`, which looks the numbers up per
 /// podcast and suits a single one, this counts every podcast in one pass over the episodes; with
@@ -128,6 +132,9 @@ pub struct Config {
     pub min_free_space: u64,
     /// How many daily copies of the database are kept in `backups/`. `0` turns them off.
     pub backups: usize,
+    /// Where notifications about damaged files and failing feeds are sent, as JSON by HTTP
+    /// POST. The operator chooses this address, so it may also lie in a private network.
+    pub webhook_url: Option<String>,
 }
 
 impl Config {
@@ -143,6 +150,7 @@ impl Config {
             host_pause: Duration::from_secs(1),
             min_free_space: 1 << 30,
             backups: 7,
+            webhook_url: None,
         }
     }
 }
@@ -233,6 +241,8 @@ struct Inner {
     cfg: Config,
     pool: SqlitePool,
     client: reqwest::Client,
+    /// For notifications only. See [`Config::webhook_url`].
+    webhook_client: reqwest::Client,
     wake_downloader: Notify,
     downloading: Mutex<HashSet<i64>>,
     search_cache: Mutex<search::SearchCache>,
@@ -381,11 +391,23 @@ impl Uguisu {
         }
         let pool = db::open(&cfg.data_dir.join("uguisu.db")).await?;
         let client = build_client(&cfg.user_agent, cfg.allow_private_networks)?;
+        if let Some(address) = &cfg.webhook_url {
+            let valid = url::Url::parse(address)
+                .is_ok_and(|u| matches!(u.scheme(), "http" | "https") && u.host().is_some());
+            anyhow::ensure!(valid, "the webhook address must be an http or https URL");
+        }
+        let webhook_client = reqwest::Client::builder()
+            .user_agent(&cfg.user_agent)
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(10))
+            .build()
+            .context("cannot build HTTP client")?;
         Ok(Self {
             inner: Arc::new(Inner {
                 cfg,
                 pool,
                 client,
+                webhook_client,
                 wake_downloader: Notify::new(),
                 downloading: Mutex::new(HashSet::new()),
                 search_cache: Mutex::new(search::SearchCache::default()),
@@ -1283,15 +1305,44 @@ impl Uguisu {
     /// podcast so the UI can show them.
     pub async fn refresh(&self, podcast_id: i64) -> Result<()> {
         let result = self.refresh_inner(podcast_id).await;
-        if let Err(e) = &result {
-            sqlx::query(
-                "UPDATE podcasts SET last_fetched_at = ?, last_fetch_error = ? WHERE id = ?",
-            )
-            .bind(now())
-            .bind(format!("{e:#}"))
-            .bind(podcast_id)
-            .execute(self.pool())
-            .await?;
+        let failures: Option<i64> = match &result {
+            Err(e) => {
+                sqlx::query_scalar(
+                    "UPDATE podcasts SET last_fetched_at = ?, last_fetch_error = ?, \
+                     fetch_failures = fetch_failures + 1 WHERE id = ? RETURNING fetch_failures",
+                )
+                .bind(now())
+                .bind(format!("{e:#}"))
+                .bind(podcast_id)
+                .fetch_optional(self.pool())
+                .await?
+            }
+            Ok(()) => None,
+        };
+        match (&result, failures) {
+            (Err(e), Some(FEED_FAILING_AFTER)) => {
+                self.notify_about_feed(podcast_id, "feed.failing", Some(&format!("{e:#}")))
+                    .await;
+            }
+            (Ok(()), _) => {
+                let before: i64 =
+                    sqlx::query_scalar("SELECT fetch_failures FROM podcasts WHERE id = ?")
+                        .bind(podcast_id)
+                        .fetch_optional(self.pool())
+                        .await?
+                        .unwrap_or(0);
+                if before > 0 {
+                    sqlx::query("UPDATE podcasts SET fetch_failures = 0 WHERE id = ?")
+                        .bind(podcast_id)
+                        .execute(self.pool())
+                        .await?;
+                }
+                if before >= FEED_FAILING_AFTER {
+                    self.notify_about_feed(podcast_id, "feed.recovered", None)
+                        .await;
+                }
+            }
+            _ => {}
         }
         result
     }
@@ -2495,7 +2546,124 @@ impl Uguisu {
         }
         if !report.corrupt.is_empty() || !report.missing.is_empty() {
             self.inner.wake_downloader.notify_one();
+            let listed = |files: &[String]| -> Vec<String> {
+                files.iter().take(MAX_NOTIFIED_FILES).cloned().collect()
+            };
+            self.notify(
+                "archive.damaged",
+                format!(
+                    "{} damaged and {} missing files in the archive",
+                    report.corrupt.len(),
+                    report.missing.len()
+                ),
+                serde_json::json!({
+                    "damaged": report.corrupt.len(),
+                    "missing": report.missing.len(),
+                    "damaged_files": listed(&report.corrupt),
+                    "missing_files": listed(&report.missing),
+                }),
+            )
+            .await;
         }
         Ok(report)
+    }
+
+    // ── Notifications ──────────────────────────────────────────────────────────────────────
+
+    /// Whether an address for notifications is configured, and which host it names.
+    pub fn webhook_host(&self) -> Option<String> {
+        let url = self.inner.cfg.webhook_url.as_deref()?;
+        Some(match url::Url::parse(url) {
+            Ok(parsed) => parsed.host_str().unwrap_or("?").to_string(),
+            Err(_) => "?".to_string(),
+        })
+    }
+
+    /// Sends a notification that says nothing happened, to try the configured address.
+    pub async fn send_test_notification(&self) -> Result<()> {
+        self.post_notification(
+            "test",
+            "This is a test notification from Uguisu.".to_string(),
+            serde_json::json!({}),
+        )
+        .await
+    }
+
+    async fn notify_about_feed(&self, podcast_id: i64, event: &str, error: Option<&str>) {
+        let Ok(Some(podcast)) = self.podcast(podcast_id).await else {
+            return;
+        };
+        let text = match error {
+            Some(error) => format!(
+                "The feed of \"{}\" has failed {FEED_FAILING_AFTER} times in a row: {error}",
+                podcast.title
+            ),
+            None => format!("The feed of \"{}\" works again.", podcast.title),
+        };
+        let details = serde_json::json!({
+            "podcast": {
+                "id": podcast.id,
+                "title": podcast.title,
+                "feed": redact(&podcast.feed_url),
+            },
+            "error": error,
+        });
+        self.notify(event, text, details).await;
+    }
+
+    /// Sends a notification if an address is configured. A notification that cannot be
+    /// delivered is logged and otherwise ignored: it must never stop the work it reports on.
+    async fn notify(&self, event: &str, text: String, details: serde_json::Value) {
+        if self.inner.cfg.webhook_url.is_none() {
+            return;
+        }
+        if let Err(e) = self.post_notification(event, text, details).await {
+            tracing::warn!(event, "notification could not be delivered: {e:#}");
+        }
+    }
+
+    async fn post_notification(
+        &self,
+        event: &str,
+        text: String,
+        details: serde_json::Value,
+    ) -> Result<()> {
+        let url = self
+            .inner
+            .cfg
+            .webhook_url
+            .as_deref()
+            .context("no address for notifications is configured")?;
+        let mut body = serde_json::json!({
+            "event": event,
+            "time": crate::util::format_utc(now(), "%Y-%m-%dT%H:%M:%SZ"),
+            "software": concat!("uguisu ", env!("CARGO_PKG_VERSION")),
+            "text": text,
+        });
+        if let (Some(body), serde_json::Value::Object(details)) = (body.as_object_mut(), details) {
+            body.extend(details);
+        }
+        // The address may carry a secret; errors name the host only.
+        let response = self
+            .inner
+            .webhook_client
+            .post(url)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(serde_json::to_vec(&body)?)
+            .send()
+            .await
+            .map_err(|e| {
+                // The innermost cause says what went wrong ("connection refused").
+                let e = e.without_url();
+                let mut cause: &dyn std::error::Error = &e;
+                while let Some(next) = cause.source() {
+                    cause = next;
+                }
+                anyhow::anyhow!("the receiver could not be reached ({cause})")
+            })?;
+        if !response.status().is_success() {
+            bail!("the receiver answered {}", response.status());
+        }
+        Ok(())
     }
 }
