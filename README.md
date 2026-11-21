@@ -203,6 +203,8 @@ CI additionally runs [`cargo deny check`](https://github.com/EmbarkStudios/cargo
 
 Set the version in `Cargo.toml`, then push a tag with the same version, for example `v0.2.0`. The
 release workflow publishes the container image to `ghcr.io` and creates the GitHub release.
+The image carries a provenance record and an SBOM (see the
+[operations guide](docs/OPERATIONS.md)).
 Starting the workflow by hand from the Actions page is a dry run that builds the image and
 publishes nothing.
 
