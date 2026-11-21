@@ -22,6 +22,7 @@ Versions follow [semantic versioning](CONTRIBUTING.md#versions).
 - Stopping takes a few seconds at most: requests still being answered are cut off after three
   seconds instead of holding the process.
 - Removing a podcast no longer rebuilds the whole search index.
+- The ARM64 image is cross-compiled instead of built in an emulator.
 - Password hashing moved to a new version of the Argon2 library. Existing passwords keep
   working.
 
