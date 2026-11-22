@@ -1,0 +1,49 @@
+{
+  "description": "<p>Notes about the <b>heron</b>.</p>",
+  "duration_seconds": null,
+  "enclosure": {
+    "length": 20,
+    "type": "audio/mpeg",
+    "url": "http://127.0.0.1:8496/audio/2.mp3"
+  },
+  "episode": null,
+  "files": [
+    {
+      "blake3": "aaebde4315365431592b241eb56b0bca14990a84c7ea2330c2a91d632ffd693f",
+      "downloaded": "2026-11-22T18:44:23Z",
+      "id": 1,
+      "kind": "media",
+      "name": "media.mp3",
+      "size": 16,
+      "source": "http://127.0.0.1:8496/audio/2.mp3",
+      "type": "audio/mpeg"
+    },
+    {
+      "blake3": "8117531cc371dfec53ba1ca7c9dac4707d2d5c52669d6358bc0399bd6fe40734",
+      "downloaded": "2026-11-22T18:44:25Z",
+      "id": 1,
+      "kind": "transcript",
+      "name": "transcript-126e4eae.vtt",
+      "size": 66,
+      "source": "http://127.0.0.1:8496/talk.vtt",
+      "type": "text/vtt"
+    }
+  ],
+  "first_seen": "2026-11-22T18:44:23Z",
+  "guid": "fixture-2",
+  "hash": "70adf7c1c14c11040cde8bc8ca52194b99a74e8d2586f6f24af8a5dad52dedfe",
+  "id": 1,
+  "image": null,
+  "link": null,
+  "published": "2024-01-02T10:00:00Z",
+  "removed": null,
+  "revisions": [
+    {
+      "file": "item.xml",
+      "hash": "70adf7c1c14c11040cde8bc8ca52194b99a74e8d2586f6f24af8a5dad52dedfe",
+      "seen": "2026-11-22T18:44:23Z"
+    }
+  ],
+  "season": null,
+  "title": "Second episode"
+}

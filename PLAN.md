@@ -162,7 +162,7 @@ The promise "readable without Uguisu" is made good and tested.
 - [ ] Archive format and feed addresses are frozen. Later versions read 1.0 archives.
 - [x] Migrations are tested from every released version: a real data directory written by
       each release is kept as a test fixture and must open, verify, publish and reindex with
-      the current code. So far: 0.3.0.
+      the current code. So far: 0.3.0 and 0.4.0.
 - [x] Complete documentation: installation, operation, archive format, FAQ, legal notes.
 - [x] `CHANGELOG.md`, `CONTRIBUTING.md`, versioning rules (SemVer).
 
