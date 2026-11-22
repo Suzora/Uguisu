@@ -5,7 +5,11 @@ Versions follow [semantic versioning](CONTRIBUTING.md#versions).
 
 ## Unreleased
 
-Nothing yet.
+### Changed
+
+- The `url` library is updated because of a security advisory: its function `Url::origin()`
+  could crash the program on a prepared address. Neither Uguisu nor the libraries through
+  which it uses `url` call that function, so 0.4.0 is not known to be affected.
 
 ## 0.4.0
 
