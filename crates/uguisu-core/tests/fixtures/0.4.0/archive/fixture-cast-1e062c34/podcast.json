@@ -1,0 +1,22 @@
+{
+  "author": "Fixture Author",
+  "description": "An archive written by Uguisu 0.4.0",
+  "feed_url": "http://127.0.0.1:8496/feed.xml",
+  "image": null,
+  "language": null,
+  "last_fetched": "2026-11-22T18:44:23Z",
+  "link": "https://example.org",
+  "namespaces": [
+    [
+      "itunes",
+      "http://www.itunes.com/dtds/podcast-1.0.dtd"
+    ],
+    [
+      "podcast",
+      "https://podcastindex.org/namespace/1.0"
+    ]
+  ],
+  "original_feed_url": "http://127.0.0.1:8496/feed.xml",
+  "podcast_guid": null,
+  "title": "Fixture Cast"
+}

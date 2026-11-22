@@ -2058,7 +2058,7 @@ async fn archives_of_released_versions_are_upgraded() {
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
     versions.sort();
-    assert!(versions.contains(&"0.3.0".to_string()));
+    assert_eq!(versions, ["0.3.0", "0.4.0"]);
 
     for version in versions {
         let data = tempfile::tempdir().unwrap();
