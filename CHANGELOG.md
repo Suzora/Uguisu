@@ -12,6 +12,10 @@ Versions follow [semantic versioning](CONTRIBUTING.md#versions).
 
 ### Fixed
 
+- When an episode has several transcripts, they are downloaded side by side, and the less
+  clean one (a web page, for example) could end up in the search index instead of the WebVTT
+  or JSON one, depending on which download finished last. Indexing now happens one transcript
+  at a time. Seen as an intermittent test failure (4 of 300 runs).
 - The nginx example in the operations guide passed `$host`, which drops the port: behind nginx
   on a port other than 443 the login was refused and feeds pointed to an address without the
   port. It now passes `$http_host`. Both proxy examples have now been run against an instance.
