@@ -182,7 +182,8 @@ feed passwords in plain text, like the database itself.
   also used for media files on the same server, never for another one. They are stored in the
   database in plain text and left out of the archive files, published feeds and log messages.
 - Archive only what you are allowed to keep, and do not share feed addresses of content you have
-  no right to redistribute.
+  no right to redistribute. If someone wants the same archive, share Uguisu instead and let
+  them archive the podcast themselves.
 
 ## Project layout
 

@@ -91,6 +91,9 @@ This is not legal advice; the rules differ from country to country.
 - **A private copy is not a licence to pass it on.** Whether you may keep copies for yourself
   depends on where you live and on the terms of the podcast. Passing them on – and a feed
   address given to someone else does exactly that – usually needs the publisher's permission.
+- **Share Uguisu, not your feed addresses.** If someone else wants the same archive, point them
+  to Uguisu and let them archive the podcast themselves from its public feed. Then everyone
+  holds a copy of their own, made from the source, and nothing is passed on.
 - **Paid and private feeds** come with terms of their own. Their feed addresses are personal;
   so are the addresses under which Uguisu publishes them.
 - **Keep the instance private** unless you have the right to publish what it holds: behind a
