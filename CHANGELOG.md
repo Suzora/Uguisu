@@ -17,6 +17,7 @@ Versions follow [semantic versioning](CONTRIBUTING.md#versions).
 
 ### Changed
 
+- German: the status page says "Werden geladen" instead of the clumsy "Laden gerade".
 - **The archive is named for people (archive format 5).** A podcast's directory is now
   `<author> - <title>`, and its media files lie together in `episodes/`, named by publication
   time and title (`2024-10-23 22.07 - Trailer.mp3`), so that they sort in order. Everything else

@@ -161,6 +161,9 @@ The promise "readable without Uguisu" is made good and tested.
 - [x] `uguisu reset-password` for a lost password.
 - [x] Login: slow down repeated wrong passwords. (`Secure` cookies behind HTTPS were already
       in place.)
+- [x] German interface checked in error and empty states (wrong password, invalid and
+      unreachable feed, failed download, feed without episodes, empty search) on 2026-11-23;
+      only messages from feeds, servers and the engine stay English, as documented.
 - [x] Forms work over plain `http` in the home network (they were refused as cross-site until
       the referrer policy was changed from `no-referrer` to `same-origin`).
 - [x] `SECURITY.md`: how to report a problem, what is protected and what is out of scope.
