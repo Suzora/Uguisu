@@ -414,6 +414,18 @@ async fn the_best_offered_file_is_archived() {
     uguisu.refresh(id).await.unwrap();
     assert_eq!(uguisu.download_pending().await.unwrap(), 0);
     assert_eq!(uguisu.verify().await.unwrap().ok, 2);
+
+    // A damaged copy of it is repaired from the file it was, not replaced by the better one.
+    let one_path = uguisu.archive_path(one.media_path.as_deref().unwrap());
+    std::fs::write(&one_path, "bit rot").unwrap();
+    assert_eq!(uguisu.verify().await.unwrap().corrupt.len(), 1);
+    uguisu.download_pending().await.unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&one_path).unwrap(),
+        "fake audio 1.mp3"
+    );
+    let verified = uguisu.verify().await.unwrap();
+    assert_eq!((verified.ok, verified.checked), (2, 2));
 }
 
 #[tokio::test]

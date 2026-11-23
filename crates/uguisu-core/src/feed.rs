@@ -71,6 +71,21 @@ pub struct MediaOption {
 }
 
 impl MediaOption {
+    /// A playlist or stream description rather than the episode itself.
+    fn is_playlist(&self) -> bool {
+        let mime = self
+            .mime
+            .as_deref()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let path = without_query(&self.url).to_ascii_lowercase();
+        mime.contains("mpegurl")
+            || mime.contains("scpls")
+            || [".m3u", ".m3u8", ".pls"]
+                .iter()
+                .any(|ext| path.ends_with(ext))
+    }
+
     /// `audio`, `video` or whatever else the media type or the address says.
     fn kind(&self) -> Option<String> {
         let mime = self.mime.clone().or_else(|| {
@@ -125,6 +140,7 @@ impl ParsedItem {
                 Ok("http" | "https")
             );
             if usable
+                && !option.is_playlist()
                 && option.kind().as_deref() == Some(kind.as_str())
                 && option.is_better_than(best)
             {
@@ -920,6 +936,11 @@ mod tests {
         );
         assert_eq!(item.best_media(), None);
         assert_eq!(item_with("").best_media(), None);
+        // A playlist is not the episode, however its type starts.
+        let item = item_with(
+            r#"<media:content url="https://cdn.example/live.m3u8" type="audio/mpegurl" fileSize="99999"/>"#,
+        );
+        assert_eq!(item.best_media(), None);
     }
 
     #[test]

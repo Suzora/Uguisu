@@ -1877,7 +1877,12 @@ impl Uguisu {
                              enclosure_length = ?, image_url = ?, season = ?, episode_no = ?, \
                              meta_hash = ?, last_seen_at = ?, removed_at = NULL, \
                              download_attempts = 0, next_attempt_at = 0, \
-                             refetch = MAX(refetch, ?), media_url = ?, media_type = ? WHERE id = ?",
+                             refetch = MAX(refetch, ?), \
+                             media_url = CASE WHEN ? OR NOT EXISTS (SELECT 1 FROM media_files \
+                               WHERE episode_id = episodes.id) THEN ? ELSE media_url END, \
+                             media_type = CASE WHEN ? OR NOT EXISTS (SELECT 1 FROM media_files \
+                               WHERE episode_id = episodes.id) THEN ? ELSE media_type END \
+                             WHERE id = ?",
                         )
                         .bind(&item.title)
                         .bind(&item.description)
@@ -1893,7 +1898,11 @@ impl Uguisu {
                         .bind(&meta_hash)
                         .bind(now)
                         .bind(replaced)
+                        // The source is chosen while nothing is archived, or anew when the
+                        // source replaced its file. A repair fetches the file it had.
+                        .bind(replaced)
                         .bind(best.as_ref().map(|b| &b.url))
+                        .bind(replaced)
                         .bind(best.as_ref().and_then(|b| b.mime.as_ref()))
                         .bind(id)
                         .execute(&mut *tx)
@@ -1901,7 +1910,11 @@ impl Uguisu {
                     } else {
                         sqlx::query(
                             "UPDATE episodes SET last_seen_at = ?, removed_at = NULL, \
-                             media_url = ?, media_type = ? WHERE id = ?",
+                             media_url = CASE WHEN EXISTS (SELECT 1 FROM media_files \
+                               WHERE episode_id = episodes.id) THEN media_url ELSE ? END, \
+                             media_type = CASE WHEN EXISTS (SELECT 1 FROM media_files \
+                               WHERE episode_id = episodes.id) THEN media_type ELSE ? END \
+                             WHERE id = ?",
                         )
                         .bind(now)
                         .bind(best.as_ref().map(|b| &b.url))
