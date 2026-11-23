@@ -544,7 +544,7 @@ async fn settings_page(
         sessions,
         state.app.new_podcast_defaults().await?,
         webhook.as_deref(),
-        notice,
+        notice.map(ui::Notice::Done),
         None,
     ))
     .into_response())
@@ -576,18 +576,22 @@ async fn change_new_podcasts(
 async fn test_notification(State(state): State<AppState>) -> AppResult {
     let sessions = auth::session_count(state.app.pool()).await?;
     let webhook = state.app.webhook_host();
-    let outcome = match state.app.send_test_notification().await {
-        Ok(()) => t("The test notification was accepted by the receiver.").to_string(),
-        Err(e) => format!(
+    let result = state.app.send_test_notification().await;
+    let failure = result.as_ref().err().map(|e| {
+        format!(
             "{} {e:#}",
             t("The test notification could not be delivered:")
-        ),
+        )
+    });
+    let outcome = match &failure {
+        None => ui::Notice::Done("The test notification was accepted by the receiver."),
+        Some(text) => ui::Notice::Failed(text),
     };
     Ok(page(ui::settings_page(
         sessions,
         state.app.new_podcast_defaults().await?,
         webhook.as_deref(),
-        Some(&outcome),
+        Some(outcome),
         None,
     ))
     .into_response())

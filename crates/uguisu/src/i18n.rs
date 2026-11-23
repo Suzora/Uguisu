@@ -473,6 +473,10 @@ const GERMAN: &[(&str, &str)] = &[
     ("First seen ", "Zuerst gesehen "),
     (" · identifier ", " · Kennung "),
     ("Files", "Dateien"),
+    ("Transcript", "Transkript"),
+    ("Chapters", "Kapitel"),
+    ("Episode image", "Episodenbild"),
+    ("Image from the show notes", "Bild aus den Shownotes"),
     (
         "Nothing is archived for this episode yet.",
         "Für diese Episode ist noch nichts archiviert.",
