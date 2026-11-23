@@ -202,6 +202,16 @@ Good to know:
   still shows the problem.
 - Any answer with a 2xx status counts as delivered.
 
+With ntfy, posting to a topic address shows the JSON document as it is. ntfy's templates turn
+it into a readable message without an adapter (checked with ntfy 2.38):
+
+```text
+UGUISU_WEBHOOK_URL=https://ntfy.example.org/uguisu?tpl=yes&t=Uguisu&m={{.text}}
+```
+
+Both this form and the percent-encoded one (`m=%7B%7B.text%7D%7D`) were checked. In a shell,
+put the value in quotes.
+
 ## Lost password
 
 ```bash
