@@ -7,6 +7,9 @@ Versions follow [semantic versioning](CONTRIBUTING.md#versions).
 
 ### Fixed
 
+- The nginx example in the operations guide passed `$host`, which drops the port: behind nginx
+  on a port other than 443 the login was refused and feeds pointed to an address without the
+  port. It now passes `$http_host`. Both proxy examples have now been run against an instance.
 - The SBOM of a released image listed only the packages of the base image and none of the
   Rust libraries Uguisu is built from. The list of libraries is now written into the program,
   where the SBOM takes it from. The two extra scans of 0.4.0, which found no Rust libraries

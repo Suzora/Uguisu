@@ -41,14 +41,17 @@ nginx (inside a `server` block that already handles TLS):
 ```nginx
 location / {
     proxy_pass http://127.0.0.1:8484;
-    proxy_set_header Host $host;
+    proxy_set_header Host $http_host;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_buffering off;
 }
 ```
 
-These examples were written from the documentation of the two servers and have not been run
-against an Uguisu instance.
+Both examples were run in front of an Uguisu instance (Caddy 2.11 and nginx 1.30 in Docker): login,
+published feeds, media files and range requests work through them, with and without
+`UGUISU_BASE_URL`. The nginx example passes `$http_host` rather than `$host` on purpose: `$host`
+drops the port, so on any port other than 443 the feeds would point to the wrong address and
+the login would be refused.
 
 ## Backup
 

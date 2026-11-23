@@ -153,7 +153,9 @@ The promise "readable without Uguisu" is made good and tested.
 - [x] Security review (requests to private networks, paths, XML, headers). Found and fixed: a
       feed could exhaust memory through its own XML entities; IPv6 addresses that lead to
       private IPv4 addresses were let through; `reindex` followed file names out of the archive.
-- [x] Operations guide: reverse proxy examples, backup and restore, moving, upgrading.
+- [x] Operations guide: reverse proxy examples, backup and restore, moving, upgrading. The
+      Caddy and nginx examples were run in front of a real instance; the nginx one needed
+      `$http_host` instead of `$host` for ports other than 443.
 - [x] Stopping: at most a few seconds, and safe in the middle of a download. Measured: under
       0.2 s when idle or downloading; a download interrupted by a stop or a kill is continued
       and ends byte-identical. Requests still running are cut off after three seconds.
