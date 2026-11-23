@@ -1301,7 +1301,16 @@ async fn episode_files_describe_the_archive() {
     let old = metadata_of(&uguisu.archive_path(episodes[1].media_path.as_deref().unwrap()))
         .join("episode.json");
     std::fs::write(&old, r#"{ "guid": "ep-1", "title": "First" }"#).unwrap();
+    let before = uguisu.episodes(id).await.unwrap();
     assert_eq!(uguisu.upgrade_archive().await.unwrap(), 2);
+    // Already named: nothing is renamed, also not the episode whose title changed since.
+    let after = uguisu.episodes(id).await.unwrap();
+    for (b, a) in before.iter().zip(&after) {
+        assert_eq!(b.episode.dir, a.episode.dir);
+        assert_eq!(b.media_path, a.media_path);
+    }
+    let verified = uguisu.verify().await.unwrap();
+    assert_eq!(verified.ok, verified.checked);
     let first = read(&uguisu, &episodes[1]);
     assert_eq!(first["files"][0]["kind"], "media");
     assert!(
@@ -2213,6 +2222,31 @@ async fn archives_of_released_versions_are_upgraded() {
             rss::build_feed(&podcast, &published, &[], "https://archive.example"),
             xml,
             "{version}: the published feed does not change"
+        );
+        assert_eq!(uguisu.upgrade_archive().await.unwrap(), 0, "{version}");
+
+        // A copy of the database from before the move, put back onto the moved archive (a
+        // daily copy, a restored container): it is brought along at the next start.
+        uguisu.pool().close().await;
+        drop(uguisu);
+        for name in ["uguisu.db-wal", "uguisu.db-shm"] {
+            let _ = std::fs::remove_file(data.path().join(name));
+        }
+        std::fs::copy(
+            fixtures.join(&version).join("uguisu.db"),
+            data.path().join("uguisu.db"),
+        )
+        .unwrap();
+        let uguisu = Uguisu::open(config()).await.unwrap();
+        assert_eq!(uguisu.upgrade_archive().await.unwrap(), 2, "{version}");
+        assert_eq!(uguisu.verify().await.unwrap().ok, 3, "{version}");
+        assert_eq!(uguisu.download_pending().await.unwrap(), 0, "{version}");
+        let podcast = uguisu.podcast(podcast_id).await.unwrap().unwrap();
+        let published = uguisu.feed_episodes(podcast_id).await.unwrap();
+        assert_eq!(
+            rss::build_feed(&podcast, &published, &[], "https://archive.example"),
+            xml,
+            "{version}: an old database on a moved archive"
         );
         assert_eq!(uguisu.upgrade_archive().await.unwrap(), 0, "{version}");
 

@@ -24,6 +24,9 @@ use crate::{db, search};
 
 /// Version of the on-disk archive format, described in `docs/ARCHIVE.md`.
 pub const ARCHIVE_FORMAT: u64 = 5;
+/// Value of the database's `user_version` once its paths follow the named layout of format 5.
+pub const LAYOUT_NAMED: i64 = 5;
+const LAYOUT_NAMED_PRAGMA: &str = "PRAGMA user_version = 5";
 
 async fn write_archive_marker(path: &Path, format: u64) -> Result<()> {
     let content = serde_json::json!({ "format": format, "software": "Uguisu" });
@@ -392,6 +395,17 @@ impl Uguisu {
             }
         }
         let pool = db::open(&cfg.data_dir.join("uguisu.db")).await?;
+        // A database that knows nothing yet describes a current archive as it is.
+        let empty: bool = sqlx::query_scalar("SELECT NOT EXISTS (SELECT 1 FROM podcasts)")
+            .fetch_one(&pool)
+            .await?;
+        let format = serde_json::from_slice::<serde_json::Value>(&tokio::fs::read(&marker).await?)
+            .ok()
+            .and_then(|value| value["format"].as_u64())
+            .unwrap_or(1);
+        if empty && format >= 5 {
+            sqlx::query(LAYOUT_NAMED_PRAGMA).execute(&pool).await?;
+        }
         let client = build_client(&cfg.user_agent, cfg.allow_private_networks)?;
         if let Some(address) = &cfg.webhook_url {
             let valid = url::Url::parse(address)
@@ -1382,15 +1396,46 @@ impl Uguisu {
         Ok(())
     }
 
+    /// The format version in `archive.json`.
+    pub(crate) async fn archive_format(&self) -> Result<u64> {
+        let marker = self.archive_dir().join("archive.json");
+        Ok(
+            serde_json::from_slice::<serde_json::Value>(&tokio::fs::read(&marker).await?)?
+                ["format"]
+                .as_u64()
+                .unwrap_or(1),
+        )
+    }
+
+    /// Which layout of the archive the paths in the database follow: [`LAYOUT_NAMED`] from
+    /// format 5 on, less before. Kept as SQLite's `user_version`.
+    pub(crate) async fn database_layout(&self) -> Result<i64> {
+        Ok(sqlx::query_scalar("PRAGMA user_version")
+            .fetch_one(self.pool())
+            .await?)
+    }
+
+    /// Records whether the paths in the database follow the named layout.
+    pub(crate) async fn set_database_layout(&self, named: bool) -> Result<()> {
+        // PRAGMA takes no bound parameters.
+        let pragma = if named {
+            LAYOUT_NAMED_PRAGMA
+        } else {
+            "PRAGMA user_version = 0"
+        };
+        sqlx::query(pragma).execute(self.pool()).await?;
+        Ok(())
+    }
+
     /// Brings an archive written by an earlier version up to the current format. Returns the
     /// number of episodes whose files were rewritten.
     pub async fn upgrade_archive(&self) -> Result<usize> {
         let marker = self.archive_dir().join("archive.json");
-        let format = serde_json::from_slice::<serde_json::Value>(&tokio::fs::read(&marker).await?)?
-            ["format"]
-            .as_u64()
-            .unwrap_or(1);
-        if format >= ARCHIVE_FORMAT {
+        let format = self.archive_format().await?;
+        // The database records the layout it describes, too: a copy from before the move, put
+        // back onto a moved archive, still names the old paths.
+        let layout = self.database_layout().await?;
+        if format >= ARCHIVE_FORMAT && layout >= LAYOUT_NAMED {
             return Ok(0);
         }
         // Format 2: episode.json also lists the episode's files and its state in the feed.
@@ -1398,9 +1443,14 @@ impl Uguisu {
         // Format 4: episodes and files carry the numbers used in published addresses.
         // Format 5: names as people write them; media files in `episodes/`, the rest in
         // `metadata/`. Moves files, so it runs before anything else writes to the archive.
-        if format < 5 {
+        if format < 5 || layout < LAYOUT_NAMED {
             tracing::info!("moving the archive to named directories (format 5)");
             self.move_to_named_layout().await?;
+            self.set_database_layout(true).await?;
+            // The copies made before describe the old paths; one that matches comes first.
+            if self.inner.cfg.backups > 0 {
+                self.backup_database().await?;
+            }
         }
         let podcasts: Vec<i64> = sqlx::query_scalar("SELECT id FROM podcasts ORDER BY id")
             .fetch_all(self.pool())

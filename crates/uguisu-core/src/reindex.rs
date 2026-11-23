@@ -127,6 +127,9 @@ impl Uguisu {
             }
         }
         self.sync_search_index().await?;
+        // The paths now follow the archive as it is on disk.
+        let format = self.archive_format().await?;
+        self.set_database_layout(format >= 5).await?;
         Ok(report)
     }
 

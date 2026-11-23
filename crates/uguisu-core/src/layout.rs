@@ -42,9 +42,16 @@ impl Uguisu {
                 .await?;
         let mut names: Vec<String> = Vec::new();
         for (id, old_dir, author, title) in podcasts {
-            let name = unique_name(&archive::podcast_name(author.as_deref(), &title), |n| {
-                names.iter().any(|t| t.to_lowercase() == n.to_lowercase())
-            });
+            // A podcast that is in the new layout already keeps its name: titles change, names
+            // do not.
+            let moved = exists(&self.archive_path(&old_dir).join("metadata")).await?;
+            let name = if moved {
+                old_dir.clone()
+            } else {
+                unique_name(&archive::podcast_name(author.as_deref(), &title), |n| {
+                    names.iter().any(|t| t.to_lowercase() == n.to_lowercase())
+                })
+            };
             names.push(name.clone());
             self.move_podcast(id, &old_dir, &name).await?;
         }
@@ -75,9 +82,15 @@ impl Uguisu {
         let mut media_moves = Vec::new();
         let mut attachment_moves = Vec::new();
         for (episode_id, old_name, published_at, title) in episodes {
-            let name = unique_name(&archive::episode_name(published_at, &title), |n| {
-                names.iter().any(|t| t.to_lowercase() == n.to_lowercase())
-            });
+            let moved =
+                exists(&self.archive_path(&archive::metadata_dir(new_dir, &old_name))).await?;
+            let name = if moved {
+                old_name.clone()
+            } else {
+                unique_name(&archive::episode_name(published_at, &title), |n| {
+                    names.iter().any(|t| t.to_lowercase() == n.to_lowercase())
+                })
+            };
             names.push(name.clone());
             let old_episode_dir = format!("{new_dir}/episodes/{old_name}");
             let metadata = archive::metadata_dir(new_dir, &name);
