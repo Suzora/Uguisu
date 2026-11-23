@@ -58,7 +58,11 @@ Each milestone ends with a release. Items are worked through one topic per pull 
 Everything a podcast offers ends up in the archive.
 
 - [x] Paged and archived feeds (RFC 5005).
-- [x] Atom and RSS 1.0 as source formats. The published feed stays RSS 2.0.
+- [x] Atom and RSS 1.0 as source formats. The published feed stays RSS 2.0. Checked with real
+      feeds (the WordPress feeds of chaosradio.de): Atom with 99 entries, 39 of them with media,
+      read with the same count, titles and dates, and the archived file had the size the feed
+      gives. The RSS 1.0 feed was read correctly but carries no media; an RSS 1.0 feed with
+      enclosures has not been found in the wild.
 - [x] Find the feed when the user enters the address of a web page
       (`<link rel="alternate">`), instead of reporting an error.
 - [x] Archive images embedded in show notes and point the published show notes at the copies.
@@ -68,7 +72,8 @@ Everything a podcast offers ends up in the archive.
 - [x] Feeds that need credentials (HTTP Basic, for example paid feeds). Credentials never appear
       in logs or published feeds.
 - [!] Podcast Index search. Needs an API key; registration is closed at the moment.
-- [ ] Verify the fyyd search from a real instance (so far only the response format is verified).
+- [x] Verify the fyyd search from a real instance. Checked 2026-11-23: results appear in about
+      0.5 s and can be archived from the result list.
 - [x] Find out why single hosts answer 403 to media requests (seen with the BBC). It was the
       development environment: its network refuses plain `http` to that host. Over `https` the
       same file is served to Uguisu without complaint.
@@ -143,6 +148,9 @@ The promise "readable without Uguisu" is made good and tested.
       signature was considered and dropped.) Checked in the registry for 0.4.0: the provenance
       is complete; the SBOM listed only the base image's packages. From 0.5 the Rust libraries
       are embedded in the program for the SBOM to read; to be checked again at that release.
+      Built from `main` outside GitHub Actions (2026-11-23, `docker buildx`, `--sbom=true`): the
+      SBOMs in `linux_amd64/` and `linux_arm64/` each list 239 Rust libraries, `tokio` among
+      them, and the ARM64 binary is an aarch64 executable. Not yet run on real ARM hardware.
 - [x] Automatic dependency updates and a scheduled `cargo deny` run.
 - [x] Notifications about damaged files and feeds that keep failing, as a webhook that other
       services can be attached to (`UGUISU_WEBHOOK_URL`).
@@ -161,6 +169,12 @@ The promise "readable without Uguisu" is made good and tested.
 - [x] Stopping: at most a few seconds, and safe in the middle of a download. Measured: under
       0.2 s when idle or downloading; a download interrupted by a stop or a kill is continued
       and ends byte-identical. Requests still running are cut off after three seconds.
+      Measured again on the container (`docker stop`): 0.18 s idle, 0.17 s with a
+      `download.part` on disk (the download finished after the restart, `verify` clean), 3.5 s
+      with a client reading a media file slowly; exit code 0 each time.
+- [x] Upgrade in place. Checked live: a data directory created and used with the 0.4.0 image
+      (4 podcasts, 41 files) started with an image built from `main`: healthy, `verify` clean,
+      feeds and the browser session unchanged.
 
 ### 1.0 – The finished product
 
@@ -203,7 +217,13 @@ Ideas without commitment:
 - **Sources that block automated requests.** Can leave gaps in an archive; they must be visible.
   Seen in a run against six real feeds (2,404 episodes, all read correctly, transcripts in four
   formats archived): the media host of one publisher (`audio.buzzsprout.com`) answered 403 from
-  the development environment. Whether it does so for an ordinary installation is not known.
+  the development environment. It does the same for an ordinary installation on a home
+  connection (checked 2026-11-23, Buzzcast): the CloudFront in front of the host answers 403
+  "Request blocked" to Uguisu and to plain `curl` alike, for `GET` and `HEAD`, over IPv4 and
+  IPv6, while a browser on the same connection gets the file. The block therefore depends on
+  the kind of client, not on the address. Uguisu keeps its own identifier; the failed downloads
+  are visible on the status page.
 - **Storage.** Archives grow without limit by design; the interface has to show the cost.
-- **Directories.** No Podcast Index access; fyyd answers slowly (15 to 30 seconds observed).
+- **Directories.** No Podcast Index access. fyyd answered in 15 to 30 seconds earlier, in about
+  0.5 seconds on 2026-11-23.
 - **SQLite.** Fine for one user; to be confirmed by the load test in 0.3.

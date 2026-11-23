@@ -5,6 +5,11 @@ Versions follow [semantic versioning](CONTRIBUTING.md#versions).
 
 ## Unreleased
 
+### Added
+
+- The operations guide shows how to send notifications to ntfy as readable messages, using
+  ntfy's templates instead of an adapter.
+
 ### Fixed
 
 - The nginx example in the operations guide passed `$host`, which drops the port: behind nginx
