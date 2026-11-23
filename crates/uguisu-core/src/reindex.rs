@@ -77,6 +77,12 @@ fn is_plain_name(name: &str) -> bool {
     !(name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.'))
 }
 
+/// A path below a podcast's directory, as `episode.json` names files from format 5 on: plain
+/// names joined by `/`, so that nothing leads out of the archive.
+fn is_plain_path(path: &str) -> bool {
+    !path.is_empty() && path.split('/').all(is_plain_name)
+}
+
 async fn file_names(dir: &Path) -> Result<Vec<String>> {
     let mut names = Vec::new();
     let Ok(mut entries) = tokio::fs::read_dir(dir).await else {
@@ -121,6 +127,9 @@ impl Uguisu {
             }
         }
         self.sync_search_index().await?;
+        // The paths now follow the archive as it is on disk.
+        let format = self.archive_format().await?;
+        self.set_database_layout(format >= 5).await?;
         Ok(report)
     }
 
@@ -193,10 +202,25 @@ impl Uguisu {
             .await?;
         }
 
-        for episode_dir in subdirectories(&path.join("episodes")).await? {
-            let relative = format!("{dir}/episodes/{episode_dir}");
+        // Format 5 keeps an episode's metadata in `metadata/<episode>/`; earlier formats had one
+        // directory per episode in `episodes/`, which now only holds media files.
+        let mut episode_dirs = Vec::new();
+        for name in subdirectories(&path.join("metadata")).await? {
+            episode_dirs.push((format!("{dir}/metadata/{name}"), name));
+        }
+        for name in subdirectories(&path.join("episodes")).await? {
+            episode_dirs.push((format!("{dir}/episodes/{name}"), name));
+        }
+        for (relative, episode_dir) in episode_dirs {
             match self
-                .reindex_episode(&mut tx, podcast_id, &relative, &episode_dir, last_fetched)
+                .reindex_episode(
+                    &mut tx,
+                    podcast_id,
+                    dir,
+                    &relative,
+                    &episode_dir,
+                    last_fetched,
+                )
                 .await
             {
                 Ok(files) => {
@@ -216,6 +240,7 @@ impl Uguisu {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
         podcast_id: i64,
+        podcast_dir: &str,
         relative: &str,
         dir_name: &str,
         last_fetched: Option<i64>,
@@ -335,16 +360,19 @@ impl Uguisu {
             ) else {
                 continue;
             };
-            if !is_plain_name(name) {
-                continue;
-            }
-            let present = tokio::fs::try_exists(path.join(name))
+            // From format 5 on, `path` says where the file is, relative to the podcast.
+            let file_path = match file["path"].as_str() {
+                Some(below) if is_plain_path(below) => format!("{podcast_dir}/{below}"),
+                Some(_) => continue,
+                None if is_plain_name(name) => format!("{relative}/{name}"),
+                None => continue,
+            };
+            let present = tokio::fs::try_exists(self.archive_path(&file_path))
                 .await
                 .unwrap_or(false);
             let status = if present { "ok" } else { "missing" };
             let source = file["source"].as_str().unwrap_or_default();
             let downloaded = time(&file["downloaded"]).unwrap_or(first_seen);
-            let file_path = format!("{relative}/{name}");
             let size = file["size"].as_i64().unwrap_or(0);
             let mime = file["type"].as_str().unwrap_or("application/octet-stream");
             if kind == "media" {

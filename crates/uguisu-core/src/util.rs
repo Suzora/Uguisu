@@ -91,6 +91,76 @@ pub fn slugify(input: &str, max_chars: usize) -> String {
     }
 }
 
+/// Longest name a person reads in the archive, in characters.
+pub const NAME_MAX_CHARS: usize = 150;
+/// Longest name in bytes. File systems allow 255; the rest is room for an extension, a
+/// ` (2)` and the suffixes of temporary files.
+pub const NAME_MAX_BYTES: usize = 200;
+
+/// A title as a file or directory name that works on Linux, macOS, Windows and network shares:
+/// the title as written, without the characters those systems forbid (`/ \ : * ? " < > |` and
+/// control characters), without spaces and dots at the ends, and not longer than
+/// [`NAME_MAX_CHARS`] characters or [`NAME_MAX_BYTES`] bytes. `fallback` stands in for a title
+/// that has nothing left.
+pub fn file_name_from_title(input: &str, fallback: &str) -> String {
+    let mut out = String::new();
+    let mut chars = 0;
+    let mut pending_space = false;
+    for c in input.chars() {
+        if c.is_whitespace() {
+            pending_space = !out.is_empty();
+            continue;
+        }
+        if matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') || c.is_control() {
+            continue;
+        }
+        let space = usize::from(pending_space);
+        if chars + space + 1 > NAME_MAX_CHARS || out.len() + space + c.len_utf8() > NAME_MAX_BYTES {
+            break;
+        }
+        if pending_space {
+            out.push(' ');
+            chars += 1;
+            pending_space = false;
+        }
+        out.push(c);
+        chars += 1;
+    }
+    // Windows drops dots and spaces at the end; a leading dot hides a file on Unix.
+    let trimmed = out.trim_matches(|c: char| c == ' ' || c == '.').to_string();
+    if trimmed.is_empty() {
+        return fallback.to_string();
+    }
+    // Names Windows reserves for devices, also with an extension.
+    let stem = trimmed
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_uppercase();
+    let reserved = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (stem.len() == 4
+            && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && stem.as_bytes()[3].is_ascii_digit());
+    if reserved {
+        format!("{trimmed}_")
+    } else {
+        trimmed
+    }
+}
+
+/// `name`, or `name (2)`, `name (3)` and so on: the first that `taken` does not report.
+/// Network shares and the file systems of Windows and macOS do not tell upper and lower case
+/// apart, so `taken` should compare without case.
+pub fn unique_name(name: &str, taken: impl Fn(&str) -> bool) -> String {
+    if !taken(name) {
+        return name.to_string();
+    }
+    (2..)
+        .map(|n| format!("{name} ({n})"))
+        .find(|candidate| !taken(candidate))
+        .expect("an unused name")
+}
+
 /// The spoken words of a transcript, for searching. Transcripts come as WebVTT, SubRip, the
 /// JSON of the podcast namespace, HTML or plain text; cue numbers, time codes and markup are
 /// left out. `extension` is that of the archived file.
@@ -241,6 +311,44 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn names_from_titles() {
+        fn name(s: &str) -> String {
+            file_name_from_title(s, "Untitled")
+        }
+        // Titles stay as written; only what file systems forbid goes.
+        assert_eq!(
+            name("TELEKADDI – Coldmirrors Kinderserien: Trailer"),
+            "TELEKADDI – Coldmirrors Kinderserien Trailer"
+        );
+        assert_eq!(
+            name("Ah, Oh, Stress im Teletubbyland!"),
+            "Ah, Oh, Stress im Teletubbyland!"
+        );
+        assert_eq!(name("a/b\\c*d?e\"f<g>h|i\u{7}j"), "abcdefghij");
+        assert_eq!(name("  Größe   &\tMaß  "), "Größe & Maß");
+        assert_eq!(name("鶯の声"), "鶯の声");
+        assert_eq!(name(".hidden..."), "hidden");
+        assert_eq!(name(" ?:* "), "Untitled");
+        assert_eq!(name("con"), "con_");
+        assert_eq!(name("LPT1.txt"), "LPT1.txt_");
+        assert_eq!(name("Console"), "Console");
+        // Long titles are cut at a character, within both limits.
+        let long = name(&"a".repeat(400));
+        assert_eq!(long.chars().count(), NAME_MAX_CHARS);
+        let wide = name(&"鶯".repeat(400));
+        assert!(wide.len() <= NAME_MAX_BYTES && wide.chars().all(|c| c == '鶯'));
+        assert_eq!(name(&format!("{} b", "a".repeat(149))), "a".repeat(149));
+    }
+
+    #[test]
+    fn names_are_made_unique() {
+        let taken = ["Show", "show (2)"];
+        let is_taken = |n: &str| taken.iter().any(|t| t.eq_ignore_ascii_case(n));
+        assert_eq!(unique_name("Other", is_taken), "Other");
+        assert_eq!(unique_name("SHOW", is_taken), "SHOW (3)");
+    }
 
     #[test]
     fn slugs() {

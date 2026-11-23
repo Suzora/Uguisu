@@ -8,10 +8,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-use crate::archive::{hash_file, mime_from_extension, write_atomic};
+use crate::archive::{hash_file, mime_from_extension};
 use crate::feed::without_query;
 use crate::service::Uguisu;
-use crate::util::{format_utc, now, short_hash, slugify};
+use crate::util::{now, slugify};
 
 #[derive(Debug, Default)]
 pub struct ImportReport {
@@ -210,11 +210,19 @@ impl Uguisu {
                         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                         .map(|d| d.as_secs() as i64);
                     let guid = format!("imported:{hash}");
-                    let date = published
-                        .and_then(|t| format_utc(t, "%Y-%m-%d"))
-                        .unwrap_or_else(|| "undated".into());
-                    let episode_dir =
-                        format!("{date}-{}-{}", slugify(&stem, 40), short_hash(&guid));
+                    let taken: Vec<String> =
+                        sqlx::query_scalar("SELECT dir FROM episodes WHERE podcast_id = ?")
+                            .bind(podcast_id)
+                            .fetch_all(self.pool())
+                            .await?;
+                    let episode_dir = crate::util::unique_name(
+                        &crate::archive::episode_name(published, &stem),
+                        |name| {
+                            taken
+                                .iter()
+                                .any(|t| t.to_lowercase() == name.to_lowercase())
+                        },
+                    );
                     let now = now();
                     let id: i64 = sqlx::query_scalar(
                         "INSERT INTO episodes (podcast_id, guid, title, published_at, dir, \
@@ -249,11 +257,15 @@ impl Uguisu {
                 .context("episode vanished")?;
 
             // Copy, then check the copy, then let it count.
-            let relative_dir = format!("{}/episodes/{}", podcast.dir, episode.dir);
-            let target_dir = self.archive_path(&relative_dir);
-            tokio::fs::create_dir_all(&target_dir).await?;
-            let file_name = format!("media.{ext}");
-            let part = target_dir.join("import.part");
+            let metadata_dir =
+                self.archive_path(&crate::archive::metadata_dir(&podcast.dir, &episode.dir));
+            tokio::fs::create_dir_all(&metadata_dir).await?;
+            let relative = crate::archive::media_path(&podcast.dir, &episode.dir, &ext);
+            let target = self.archive_path(&relative);
+            if let Some(parent) = target.parent() {
+                tokio::fs::create_dir_all(parent).await?;
+            }
+            let part = metadata_dir.join("import.part");
             tokio::fs::copy(&file, &part)
                 .await
                 .with_context(|| format!("cannot copy {}", file.display()))?;
@@ -265,12 +277,8 @@ impl Uguisu {
                 let _ = tokio::fs::remove_file(&part).await;
                 anyhow::bail!("{} changed while it was copied", file.display());
             }
-            tokio::fs::rename(&part, target_dir.join(&file_name)).await?;
-            write_atomic(
-                &target_dir.join(format!("{file_name}.blake3")),
-                format!("{hash}  {file_name}\n").as_bytes(),
-            )
-            .await?;
+            tokio::fs::rename(&part, &target).await?;
+            self.write_checksum(&relative, &hash).await?;
             let now = now();
             sqlx::query(
                 "INSERT INTO media_files (episode_id, path, size, blake3, mime, source_url, \
@@ -281,7 +289,7 @@ impl Uguisu {
                  status = 'ok'",
             )
             .bind(episode_id)
-            .bind(format!("{relative_dir}/{file_name}"))
+            .bind(&relative)
             .bind(size as i64)
             .bind(&hash)
             .bind(mime)

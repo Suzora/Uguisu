@@ -196,6 +196,10 @@ async fn run(cli: Cli) -> Result<ExitCode> {
 
     match cli.command.unwrap_or(Command::Serve) {
         Command::Serve => {
+            // Before anything else writes: an upgrade may move files.
+            app.upgrade_archive()
+                .await
+                .context("upgrading the archive failed; it is left as it was found")?;
             app.spawn_workers();
             let pool = app.pool().clone();
             let base_url = cli
@@ -234,6 +238,9 @@ async fn run(cli: Cli) -> Result<ExitCode> {
             feed,
             keep_unmatched,
         } => {
+            app.upgrade_archive()
+                .await
+                .context("upgrading the archive failed; it is left as it was found")?;
             let podcast_id = app.add_podcast(&feed).await?;
             let report = app
                 .import_directory(podcast_id, &directory, keep_unmatched)

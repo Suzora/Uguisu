@@ -19,11 +19,14 @@ use crate::model::{
     FeedSnapshot, HistoryEvent, MediaFile, NewPodcastDefaults, Podcast, PodcastSummary, Revision,
     SearchResult, Stats,
 };
-use crate::util::{now, random_token, short_hash, slugify};
+use crate::util::{now, random_token, short_hash};
 use crate::{db, search};
 
 /// Version of the on-disk archive format, described in `docs/ARCHIVE.md`.
-pub const ARCHIVE_FORMAT: u64 = 4;
+pub const ARCHIVE_FORMAT: u64 = 5;
+/// Value of the database's `user_version` once its paths follow the named layout of format 5.
+pub const LAYOUT_NAMED: i64 = 5;
+const LAYOUT_NAMED_PRAGMA: &str = "PRAGMA user_version = 5";
 
 async fn write_archive_marker(path: &Path, format: u64) -> Result<()> {
     let content = serde_json::json!({ "format": format, "software": "Uguisu" });
@@ -355,18 +358,6 @@ fn iso_date(timestamp: i64) -> Option<String> {
     crate::util::rfc3339(timestamp)
 }
 
-fn episode_dir_name(item: &ParsedItem) -> String {
-    let date = item
-        .published_at
-        .and_then(|t| crate::util::format_utc(t, "%Y-%m-%d"))
-        .unwrap_or_else(|| "undated".to_string());
-    format!(
-        "{date}-{}-{}",
-        slugify(&item.title, 40),
-        short_hash(&item.guid)
-    )
-}
-
 impl Uguisu {
     pub async fn open(cfg: Config) -> Result<Self> {
         let archive_dir = cfg.data_dir.join("archive");
@@ -404,6 +395,17 @@ impl Uguisu {
             }
         }
         let pool = db::open(&cfg.data_dir.join("uguisu.db")).await?;
+        // A database that knows nothing yet describes a current archive as it is.
+        let empty: bool = sqlx::query_scalar("SELECT NOT EXISTS (SELECT 1 FROM podcasts)")
+            .fetch_one(&pool)
+            .await?;
+        let format = serde_json::from_slice::<serde_json::Value>(&tokio::fs::read(&marker).await?)
+            .ok()
+            .and_then(|value| value["format"].as_u64())
+            .unwrap_or(1);
+        if empty && format >= 5 {
+            sqlx::query(LAYOUT_NAMED_PRAGMA).execute(&pool).await?;
+        }
         let client = build_client(&cfg.user_agent, cfg.allow_private_networks)?;
         if let Some(address) = &cfg.webhook_url {
             let valid = url::Url::parse(address)
@@ -1119,7 +1121,12 @@ impl Uguisu {
             }
         }
 
-        let dir = format!("{}-{}", slugify(&parsed.title, 60), short_hash(url));
+        let dir = self
+            .unused_podcast_dir(
+                &archive::podcast_name(parsed.author.as_deref(), &parsed.title),
+                url,
+            )
+            .await?;
         let defaults = self.new_podcast_defaults().await?;
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO podcasts (feed_url, original_feed_url, title, dir, feed_token, created_at, \
@@ -1163,6 +1170,32 @@ impl Uguisu {
         None
     }
 
+    /// `name`, or `name (2)` and so on: the first name no podcast uses and nothing on the disk
+    /// has, compared without case as network shares do. A directory left behind by the same
+    /// feed, when it was removed with its files kept, is taken up again.
+    async fn unused_podcast_dir(&self, name: &str, feed_url: &str) -> Result<String> {
+        let taken: Vec<String> = sqlx::query_scalar("SELECT dir FROM podcasts")
+            .fetch_all(self.pool())
+            .await?;
+        let mut on_disk = Vec::new();
+        if let Ok(mut entries) = tokio::fs::read_dir(self.archive_dir()).await {
+            while let Some(entry) = entries.next_entry().await? {
+                let left_by_this_feed = tokio::fs::read(entry.path().join("podcast.json"))
+                    .await
+                    .ok()
+                    .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+                    .is_some_and(|json| json["feed_url"].as_str() == Some(feed_url));
+                if !left_by_this_feed {
+                    on_disk.push(entry.file_name().to_string_lossy().to_lowercase());
+                }
+            }
+        }
+        Ok(crate::util::unique_name(name, |candidate| {
+            let candidate = candidate.to_lowercase();
+            taken.iter().any(|t| t.to_lowercase() == candidate) || on_disk.contains(&candidate)
+        }))
+    }
+
     /// Writes `episode.json`: everything the index knows about an episode and its files, so
     /// that the index can be rebuilt from the archive.
     pub(crate) async fn write_episode_json(&self, episode_id: i64) -> Result<()> {
@@ -1199,6 +1232,10 @@ impl Uguisu {
                         // The numbers are part of the addresses in the published feed.
                         "id": id,
                         "name": path.rsplit('/').next().unwrap_or(&path),
+                        // Where the file is, relative to the podcast's directory.
+                        "path": path
+                            .strip_prefix(&format!("{podcast_dir}/"))
+                            .unwrap_or(&path),
                         "kind": kind,
                         "source": redact(&source),
                         "blake3": blake3,
@@ -1218,10 +1255,7 @@ impl Uguisu {
         .bind(episode_id)
         .fetch_all(self.pool())
         .await?;
-        let episode_dir = self
-            .archive_path(&podcast_dir)
-            .join("episodes")
-            .join(&episode.dir);
+        let episode_dir = self.archive_path(&archive::metadata_dir(&podcast_dir, &episode.dir));
         let mut revision_list = Vec::with_capacity(revisions.len());
         for (seen_at, hash, raw_xml) in &revisions {
             // Not simply the last one: a publisher can also return to an earlier state.
@@ -1362,20 +1396,62 @@ impl Uguisu {
         Ok(())
     }
 
+    /// The format version in `archive.json`.
+    pub(crate) async fn archive_format(&self) -> Result<u64> {
+        let marker = self.archive_dir().join("archive.json");
+        Ok(
+            serde_json::from_slice::<serde_json::Value>(&tokio::fs::read(&marker).await?)?
+                ["format"]
+                .as_u64()
+                .unwrap_or(1),
+        )
+    }
+
+    /// Which layout of the archive the paths in the database follow: [`LAYOUT_NAMED`] from
+    /// format 5 on, less before. Kept as SQLite's `user_version`.
+    pub(crate) async fn database_layout(&self) -> Result<i64> {
+        Ok(sqlx::query_scalar("PRAGMA user_version")
+            .fetch_one(self.pool())
+            .await?)
+    }
+
+    /// Records whether the paths in the database follow the named layout.
+    pub(crate) async fn set_database_layout(&self, named: bool) -> Result<()> {
+        // PRAGMA takes no bound parameters.
+        let pragma = if named {
+            LAYOUT_NAMED_PRAGMA
+        } else {
+            "PRAGMA user_version = 0"
+        };
+        sqlx::query(pragma).execute(self.pool()).await?;
+        Ok(())
+    }
+
     /// Brings an archive written by an earlier version up to the current format. Returns the
     /// number of episodes whose files were rewritten.
     pub async fn upgrade_archive(&self) -> Result<usize> {
         let marker = self.archive_dir().join("archive.json");
-        let format = serde_json::from_slice::<serde_json::Value>(&tokio::fs::read(&marker).await?)?
-            ["format"]
-            .as_u64()
-            .unwrap_or(1);
-        if format >= ARCHIVE_FORMAT {
+        let format = self.archive_format().await?;
+        // The database records the layout it describes, too: a copy from before the move, put
+        // back onto a moved archive, still names the old paths.
+        let layout = self.database_layout().await?;
+        if format >= ARCHIVE_FORMAT && layout >= LAYOUT_NAMED {
             return Ok(0);
         }
         // Format 2: episode.json also lists the episode's files and its state in the feed.
         // Format 3: earlier states of the feed entry are files, and each podcast has uguisu.json.
         // Format 4: episodes and files carry the numbers used in published addresses.
+        // Format 5: names as people write them; media files in `episodes/`, the rest in
+        // `metadata/`. Moves files, so it runs before anything else writes to the archive.
+        if format < 5 || layout < LAYOUT_NAMED {
+            tracing::info!("moving the archive to named directories (format 5)");
+            self.move_to_named_layout().await?;
+            self.set_database_layout(true).await?;
+            // The copies made before describe the old paths; one that matches comes first.
+            if self.inner.cfg.backups > 0 {
+                self.backup_database().await?;
+            }
+        }
         let podcasts: Vec<i64> = sqlx::query_scalar("SELECT id FROM podcasts ORDER BY id")
             .fetch_all(self.pool())
             .await?;
@@ -1737,7 +1813,19 @@ impl Uguisu {
 
             let (episode_id, dir, is_new_revision) = match existing {
                 None => {
-                    let dir = episode_dir_name(item);
+                    let taken: Vec<String> =
+                        sqlx::query_scalar("SELECT dir FROM episodes WHERE podcast_id = ?")
+                            .bind(podcast_id)
+                            .fetch_all(&mut *tx)
+                            .await?;
+                    let dir = crate::util::unique_name(
+                        &archive::episode_name(item.published_at, &item.title),
+                        |name| {
+                            taken
+                                .iter()
+                                .any(|t| t.to_lowercase() == name.to_lowercase())
+                        },
+                    );
                     let id: i64 = sqlx::query_scalar(
                         "INSERT INTO episodes (podcast_id, guid, title, description, link, \
                          published_at, duration, enclosure_url, enclosure_type, enclosure_length, \
@@ -1874,7 +1962,7 @@ impl Uguisu {
         // 5. Sidecar files, so the archive explains itself without the database.
         let texts_changed = !changed.is_empty();
         for (id, dir, item) in changed {
-            let episode_dir = podcast_dir.join("episodes").join(dir);
+            let episode_dir = podcast_dir.join("metadata").join(dir);
             write_atomic(&episode_dir.join("item.xml"), item.raw_xml.as_bytes()).await?;
             self.write_episode_json(id).await?;
         }
@@ -2175,8 +2263,8 @@ impl Uguisu {
         // Several transcripts per episode are common, so the name carries a hash of the address.
         let file_name = format!("{}-{}.{ext}", pending.kind, short_hash(&pending.source_key));
         let relative = format!(
-            "{}/episodes/{}/{file_name}",
-            pending.podcast_dir, pending.episode_dir
+            "{}/{file_name}",
+            archive::metadata_dir(&pending.podcast_dir, &pending.episode_dir)
         );
         write_atomic(&self.archive_path(&relative), &bytes).await?;
         let now = now();
@@ -2193,6 +2281,56 @@ impl Uguisu {
         .bind(pending.id)
         .execute(self.pool())
         .await?;
+        Ok(())
+    }
+
+    /// Writes the checksum file of a media file, in the format of `b3sum`, so that the archive
+    /// can be checked with `b3sum -c` without Uguisu.
+    pub(crate) async fn write_checksum(&self, media_path: &str, hash: &str) -> Result<()> {
+        let (checksum, named) = archive::checksum_location(media_path);
+        write_atomic(
+            &self.archive_path(&checksum),
+            format!("{hash}  {named}\n").as_bytes(),
+        )
+        .await
+    }
+
+    /// Moves a media file from `episodes/` to `<metadata>/versions/v<n>.<ext>`, with its
+    /// checksum, and records the new place.
+    async fn set_aside_as_version(
+        &self,
+        id: i64,
+        path: &str,
+        hash: &str,
+        metadata: &str,
+    ) -> Result<()> {
+        let ext = path.rsplit_once('.').map_or("bin", |(_, ext)| ext);
+        let versions = format!("{metadata}/versions");
+        tokio::fs::create_dir_all(self.archive_path(&versions)).await?;
+        let mut number = 1;
+        let target = loop {
+            let candidate = format!("{versions}/v{number}.{ext}");
+            let in_use: bool =
+                sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM media_files WHERE path = ?)")
+                    .bind(&candidate)
+                    .fetch_one(self.pool())
+                    .await?;
+            if !in_use && !tokio::fs::try_exists(self.archive_path(&candidate)).await? {
+                break candidate;
+            }
+            number += 1;
+        };
+        let (old_checksum, _) = archive::checksum_location(path);
+        if tokio::fs::try_exists(self.archive_path(path)).await? {
+            tokio::fs::rename(self.archive_path(path), self.archive_path(&target)).await?;
+        }
+        sqlx::query("UPDATE media_files SET path = ? WHERE id = ?")
+            .bind(&target)
+            .bind(id)
+            .execute(self.pool())
+            .await?;
+        self.write_checksum(&target, hash).await?;
+        let _ = tokio::fs::remove_file(self.archive_path(&old_checksum)).await;
         Ok(())
     }
 
@@ -2384,8 +2522,8 @@ impl Uguisu {
         check_url(&url, self.inner.cfg.allow_private_networks)?;
         lend_credentials(&mut url, feed_url);
 
-        let relative_dir = format!("{podcast_dir}/episodes/{}", episode.dir);
-        let dir = self.archive_path(&relative_dir);
+        let metadata = archive::metadata_dir(podcast_dir, &episode.dir);
+        let dir = self.archive_path(&metadata);
         tokio::fs::create_dir_all(&dir).await?;
         let part = dir.join("download.part");
         let (hash, size, content_type) = self.fetch_media(&url, &part).await?;
@@ -2404,50 +2542,46 @@ impl Uguisu {
             .or_else(|| (!content_type.is_empty()).then(|| content_type.clone()))
             .unwrap_or_else(|| "application/octet-stream".to_string());
 
-        // Decide where the copy goes. The first copy, and the repair of a damaged one, is
-        // `media.<ext>`. A copy with different content from a replaced source file is kept next
-        // to the earlier ones as `media.v2.<ext>`, `media.v3.<ext>`, ...
-        let existing: Vec<(String, String, String)> =
-            sqlx::query_as("SELECT path, blake3, status FROM media_files WHERE episode_id = ?")
-                .bind(episode.id)
-                .fetch_all(self.pool())
-                .await?;
+        let existing: Vec<(i64, String, String, String)> = sqlx::query_as(
+            "SELECT id, path, blake3, status FROM media_files WHERE episode_id = ? ORDER BY id",
+        )
+        .bind(episode.id)
+        .fetch_all(self.pool())
+        .await?;
         if existing
             .iter()
-            .any(|(_, b, status)| *b == hash && status == "ok")
+            .any(|(_, _, b, status)| *b == hash && status == "ok")
         {
             // The source moved the file without changing it.
             let _ = tokio::fs::remove_file(&part).await;
             return Ok(());
         }
-        let intact = existing.iter().filter(|(_, _, s)| s == "ok").count();
-        let file_name = if intact == 0 {
-            format!("media.{ext}")
-        } else {
-            let mut version = existing.len() + 1;
-            loop {
-                let candidate = format!("media.v{version}.{ext}");
-                let taken = existing
-                    .iter()
-                    .any(|(path, _, _)| path.rsplit('/').next() == Some(candidate.as_str()));
-                if !taken {
-                    break candidate;
+        let relative = archive::media_path(podcast_dir, &episode.dir, ext);
+        let target = self.archive_path(&relative);
+        if let Some(parent) = target.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        let current_prefix = format!("{podcast_dir}/episodes/");
+        if existing.iter().any(|(_, _, _, s)| s == "ok") {
+            // The source replaced the file. `episodes/` holds the newest one; the files there
+            // so far become earlier versions under `metadata/<episode>/versions/`.
+            for (id, path, recorded, _) in &existing {
+                if !path.starts_with(&current_prefix) {
+                    continue;
                 }
-                version += 1;
+                self.set_aside_as_version(*id, path, recorded, &metadata)
+                    .await?;
             }
-        };
-        // A damaged copy is only replaced by the very file it once was. If the source now
-        // offers something else, the damaged copy may still be the only trace of the
-        // original, so it is set aside instead of overwritten.
-        let target = dir.join(&file_name);
-        let damaged = existing.iter().find(|(path, _, status)| {
-            status == "corrupt" && path.rsplit('/').next() == Some(file_name.as_str())
-        });
-        if let Some((_, recorded, _)) = damaged
+        } else if let Some((_, _, recorded, _)) = existing
+            .iter()
+            .find(|(_, path, _, status)| status == "corrupt" && *path == relative)
             && *recorded != hash
             && tokio::fs::try_exists(&target).await.unwrap_or(false)
         {
-            let aside = format!("media.damaged-{}.{ext}", &recorded[..recorded.len().min(8)]);
+            // A damaged copy is only replaced by the very file it once was. If the source now
+            // offers something else, the damaged copy may still be the only trace of the
+            // original, so it is set aside instead of overwritten.
+            let aside = format!("damaged-{}.{ext}", &recorded[..recorded.len().min(8)]);
             tracing::warn!(
                 episode = %episode.title,
                 kept = %aside,
@@ -2456,13 +2590,7 @@ impl Uguisu {
             tokio::fs::rename(&target, dir.join(aside)).await?;
         }
         tokio::fs::rename(&part, &target).await?;
-
-        // Same format as `b3sum`, so the file can be checked with `b3sum -c` without Uguisu.
-        write_atomic(
-            &dir.join(format!("{file_name}.blake3")),
-            format!("{hash}  {file_name}\n").as_bytes(),
-        )
-        .await?;
+        self.write_checksum(&relative, &hash).await?;
 
         let now = now();
         sqlx::query(
@@ -2473,7 +2601,7 @@ impl Uguisu {
              downloaded_at = excluded.downloaded_at, verified_at = excluded.verified_at, status = 'ok'",
         )
         .bind(episode.id)
-        .bind(format!("{relative_dir}/{file_name}"))
+        .bind(&relative)
         .bind(size as i64)
         .bind(&hash)
         .bind(&mime)
@@ -2509,9 +2637,6 @@ impl Uguisu {
     pub fn spawn_workers(&self) {
         let this = self.clone();
         tokio::spawn(async move {
-            if let Err(e) = this.upgrade_archive().await {
-                tracing::error!("upgrading the archive failed: {e:#}");
-            }
             if let Err(e) = this.sync_search_index().await {
                 tracing::error!("rebuilding the search index failed: {e:#}");
             }

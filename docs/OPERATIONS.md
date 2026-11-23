@@ -153,9 +153,20 @@ project's GitHub account.
 ## Upgrading
 
 Pull or build the new image and restart. The database is migrated at the start, and an archive
-in an older format is brought up to date in the background. Going back to an older version after
-that is not supported: an older Uguisu refuses an archive in a newer format rather than risk
-damaging it. Keep a backup from before the upgrade if you want a way back.
+in an older format is brought up to date. Going back to an older version after that is not
+supported: an older Uguisu refuses an archive in a newer format rather than risk damaging it.
+**Back up the data directory before an upgrade** if you want a way back.
+
+The step to archive format 5 renames every podcast directory and media file (see
+[ARCHIVE.md](ARCHIVE.md)). It runs once, before the web interface answers; for a large archive
+on a network share this can take a while, and the health check reports the container as
+starting meanwhile. Nothing is copied, so it needs no extra space. If it is interrupted, the
+next start finishes it. A database copy from before the move (from `backups/`, or a restored
+container whose archive lies elsewhere) can be put back afterwards: it is brought along to the
+moved archive at the next start, and a fresh copy is made right after.
+
+If the image tag follows `latest` and updates run automatically, the move happens at the first
+update after the release, unattended.
 
 ## Keeping an eye on it
 

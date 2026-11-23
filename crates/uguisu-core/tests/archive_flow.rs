@@ -9,6 +9,12 @@ use axum::http::header::CONTENT_TYPE;
 use axum::routing::get;
 use uguisu_core::{Config, Uguisu, rss};
 
+/// `metadata/<episode>/` of the media file `episodes/<episode>.<ext>`.
+fn metadata_of(media: &std::path::Path) -> std::path::PathBuf {
+    let podcast = media.parent().unwrap().parent().unwrap();
+    podcast.join("metadata").join(media.file_stem().unwrap())
+}
+
 fn feed(items: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -229,9 +235,11 @@ async fn archive_flow() {
     for view in &episodes {
         let path = uguisu.archive_path(view.media_path.as_deref().expect("episode is archived"));
         assert!(path.exists());
-        assert!(path.with_file_name("media.mp3.blake3").exists());
-        assert!(path.with_file_name("episode.json").exists());
-        assert!(path.with_file_name("item.xml").exists());
+        assert_eq!(path.parent().unwrap().file_name().unwrap(), "episodes");
+        let metadata = metadata_of(&path);
+        assert!(metadata.join("media.mp3.blake3").exists());
+        assert!(metadata.join("episode.json").exists());
+        assert!(metadata.join("item.xml").exists());
         assert_eq!(view.media_mime.as_deref(), Some("audio/mpeg"));
     }
     assert_eq!(
@@ -396,30 +404,43 @@ async fn replaced_media_is_kept_as_a_new_version() {
     let two = episodes.iter().find(|e| e.episode.guid == "ep-2").unwrap();
     assert_eq!(two.media_versions, 2);
     assert_eq!(
-        two.media_file_name(),
+        two.media_file_name().as_deref(),
         Some("media.v2.mp3"),
-        "the newest copy is published"
+        "the newest copy is published under a new address"
     );
-    let newest = uguisu.archive_path(two.media_path.as_deref().unwrap());
+    // The newest copy is the one in `episodes/`; the first one is kept as a version.
+    let path = two.media_path.as_deref().unwrap();
+    let (podcast_dir, file) = path.split_once("/episodes/").unwrap();
+    assert!(!file.contains('/'));
+    let newest = uguisu.archive_path(path);
     assert_eq!(
         std::fs::read_to_string(&newest).unwrap(),
         "fake audio 2-final.mp3"
     );
+    let metadata = uguisu
+        .archive_path(podcast_dir)
+        .join("metadata")
+        .join(file.trim_end_matches(".mp3"));
     assert_eq!(
-        std::fs::read_to_string(newest.with_file_name("media.mp3")).unwrap(),
+        std::fs::read_to_string(metadata.join("versions/v1.mp3")).unwrap(),
         "fake audio 2.mp3",
         "the first copy is still there"
     );
-    assert!(newest.with_file_name("media.v2.mp3.blake3").exists());
+    assert!(metadata.join("versions/v1.mp3.blake3").exists());
+    assert!(metadata.join("media.mp3.blake3").exists());
 
     // An unchanged file under a new address is not stored twice.
     let one = episodes.iter().find(|e| e.episode.guid == "ep-1").unwrap();
     assert_eq!(one.media_versions, 1);
-    assert_eq!(one.media_file_name(), Some("media.mp3"));
+    assert_eq!(one.media_file_name().as_deref(), Some("media.mp3"));
+    let one_path = one.media_path.as_deref().unwrap();
+    let (_, one_file) = one_path.split_once("/episodes/").unwrap();
     assert!(
         !uguisu
-            .archive_path(one.media_path.as_deref().unwrap())
-            .with_file_name("download.part")
+            .archive_path(podcast_dir)
+            .join("metadata")
+            .join(one_file.trim_end_matches(".mp3"))
+            .join("download.part")
             .exists()
     );
 
@@ -538,11 +559,10 @@ async fn published_feed_keeps_the_original_items() {
     assert_eq!(episodes[1].attachment_count, 0);
     assert_eq!(uguisu.episodes_page(id, 1).await.unwrap().len(), 2);
     assert!(uguisu.episodes_page(id, 2).await.unwrap().is_empty());
-    assert!(
-        uguisu
-            .archive_path(&transcript.path)
-            .with_file_name("media.mp3")
-            .exists()
+    // Linked files are kept with the episode's other metadata.
+    assert_eq!(
+        uguisu.archive_path(&transcript.path).parent().unwrap(),
+        metadata_of(&uguisu.archive_path(episodes[0].media_path.as_deref().unwrap()))
     );
 
     let podcast = uguisu.podcast(id).await.unwrap().unwrap();
@@ -732,9 +752,8 @@ async fn atom_feeds_are_archived_and_published_as_rss() {
         .unwrap();
     assert_eq!(uguisu.download_pending().await.unwrap(), 1);
     let episodes = uguisu.episodes(id).await.unwrap();
-    let item_xml = uguisu
-        .archive_path(episodes[0].media_path.as_deref().unwrap())
-        .with_file_name("item.xml");
+    let item_xml = metadata_of(&uguisu.archive_path(episodes[0].media_path.as_deref().unwrap()))
+        .join("item.xml");
     assert!(
         std::fs::read_to_string(item_xml)
             .unwrap()
@@ -914,8 +933,8 @@ async fn interrupted_downloads_are_continued() {
         episodes[0].media_blake3.as_deref(),
         Some(blake3::hash(AUDIO).to_hex().as_str())
     );
-    assert!(!path.with_file_name("download.part").exists());
-    assert!(!path.with_file_name("download.part.json").exists());
+    assert!(!metadata_of(&path).join("download.part").exists());
+    assert!(!metadata_of(&path).join("download.part.json").exists());
     assert!(uguisu.verify().await.unwrap().corrupt.is_empty());
 }
 
@@ -1159,7 +1178,7 @@ async fn the_archive_states_its_format() {
     drop(Uguisu::open(Config::new(data.path())).await.unwrap());
     let content: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&marker).unwrap()).unwrap();
-    assert_eq!(content["format"], 4);
+    assert_eq!(content["format"], 5);
     // Opening again is fine and leaves the marker alone.
     drop(Uguisu::open(Config::new(data.path())).await.unwrap());
 
@@ -1202,9 +1221,8 @@ async fn episode_files_describe_the_archive() {
     uguisu.download_pending().await.unwrap();
 
     let read = |uguisu: &Uguisu, view: &uguisu_core::model::EpisodeView| -> serde_json::Value {
-        let path = uguisu
-            .archive_path(view.media_path.as_deref().unwrap())
-            .with_file_name("episode.json");
+        let path = metadata_of(&uguisu.archive_path(view.media_path.as_deref().unwrap()))
+            .join("episode.json");
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
     };
     let episodes = uguisu.episodes(id).await.unwrap();
@@ -1216,7 +1234,8 @@ async fn episode_files_describe_the_archive() {
     let files = second["files"].as_array().unwrap();
     assert_eq!(files.len(), 2);
     assert_eq!(files[0]["kind"], "media");
-    assert_eq!(files[0]["name"], "media.mp3");
+    assert_eq!(files[0]["name"], "2024-01-02 10.00 - Second.mp3");
+    assert_eq!(files[0]["path"], "episodes/2024-01-02 10.00 - Second.mp3");
     assert_eq!(files[0]["type"], "audio/mpeg");
     assert_eq!(
         files[0]["blake3"],
@@ -1268,11 +1287,7 @@ async fn episode_files_describe_the_archive() {
     let revisions = second["revisions"].as_array().unwrap();
     assert_eq!(revisions.len(), 2);
     assert_eq!(revisions[1]["file"], "item.xml");
-    let episode_dir = uguisu
-        .archive_path(episodes[0].media_path.as_deref().unwrap())
-        .parent()
-        .unwrap()
-        .to_path_buf();
+    let episode_dir = metadata_of(&uguisu.archive_path(episodes[0].media_path.as_deref().unwrap()));
     let earlier =
         std::fs::read_to_string(episode_dir.join(revisions[0]["file"].as_str().unwrap())).unwrap();
     assert!(earlier.contains("<title>Second</title>"));
@@ -1283,17 +1298,32 @@ async fn episode_files_describe_the_archive() {
     std::fs::remove_file(&settings_path).unwrap();
     let marker = data.path().join("archive/archive.json");
     std::fs::write(&marker, r#"{ "format": 1, "software": "Uguisu" }"#).unwrap();
-    let old = uguisu
-        .archive_path(episodes[1].media_path.as_deref().unwrap())
-        .with_file_name("episode.json");
+    let old = metadata_of(&uguisu.archive_path(episodes[1].media_path.as_deref().unwrap()))
+        .join("episode.json");
     std::fs::write(&old, r#"{ "guid": "ep-1", "title": "First" }"#).unwrap();
+    let before = uguisu.episodes(id).await.unwrap();
     assert_eq!(uguisu.upgrade_archive().await.unwrap(), 2);
-    assert_eq!(read(&uguisu, &episodes[1])["files"][0]["name"], "media.mp3");
+    // Already named: nothing is renamed, also not the episode whose title changed since.
+    let after = uguisu.episodes(id).await.unwrap();
+    for (b, a) in before.iter().zip(&after) {
+        assert_eq!(b.episode.dir, a.episode.dir);
+        assert_eq!(b.media_path, a.media_path);
+    }
+    let verified = uguisu.verify().await.unwrap();
+    assert_eq!(verified.ok, verified.checked);
+    let first = read(&uguisu, &episodes[1]);
+    assert_eq!(first["files"][0]["kind"], "media");
+    assert!(
+        first["files"][0]["path"]
+            .as_str()
+            .unwrap()
+            .starts_with("episodes/")
+    );
     assert!(settings_path.exists());
     assert_eq!(uguisu.upgrade_archive().await.unwrap(), 0);
     let content: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&marker).unwrap()).unwrap();
-    assert_eq!(content["format"], 4);
+    assert_eq!(content["format"], 5);
 }
 
 /// The database is only an index: after losing it, a rebuild from the archive publishes the
@@ -1490,11 +1520,12 @@ async fn a_damaged_file_is_not_lost_to_a_different_one() {
             .as_deref()
             .unwrap(),
     );
+    // What lies in the episode's metadata directory besides its texts.
     let names = |media: &std::path::Path| -> Vec<String> {
-        let mut names: Vec<String> = std::fs::read_dir(media.parent().unwrap())
+        let mut names: Vec<String> = std::fs::read_dir(metadata_of(media))
             .unwrap()
             .map(|entry| entry.unwrap().file_name().into_string().unwrap())
-            .filter(|name| name.starts_with("media"))
+            .filter(|name| name.starts_with("media") || name.starts_with("damaged"))
             .collect();
         names.sort();
         names
@@ -1505,7 +1536,7 @@ async fn a_damaged_file_is_not_lost_to_a_different_one() {
     assert_eq!(uguisu.verify().await.unwrap().corrupt.len(), 1);
     uguisu.download_pending().await.unwrap();
     assert_eq!(std::fs::read_to_string(&media).unwrap(), "fake audio 1.mp3");
-    assert_eq!(names(&media), ["media.mp3", "media.mp3.blake3"]);
+    assert_eq!(names(&media), ["media.mp3.blake3"]);
 
     // The source has replaced the file in the meantime.
     std::fs::write(&media, "bit rot again").unwrap();
@@ -1515,13 +1546,13 @@ async fn a_damaged_file_is_not_lost_to_a_different_one() {
     uguisu.download_pending().await.unwrap();
     assert_eq!(std::fs::read_to_string(&media).unwrap(), "fake audio 9.mp3");
     let kept = names(&media);
-    assert_eq!(kept.len(), 3, "{kept:?}");
+    assert_eq!(kept.len(), 2, "{kept:?}");
     let aside = kept
         .iter()
-        .find(|name| name.starts_with("media.damaged-"))
+        .find(|name| name.starts_with("damaged-"))
         .expect("the damaged copy is kept");
     assert_eq!(
-        std::fs::read_to_string(media.with_file_name(aside)).unwrap(),
+        std::fs::read_to_string(metadata_of(&media).join(aside)).unwrap(),
         "bit rot again"
     );
     let verified = uguisu.verify().await.unwrap();
@@ -1632,7 +1663,7 @@ async fn existing_files_are_imported() {
     for (view, content) in episodes.iter().zip(["my copy of two", "my copy of one"]) {
         let path = uguisu.archive_path(view.media_path.as_deref().expect("imported"));
         assert_eq!(std::fs::read_to_string(&path).unwrap(), content);
-        assert!(path.with_file_name("media.mp3.blake3").exists());
+        assert!(metadata_of(&path).join("media.mp3.blake3").exists());
     }
     // Nothing is left to download, and the files verify.
     assert_eq!(uguisu.download_pending().await.unwrap(), 0);
@@ -2098,14 +2129,128 @@ async fn archives_of_released_versions_are_upgraded() {
         let xml = rss::build_feed(podcast, &published, &[], "https://archive.example");
         assert_valid_feed(&xml);
         assert!(xml.contains(&podcast.feed_token));
+        let token = podcast.feed_token.clone();
+        let podcast_id = podcast.id;
 
         // What newer versions added works on the old data: search, also in the transcript.
         uguisu.sync_search_index().await.unwrap();
         assert_eq!(uguisu.search_episodes("heron", 5).await.unwrap().len(), 1);
         assert_eq!(uguisu.search_episodes("bittern", 5).await.unwrap().len(), 1);
 
-        // And the archive alone is enough: without the database everything is found again.
-        let token = podcast.feed_token.clone();
+        // The old layout alone is enough, too: without the database everything is found again.
+        let lost = tempfile::tempdir().unwrap();
+        copy_directory(&fixtures.join(&version), lost.path());
+        std::fs::remove_file(lost.path().join("uguisu.db")).unwrap();
+        let rebuilt = Uguisu::open(Config::new(lost.path())).await.unwrap();
+        rebuilt.reindex().await.unwrap();
+        let podcasts = rebuilt.podcasts().await.unwrap();
+        assert_eq!(podcasts[0].archived_count, 2, "{version}");
+        assert_eq!(podcasts[0].podcast.feed_token, token, "{version}");
+
+        // An earlier run of the move to named directories stopped after renaming the podcast's
+        // directory, before anything was recorded.
+        let archive = data.path().join("archive");
+        std::fs::rename(
+            archive.join("fixture-cast-1e062c34"),
+            archive.join("Fixture Author - Fixture Cast"),
+        )
+        .unwrap();
+
+        // The move to named directories (format 5) finishes the job.
+        assert_eq!(uguisu.upgrade_archive().await.unwrap(), 2, "{version}");
+        let podcast_dir = archive.join("Fixture Author - Fixture Cast");
+        let listed = |dir: &str| -> Vec<String> {
+            let mut names: Vec<String> = std::fs::read_dir(podcast_dir.join(dir))
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+                .collect();
+            names.sort();
+            names
+        };
+        let mut top: Vec<String> = std::fs::read_dir(&archive)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        top.sort();
+        assert_eq!(
+            top,
+            ["Fixture Author - Fixture Cast", "archive.json"],
+            "{version}"
+        );
+        let episodes = listed("episodes");
+        assert_eq!(episodes.len(), 2, "{version}: {episodes:?}");
+        assert!(
+            episodes
+                .iter()
+                .all(|name| name.ends_with(".mp3") && name.starts_with("2024-01-0")),
+            "{version}: only the media files, named by time and title: {episodes:?}"
+        );
+        let metadata = listed("metadata");
+        assert_eq!(metadata.len(), 2, "{version}: {metadata:?}");
+        for name in &metadata {
+            let dir = podcast_dir.join("metadata").join(name);
+            assert!(dir.join("episode.json").exists(), "{version}: {name}");
+            assert!(dir.join("item.xml").exists(), "{version}: {name}");
+            // The checksum names the media file the way `b3sum -c` finds it from here.
+            let line = std::fs::read_to_string(dir.join("media.mp3.blake3")).unwrap();
+            let (hash, file) = line.trim_end().split_once("  ").unwrap();
+            let media = std::fs::read(dir.join(file)).unwrap();
+            assert_eq!(
+                blake3::hash(&media).to_hex().as_str(),
+                hash,
+                "{version}: {name}"
+            );
+            assert!(!dir.join("media.mp3").exists(), "{version}: {name}");
+        }
+        assert!(
+            metadata.iter().any(
+                |name| std::fs::read_dir(podcast_dir.join("metadata").join(name))
+                    .unwrap()
+                    .any(|e| e
+                        .unwrap()
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with("transcript-"))
+            ),
+            "{version}: the transcript moved with the episode"
+        );
+        let report = uguisu.verify().await.unwrap();
+        assert_eq!((report.checked, report.ok), (3, 3), "{version}");
+        let podcast = uguisu.podcast(podcast_id).await.unwrap().unwrap();
+        let published = uguisu.feed_episodes(podcast_id).await.unwrap();
+        assert_eq!(
+            rss::build_feed(&podcast, &published, &[], "https://archive.example"),
+            xml,
+            "{version}: the published feed does not change"
+        );
+        assert_eq!(uguisu.upgrade_archive().await.unwrap(), 0, "{version}");
+
+        // A copy of the database from before the move, put back onto the moved archive (a
+        // daily copy, a restored container): it is brought along at the next start.
+        uguisu.pool().close().await;
+        drop(uguisu);
+        for name in ["uguisu.db-wal", "uguisu.db-shm"] {
+            let _ = std::fs::remove_file(data.path().join(name));
+        }
+        std::fs::copy(
+            fixtures.join(&version).join("uguisu.db"),
+            data.path().join("uguisu.db"),
+        )
+        .unwrap();
+        let uguisu = Uguisu::open(config()).await.unwrap();
+        assert_eq!(uguisu.upgrade_archive().await.unwrap(), 2, "{version}");
+        assert_eq!(uguisu.verify().await.unwrap().ok, 3, "{version}");
+        assert_eq!(uguisu.download_pending().await.unwrap(), 0, "{version}");
+        let podcast = uguisu.podcast(podcast_id).await.unwrap().unwrap();
+        let published = uguisu.feed_episodes(podcast_id).await.unwrap();
+        assert_eq!(
+            rss::build_feed(&podcast, &published, &[], "https://archive.example"),
+            xml,
+            "{version}: an old database on a moved archive"
+        );
+        assert_eq!(uguisu.upgrade_archive().await.unwrap(), 0, "{version}");
+
+        // And the new layout alone is enough: without the database everything is found again.
         uguisu.pool().close().await;
         drop(uguisu);
         for name in ["uguisu.db", "uguisu.db-wal", "uguisu.db-shm"] {
@@ -2116,6 +2261,19 @@ async fn archives_of_released_versions_are_upgraded() {
         let podcasts = uguisu.podcasts().await.unwrap();
         assert_eq!(podcasts[0].archived_count, 2, "{version}");
         assert_eq!(podcasts[0].podcast.feed_token, token, "{version}");
+        let published = uguisu.feed_episodes(podcasts[0].podcast.id).await.unwrap();
+        assert_eq!(
+            rss::build_feed(
+                &podcasts[0].podcast,
+                &published,
+                &[],
+                "https://archive.example"
+            ),
+            xml,
+            "{version}: the rebuilt index publishes the same feed"
+        );
+        assert_eq!(uguisu.verify().await.unwrap().ok, 3, "{version}");
+        uguisu.sync_search_index().await.unwrap();
         assert_eq!(uguisu.search_episodes("bittern", 5).await.unwrap().len(), 1);
     }
 }

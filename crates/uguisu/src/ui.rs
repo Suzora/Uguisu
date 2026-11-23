@@ -1235,7 +1235,7 @@ pub fn episode_page(
                             div {
                                 @if m.status == "ok" {
                                     @if Some(m.id) == newest_ok {
-                                        a href=(media_url("", &podcast.feed_token, e.id, &name)) { (name) }
+                                        a href=(media_url("", &podcast.feed_token, e.id, &uguisu_core::archive::published_media_name(&m.path))) { (name) }
                                     } @else {
                                         a href=(format!("/media/{}/{}/v/{}/{}", podcast.feed_token, e.id, m.id, name)) { (name) }
                                     }

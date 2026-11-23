@@ -112,11 +112,18 @@ impl Attachment {
 }
 
 impl EpisodeView {
-    /// File name of the archived media file, e.g. `media.mp3`.
-    pub fn media_file_name(&self) -> Option<&str> {
-        self.media_path
-            .as_deref()
-            .and_then(|p| p.rsplit('/').next())
+    /// Name of the archived media file in published addresses, e.g. `media.mp3`. It does not
+    /// follow the name on disk, so that addresses stay the same when the archive is reorganised.
+    /// A replaced file gets `media.v2.mp3` and so on, so that podcast apps see a new address
+    /// and fetch the new file.
+    pub fn media_file_name(&self) -> Option<String> {
+        let name = crate::archive::published_media_name(self.media_path.as_deref()?);
+        Some(match name.split_once('.') {
+            Some((stem, ext)) if self.media_versions > 1 => {
+                format!("{stem}.v{}.{ext}", self.media_versions)
+            }
+            _ => name,
+        })
     }
 }
 
