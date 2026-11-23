@@ -670,15 +670,23 @@ impl Uguisu {
     }
 
     /// Puts the transcript of an episode into the full-text index. An episode often has the
-    /// same transcript in several formats; one of them is enough.
+    /// same transcript in several formats; one of them is enough, the cleanest one available.
     pub(crate) async fn index_transcript(&self, episode_id: i64) -> Result<()> {
-        let paths: Vec<String> = sqlx::query_scalar(
+        let mut paths: Vec<String> = sqlx::query_scalar(
             "SELECT path FROM attachments WHERE episode_id = ? AND kind = 'transcript' \
              AND status = 'ok' AND path IS NOT NULL ORDER BY id",
         )
         .bind(episode_id)
         .fetch_all(self.pool())
         .await?;
+        // The formats that keep speakers and time codes apart from the words come first; a
+        // transcript as a web page or plain text has them in the running text.
+        paths.sort_by_key(|path| match path.rsplit('.').next().unwrap_or_default() {
+            "json" => 0,
+            "vtt" => 1,
+            "srt" => 2,
+            _ => 3,
+        });
         let mut text = String::new();
         for path in paths {
             let Ok(bytes) = tokio::fs::read(self.archive_path(&path)).await else {

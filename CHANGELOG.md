@@ -14,6 +14,9 @@ Versions follow [semantic versioning](CONTRIBUTING.md#versions).
 
 ### Changed
 
+- Of several transcripts of an episode, the search indexes the one in the cleanest format
+  (JSON, then WebVTT, then SubRip) instead of the first one listed, so that speaker names and
+  time codes of a web-page transcript do not end up as search words.
 - The `url` library is updated because of a security advisory: its function `Url::origin()`
   could crash the program on a prepared address. Neither Uguisu nor the libraries through
   which it uses `url` call that function, so 0.4.0 is not known to be affected.
