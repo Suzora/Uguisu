@@ -30,7 +30,20 @@ Principles every decision is measured against:
 - Multiple user accounts.
 - Recommendations, ratings or other social features.
 
-## 2. Where the project stands (0.1)
+## 2. Releases
+
+What each release brought is in `CHANGELOG.md`; this plan follows the topics, not the version
+numbers.
+
+| Version | State |
+| --- | --- |
+| 0.3.0 | The code under this number; no image was published. |
+| 0.4.0 | First published container image (`ghcr.io/suzora/uguisu`), x86-64 and ARM64. |
+| 0.5.0 | Next release: archive format 5 (names for people), the best offered file, copies of the database on demand and at the stop, forms over plain `http`, fixes from the first test on a real machine. |
+
+## 3. What is done
+
+### Foundation
 
 - [x] Rust workspace: `uguisu-core` (archive engine) and `uguisu` (server).
 - [x] Self-describing archive on disk, SQLite as index.
@@ -49,17 +62,15 @@ Principles every decision is measured against:
       time with the first version tag.
 - [x] Feeds split into pages (RFC 5005) are read to the last page.
 
-## 3. Milestones
-
-Each milestone ends with a release. Items are worked through one topic per pull request.
-
-### 0.2 – Complete ingestion
+### Ingestion
 
 Everything a podcast offers ends up in the archive.
 
 - [x] Paged and archived feeds (RFC 5005).
 - [x] Archive the best file a feed offers (`podcast:alternateEnclosure`, `media:content`,
       further Atom enclosures): highest bitrate, else largest size, same kind as the enclosure.
+      Checked with a real feed (Podnews: MP3 128 kbit/s as enclosure, AAC 32 and Opus 12 as
+      alternatives): the MP3 is archived, `episode.json` names it as the source.
 - [x] Atom and RSS 1.0 as source formats. The published feed stays RSS 2.0. Checked with real
       feeds (the WordPress feeds of chaosradio.de): Atom with 99 entries, 39 of them with media,
       read with the same count, titles and dates, and the archived file had the size the feed
@@ -72,15 +83,16 @@ Everything a podcast offers ends up in the archive.
 - [x] Resume interrupted downloads with range requests.
 - [x] Be polite to sources: a pause between requests per host, respect `Retry-After`.
 - [x] Feeds that need credentials (HTTP Basic, for example paid feeds). Credentials never appear
-      in logs or published feeds.
-- [!] Podcast Index search. Needs an API key; registration is closed at the moment.
+      in logs or published feeds. Checked against a server with Basic Auth: the episode is
+      archived byte-identical, and the password is in no log line, no file of the archive and
+      not in the published feed.
 - [x] Verify the fyyd search from a real instance. Checked 2026-11-23: results appear in about
       0.5 s and can be archived from the result list.
 - [x] Find out why single hosts answer 403 to media requests (seen with the BBC). It was the
       development environment: its network refuses plain `http` to that host. Over `https` the
       same file is served to Uguisu without complaint.
 
-### 0.3 – A dependable archive
+### A dependable archive
 
 The promise "readable without Uguisu" is made good and tested.
 
@@ -108,24 +120,20 @@ The promise "readable without Uguisu" is made good and tested.
       500 episodes, spent on writing the files safely. Nothing here needs work before 1.0; the
       library query is the first candidate should archives grow much larger.
 
-### 0.4 – Feeds that work everywhere
+### Feeds for podcast apps
 
 - [x] Conditional requests (ETag) and compression for published feeds. Caching the generated
       feed is dropped: building one takes about 30 ms for 500 episodes (see the load test).
 - [x] Very large feeds: `?limit=N` on a feed address publishes only the newest N episodes.
-- [ ] Very large feeds, continued: publish in pages (RFC 5005) – only if an app turns out to
-      need it.
 - [x] Cover thumbnails for the web interface. Originals stay untouched in the archive.
 - [x] One combined feed over all podcasts.
 - [x] Access to removed episodes and earlier media versions. Removed episodes stay in the
       published feed (an option per podcast). Earlier versions of a media file each have an
       address of their own, linked from the episode page; they are not put into the feed,
       where an app would show them as duplicate episodes.
-- [ ] Compatibility check with real apps – AntennaPod, PinePods, Apple Podcasts, Pocket Casts,
-      gPodder – documented as a table. Not checked with any app so far.
 - [x] Validate generated feeds in the test suite.
 
-### 0.5 – Web interface
+### Web interface
 
 - [x] Episode page: show notes, attachments, media versions, revisions with their differences.
 - [x] History per podcast: feed snapshots, changes, errors.
@@ -141,20 +149,12 @@ The promise "readable without Uguisu" is made good and tested.
 - [x] Accessibility (keyboard, contrast, screen readers) and a layout for phones. Checked with
       axe-core at phone and desktop width, in the light and the dark colour scheme. A test with a
       real screen reader is still to be done by a person.
-- [ ] Final logo and icons. The current logo is provisional.
 
-### 0.6 – Operation and security
+### Operation and security
 
 - [x] Images for x86-64 and ARM64. Both are compiled on the build machine, the ARM one by
       cross-compiling; the finished ARM image is started once in an emulator before a release
       is published.
-- [~] Provenance and SBOM for released images, attached to the image in the registry. (A
-      signature was considered and dropped.) Checked in the registry for 0.4.0: the provenance
-      is complete; the SBOM listed only the base image's packages. From 0.5 the Rust libraries
-      are embedded in the program for the SBOM to read; to be checked again at that release.
-      Built from `main` outside GitHub Actions (2026-11-23, `docker buildx`, `--sbom=true`): the
-      SBOMs in `linux_amd64/` and `linux_arm64/` each list 239 Rust libraries, `tokio` among
-      them, and the ARM64 binary is an aarch64 executable. Not yet run on real ARM hardware.
 - [x] Automatic dependency updates and a scheduled `cargo deny` run.
 - [x] Notifications about damaged files and feeds that keep failing, as a webhook that other
       services can be attached to (`UGUISU_WEBHOOK_URL`).
@@ -170,6 +170,7 @@ The promise "readable without Uguisu" is made good and tested.
 - [x] Security review (requests to private networks, paths, XML, headers). Found and fixed: a
       feed could exhaust memory through its own XML entities; IPv6 addresses that lead to
       private IPv4 addresses were let through; `reindex` followed file names out of the archive.
+- [x] `compose.yaml` as the README describes it: builds, becomes healthy, shows the setup page.
 - [x] Operations guide: reverse proxy examples, backup and restore, moving, upgrading. The
       Caddy and nginx examples were run in front of a real instance; the nginx one needed
       `$http_host` instead of `$host` for ports other than 443.
@@ -185,25 +186,52 @@ The promise "readable without Uguisu" is made good and tested.
       (4 podcasts, 41 files) started with an image built from `main`: healthy, `verify` clean,
       feeds and the browser session unchanged.
 
-### 1.0 – The finished product
+### Format, documentation, releases
 
-- [ ] Archive format and feed addresses are frozen. Later versions read 1.0 archives.
 - [x] Names in the archive are for people (format 5): `<author> - <title>/`, media files in
       `episodes/` named by time and title, the rest in `metadata/<episode>/`. Existing archives
-      are moved once at the start.
+      are moved once at the start. Rehearsed on a copy of a real archive on a network share
+      (3 podcasts, 486 episodes, 29 GB, CIFS): moved in 5.6 s, the web interface answered after
+      8 s; `verify` 508 of 508 intact, `b3sum -c` without a failure, the three published feeds
+      byte-identical before and after; a restart moves nothing again; a database copy from
+      before the move put back is brought along.
 - [x] Migrations are tested from every released version: a real data directory written by
       each release is kept as a test fixture and must open, verify, publish and reindex with
       the current code. So far: 0.3.0 and 0.4.0.
 - [x] Complete documentation: installation, operation, archive format, FAQ, legal notes.
 - [x] `CHANGELOG.md`, `CONTRIBUTING.md`, versioning rules (SemVer).
 
-Uguisu is "finished" when:
+## 4. The way to 1.0
 
-1. every item of 0.2 to 0.6 is done or deliberately struck from this plan,
-2. the reindex test and the app compatibility checks pass,
-3. a real instance has run for four weeks without data loss and without an open critical bug.
+Open, in the order they are expected to be done. Items marked for a person need hardware, apps or
+eyes that automated tests do not have.
 
-## 4. After 1.0
+- [ ] Final logo and icons. The current logo is provisional.
+- [~] Provenance and SBOM for released images, attached to the image in the registry. (A
+      signature was considered and dropped.) Checked in the registry for 0.4.0: the provenance
+      is complete; the SBOM listed only the base image's packages. From 0.5 the Rust libraries
+      are embedded in the program for the SBOM to read; to be checked again at that release.
+      Built from `main` outside GitHub Actions (2026-11-23, `docker buildx`, `--sbom=true`): the
+      SBOMs in `linux_amd64/` and `linux_arm64/` each list 239 Rust libraries, `tokio` among
+      them, and the ARM64 binary is an aarch64 executable. Not yet run on real ARM hardware.
+- [ ] Add the data directory of 0.5.0 to the upgrade test fixtures after the release.
+- [ ] Compatibility check with real apps – AntennaPod, PinePods, Apple Podcasts, Pocket Casts,
+      gPodder – documented as a table. Not checked with any app so far. (Needs a person with the apps.)
+- [ ] Run the image on real ARM hardware (Raspberry Pi, ARM NAS or Apple Silicon); so far the
+      ARM image is only started under emulation. (Needs a person with the hardware.)
+- [ ] Test with a real screen reader (NVDA, VoiceOver, TalkBack) and on real phones. (Needs a
+      person.)
+- [ ] Very large feeds, continued: publish in pages (RFC 5005) – only if an app turns out to
+      need it.
+- [!] Podcast Index search. Needs an API key; registration is closed at the moment.
+- [ ] Archive format and feed addresses are frozen. Later versions read 1.0 archives.
+- [ ] A real instance runs for four weeks without data loss and without an open critical bug.
+      Candidate: the maintainer's instance, counted from its upgrade to 0.5.0.
+
+Uguisu is "finished" (1.0) when every item of this section is done or deliberately struck from
+this plan, and the reindex test passes.
+
+## 5. After 1.0
 
 Ideas without commitment:
 
@@ -211,18 +239,18 @@ Ideas without commitment:
 - Taking over libraries from PinePods or Audiobookshelf.
 - Faster updates through Podping or WebSub.
 - Archiving the podcast's web pages along with the episodes.
-- `podcast:alternateEnclosure`: further versions of an episode (other formats, video), as an
-  option per podcast. These files can be large.
+- Further versions of an episode besides the best one (other formats, video), as an option per
+  podcast. These files can be large.
 - Multiple users – only if a real need shows up.
 
-## 5. How the work is done
+## 6. How the work is done
 
 - One topic per pull request: draft, green CI, then merged on the maintainer's word.
 - Every feature comes with a test; every schema change is a migration.
 - What could not be verified is named in the pull request.
 - Dependencies need a licence allowed in `deny.toml`.
 
-## 6. Risks and open questions
+## 7. Risks and open questions
 
 - **Legal.** Archiving and passing on content is only allowed where the user has the right to.
   The documentation must say so clearly.
@@ -238,4 +266,4 @@ Ideas without commitment:
 - **Storage.** Archives grow without limit by design; the interface has to show the cost.
 - **Directories.** No Podcast Index access. fyyd answered in 15 to 30 seconds earlier, in about
   0.5 seconds on 2026-11-23.
-- **SQLite.** Fine for one user; to be confirmed by the load test in 0.3.
+- **SQLite.** Fine for one user; confirmed by the load test (100 podcasts, 50,000 episodes).
