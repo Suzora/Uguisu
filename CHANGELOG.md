@@ -7,6 +7,9 @@ Versions follow [semantic versioning](CONTRIBUTING.md#versions).
 
 ### Added
 
+- `uguisu backup` writes a copy of the database to `backups/` on demand, also while the server
+  runs, and a copy is made at every stop. Before, copies were made once a day only, so a backup
+  taken on the first day held the empty database from before the setup.
 - When a feed offers an episode in several qualities (Podcasting 2.0 `alternateEnclosure`,
   Media RSS `media:content`, several Atom enclosures), the best one of the same kind is
   archived and published: the highest bitrate, or failing that the largest file. Audio stays

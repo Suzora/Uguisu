@@ -64,14 +64,18 @@ quicker.
 - Do not copy `uguisu.db` itself while Uguisu is running; a database copied in the middle of a
   write can be unusable. The copies in `backups/` are made for this: each is a complete database
   from one moment.
-- Those copies are made once a day, the first one at the very first start. The newest copy can
-  therefore be up to a day old, and on the first day it is the empty database from before the
-  setup. What was added or archived since is missing from it. For a database that is current,
-  stop Uguisu and copy `uguisu.db` (and `uguisu.db-wal`, if present) while it is stopped.
+- Copies are made once a day, every time Uguisu stops, and on demand. Right before a backup of
+  the data directory, make one that is current:
+
+  ```bash
+  docker compose exec uguisu uguisu backup
+  ```
+
+  It prints the name of the copy. `UGUISU_BACKUPS` (7 by default) is how many are kept.
 - After restoring, run `uguisu verify`. It compares every file with its checksum and tells you
   whether the backup was complete.
 
-To check a backup without Uguisu at all, use the checksum files next to the media files:
+To check a backup without Uguisu at all, use the checksum files in the archive:
 
 ```bash
 find archive -name '*.blake3' -execdir b3sum -c {} \;

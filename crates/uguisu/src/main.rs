@@ -108,6 +108,9 @@ enum Command {
         #[arg(long)]
         keep_unmatched: bool,
     },
+    /// Write a consistent copy of the database to `backups/` now, for example right before a
+    /// backup of the data directory. Works while the server is running.
+    Backup,
     /// Remove the password of the web interface and sign out every device. The next visit asks
     /// for a new password. For when the password is lost.
     ResetPassword,
@@ -202,6 +205,7 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 .context("upgrading the archive failed; it is left as it was found")?;
             app.spawn_workers();
             let pool = app.pool().clone();
+            let copier = app.clone();
             let base_url = cli
                 .base_url
                 .map(|u| u.trim_end_matches('/').to_string())
@@ -228,6 +232,16 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                     tokio::time::sleep(STOP_GRACE).await;
                 } => tracing::info!("requests still running were cut off"),
             }
+            // A copy of the database as it is at the stop, so that the newest copy is never
+            // older than the last run. Must not hold up the stop.
+            if copier.config().backups > 0 {
+                match tokio::time::timeout(Duration::from_secs(5), copier.backup_database()).await {
+                    Ok(Ok(path)) => tracing::info!(file = %path.display(), "database copied"),
+                    Ok(Err(e)) => tracing::warn!("copying the database at the stop failed: {e:#}"),
+                    Err(_) => tracing::warn!("copying the database at the stop took too long"),
+                }
+            }
+            drop(copier);
             // Leaves the database as one tidy file where nothing else is using it.
             let _ = tokio::time::timeout(Duration::from_secs(2), pool.close()).await;
             Ok(ExitCode::SUCCESS)
@@ -265,6 +279,11 @@ async fn run(cli: Cli) -> Result<ExitCode> {
                 report.known.len(),
                 report.skipped.len()
             );
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Backup => {
+            let path = app.backup_database().await?;
+            println!("{}", path.display());
             Ok(ExitCode::SUCCESS)
         }
         Command::ResetPassword => {
