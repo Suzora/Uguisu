@@ -64,6 +64,10 @@ quicker.
 - Do not copy `uguisu.db` itself while Uguisu is running; a database copied in the middle of a
   write can be unusable. The copies in `backups/` are made for this: each is a complete database
   from one moment.
+- Those copies are made once a day, the first one at the very first start. The newest copy can
+  therefore be up to a day old, and on the first day it is the empty database from before the
+  setup. What was added or archived since is missing from it. For a database that is current,
+  stop Uguisu and copy `uguisu.db` (and `uguisu.db-wal`, if present) while it is stopped.
 - After restoring, run `uguisu verify`. It compares every file with its checksum and tells you
   whether the backup was complete.
 
