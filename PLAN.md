@@ -139,9 +139,10 @@ The promise "readable without Uguisu" is made good and tested.
 - [x] Images for x86-64 and ARM64. Both are compiled on the build machine, the ARM one by
       cross-compiling; the finished ARM image is started once in an emulator before a release
       is published.
-- [x] Provenance and SBOM for released images, attached to the image in the registry. (A
-      signature was considered and dropped.) First used by release 0.4.0, where it
-      is to be checked in the registry.
+- [~] Provenance and SBOM for released images, attached to the image in the registry. (A
+      signature was considered and dropped.) Checked in the registry for 0.4.0: the provenance
+      is complete; the SBOM listed only the base image's packages. From 0.5 the Rust libraries
+      are embedded in the program for the SBOM to read; to be checked again at that release.
 - [x] Automatic dependency updates and a scheduled `cargo deny` run.
 - [x] Notifications about damaged files and feeds that keep failing, as a webhook that other
       services can be attached to (`UGUISU_WEBHOOK_URL`).

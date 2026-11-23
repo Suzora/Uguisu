@@ -52,6 +52,23 @@ jobs:
           docker logs uguisu-arm
           echo "the ARM container did not become healthy (last status: $status)"
           exit 1
+      - name: Make the list of contents for a test
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          outputs: type=local,dest=/tmp/sbom-test
+          sbom: true
+          provenance: false
+      - name: The list of contents must name the Rust libraries
+        run: |
+          ls -la /tmp/sbom-test
+          file=$(find /tmp/sbom-test -maxdepth 1 -name '*.spdx.json' | head -n 1)
+          [ -n "$file" ] || { echo "no SBOM was written"; exit 1; }
+          libraries=$(grep -o 'pkg:cargo/[^"@]*@[^"]*' "$file" | sort -u | wc -l)
+          echo "Rust libraries in the SBOM: $libraries"
+          grep -q 'pkg:cargo/tokio@' "$file" || { echo "tokio is missing from the SBOM"; exit 1; }
+          [ "$libraries" -ge 100 ] || { echo "too few Rust libraries in the SBOM"; exit 1; }
       - uses: docker/login-action@v4
         if: startsWith(github.ref, 'refs/tags/v')
         with:

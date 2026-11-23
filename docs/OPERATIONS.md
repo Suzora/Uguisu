@@ -125,8 +125,9 @@ Released images carry two attachments in the registry:
 
 - a **provenance** record: the repository, the commit and the workflow that built the image,
   and the steps of the build;
-- an **SBOM** (software bill of materials): the packages in the image and the Rust libraries
-  it was built from.
+- an **SBOM** (software bill of materials): the packages in the image and, from version 0.5
+  on, the Rust libraries the program is built from. (In 0.4.0 the SBOM lists only the
+  packages of the base image.)
 
 Both can be read without pulling the image:
 
@@ -134,6 +135,9 @@ Both can be read without pulling the image:
 docker buildx imagetools inspect ghcr.io/suzora/uguisu:<version> --format '{{ json .Provenance }}'
 docker buildx imagetools inspect ghcr.io/suzora/uguisu:<version> --format '{{ json .SBOM }}'
 ```
+
+The list of Rust libraries is also written into the program itself, so it can be read from
+any copy of it, for example with [`cargo audit bin`](https://crates.io/crates/cargo-audit).
 
 The records are made by the build itself and stored next to the image. They are not signed:
 they tell you what the registry holds, and are as trustworthy as the registry and the
