@@ -278,7 +278,7 @@ pub fn build_feed(
         }
         let enclosure = format!(
             "<enclosure url=\"{}\" length=\"{size}\" type=\"{}\"/>",
-            xml_escape(&media_url(base, token, e.id, file_name)),
+            xml_escape(&media_url(base, token, e.id, &file_name)),
             xml_escape(mime)
         );
         let links: Vec<(&str, String)> = attachments
@@ -374,7 +374,7 @@ pub fn build_combined_feed(
         let token = &podcast.feed_token;
         let enclosure = format!(
             "<enclosure url=\"{}\" length=\"{size}\" type=\"{}\"/>",
-            xml_escape(&media_url(base, token, e.id, file_name)),
+            xml_escape(&media_url(base, token, e.id, &file_name)),
             xml_escape(mime)
         );
         let links: Vec<(&str, String)> = attachments

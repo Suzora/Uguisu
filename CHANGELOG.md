@@ -5,6 +5,18 @@ Versions follow [semantic versioning](CONTRIBUTING.md#versions).
 
 ## Unreleased
 
+### Changed
+
+- **The archive is named for people (archive format 5).** A podcast's directory is now
+  `<author> - <title>`, and its media files lie together in `episodes/`, named by publication
+  time and title (`2024-10-23 22.07 - Trailer.mp3`), so that they sort in order. Everything else
+  about an episode is in `metadata/<episode>/`. Titles keep their spelling; only characters that
+  file systems or network shares forbid are left out.
+  - An existing archive is moved once, at the first start of this version, before the web
+    interface answers. Files are renamed, not copied. The published feeds keep their addresses.
+  - **This step cannot be undone by an older version**: 0.4.0 refuses to open a format 5
+    archive. Back up the data directory before upgrading.
+
 ### Added
 
 - The operations guide shows how to send notifications to ntfy as readable messages, using

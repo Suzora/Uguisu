@@ -59,18 +59,20 @@ Uguisu is not a player and does not sync listening progress. That is the job of 
 data/
   uguisu.db                              index (SQLite)
   archive/
-    <podcast>-<hash>/
+    funk - von ARD und ZDF - TeleKaddi/  <author> - <title>
       podcast.json                       podcast metadata
       cover.jpg
       feeds/<timestamp>-<hash>.xml       every version of the source feed, unmodified
-      episodes/<date>-<title>-<hash>/
-        episode.json                     episode metadata
-        item.xml                         raw <item> element from the feed
-        media.mp3                        the episode
-        media.mp3.blake3                 checksum, usable with `b3sum -c`
-        transcript-<hash>.vtt            files the episode links to: transcripts,
-        chapters-<hash>.json             chapters, its own image and the images
-        notes-image-<hash>.png           in its show notes
+      episodes/                          only the episodes, sorted by time:
+        2024-10-23 22.07 - Trailer.mp3
+      metadata/
+        2024-10-23 22.07 - Trailer/
+          episode.json                   episode metadata
+          item.xml                       raw <item> element from the feed
+          media.mp3.blake3               checksum, usable with `b3sum -c`
+          transcript-<hash>.vtt          files the episode links to: transcripts,
+          chapters-<hash>.json           chapters, its own image and the images
+          notes-image-<hash>.png         in its show notes
 ```
 
 The format is described in [docs/ARCHIVE.md](docs/ARCHIVE.md).

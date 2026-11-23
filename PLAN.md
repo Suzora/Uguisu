@@ -183,6 +183,9 @@ The promise "readable without Uguisu" is made good and tested.
 ### 1.0 – The finished product
 
 - [ ] Archive format and feed addresses are frozen. Later versions read 1.0 archives.
+- [x] Names in the archive are for people (format 5): `<author> - <title>/`, media files in
+      `episodes/` named by time and title, the rest in `metadata/<episode>/`. Existing archives
+      are moved once at the start.
 - [x] Migrations are tested from every released version: a real data directory written by
       each release is kept as a test fixture and must open, verify, publish and reindex with
       the current code. So far: 0.3.0 and 0.4.0.

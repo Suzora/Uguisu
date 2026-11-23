@@ -8,6 +8,7 @@ pub mod db;
 pub mod feed;
 pub mod http;
 pub mod import;
+mod layout;
 pub mod model;
 pub mod opml;
 pub mod reindex;

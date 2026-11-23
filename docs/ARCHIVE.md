@@ -1,6 +1,6 @@
 # The Uguisu archive format
 
-Format version: **4** (early development – may still change before Uguisu 1.0)
+Format version: **5** (early development – may still change before Uguisu 1.0)
 
 An Uguisu archive is a directory of ordinary files. This document describes it so that an
 archive can be read, checked and used without Uguisu – today or in twenty years.
@@ -14,24 +14,26 @@ format.
 archive/
   archive.json                               format marker
   uguisu.json                                settings of this installation (private)
-  <podcast>-<hash>/                          one directory per podcast
+  <author> - <title>/                        one directory per podcast
     podcast.json                             podcast metadata
     uguisu.json                              settings of this installation (private)
     cover.<ext>                              cover art (jpg, png, webp or gif)
     feeds/
       <timestamp>-<hash>.xml                 source feed, byte for byte
-    episodes/
-      <date>-<title>-<hash>/                 one directory per episode
+    episodes/                                the media files, and nothing else
+      <time> - <title>.<ext>                 one per episode: the current file
+    metadata/
+      <time> - <title>/                      everything else about that episode
         episode.json                         episode metadata
         item.xml                             the episode's entry from the feed, unmodified
         item-<timestamp>-<hash>.xml          earlier states of that entry
-        media.<ext>                          the episode
-        media.<ext>.blake3                   its checksum
-        media.v2.<ext>, media.v2.<ext>.blake3    later versions, if the source replaced the file
+        media.<ext>.blake3                   checksum of the media file
         transcript-<hash>.<ext>              files the episode links to
         chapters-<hash>.<ext>
         image-<hash>.<ext>
         notes-image-<hash>.<ext>
+        versions/
+          v1.<ext>, v1.<ext>.blake3          earlier media files, if the source replaced one
 ```
 
 All text files are UTF-8. JSON files are pretty-printed. Times are in UTC.
@@ -52,22 +54,30 @@ archive in an older format is brought up to date in the background after the sta
 | 2 | `episode.json` also holds `hash`, `first_seen`, `removed` and `files` |
 | 3 | Earlier states of a feed entry are kept as `item-….xml`; `uguisu.json` per podcast; `namespaces` in `podcast.json` |
 | 4 | `id` for episodes and files |
+| 5 | Names as people write them; media files in `episodes/`, everything else in `metadata/<episode>/`; `path` for files in `episode.json` |
 
 The `uguisu.json` next to it holds the secret part of the address of the feed over all podcasts
 (`combined_feed_token`) and, once they have been changed, the options that podcasts get when
 they are added (`new_podcasts`: `include_removed`, `keep_versions`, `only_new`). Like the file of the same name in each podcast's directory it belongs to
 the installation, not to the record of the sources; leave it out when passing an archive on.
 
-## Directory names
+## Names
 
 Names are made for people; nothing depends on parsing them.
 
-- Podcast: the title in lower case with everything but letters and digits replaced by `-`,
-  followed by a short hash of the feed address it was added with.
-- Episode: the publication date (`YYYY-MM-DD`, or `undated`), the title treated the same way, and
-  a short hash of the episode's identifier.
+- Podcast: `<author> - <title>` as the feed gives them, or the title alone if the feed names no
+  author.
+- Episode: the publication time in UTC as `YYYY-MM-DD HH.MM`, so that the names sort in order,
+  then ` - ` and the title as the feed gives it. Without a publication time: `undated - <title>`.
+  The media file is this name with the file's extension; the episode's metadata directory is
+  this name.
 
-A directory keeps its name when the title changes later.
+Titles are kept as written, except for what file systems and network shares forbid: the
+characters `/ \ : * ? " < > |` and control characters are left out, spaces and dots at either
+end are dropped, and a name is cut after 150 characters (or 200 bytes). Two names that would be
+the same, also in different case, get ` (2)`, ` (3)` and so on.
+
+A name stays as it is when the title changes later.
 
 ## `podcast.json`
 
@@ -133,12 +143,13 @@ without any change. When the publisher changes the entry, the earlier state is k
 | `revisions` | Every state of the feed entry, oldest first: `seen` (time), `hash` and `file` |
 | `files` | The archived files of the episode, see below |
 
-Each entry of `files` describes one file in the episode's directory:
+Each entry of `files` describes one file of the episode:
 
 | Field | Meaning |
 | --- | --- |
 | `id` | Number of the file in this installation; part of the address of a linked file in the published feed |
 | `name` | File name |
+| `path` | Where the file is, relative to the podcast's directory, e.g. `episodes/2024-10-23 22.07 - Trailer.mp3` (from format 5; before, files lay in the episode's directory) |
 | `kind` | `media`, `transcript`, `chapters`, `image` or `notes-image` |
 | `source` | Address the file was downloaded from, without user name and password |
 | `blake3` | BLAKE3 checksum, 64 hexadecimal characters |
@@ -150,11 +161,12 @@ Media files come first, the oldest version first.
 
 ## Media files and checksums
 
-`media.<ext>` is the file the feed's enclosure pointed at, unchanged. Next to it,
-`media.<ext>.blake3` holds its BLAKE3 checksum in the format of the `b3sum` tool:
+`episodes/<episode>.<ext>` is the file the feed's enclosure pointed at, unchanged. Its BLAKE3
+checksum is in `metadata/<episode>/media.<ext>.blake3`, in the format of the `b3sum` tool, with
+the path to the file as seen from there:
 
 ```text
-<64 hexadecimal characters>  media.mp3
+<64 hexadecimal characters>  ../../episodes/2024-10-23 22.07 - Trailer.mp3
 ```
 
 so a whole archive can be checked without Uguisu:
@@ -163,19 +175,20 @@ so a whole archive can be checked without Uguisu:
 find archive -name '*.blake3' -execdir b3sum -c {} \;
 ```
 
-When a podcast is set to keep replaced files, a file the publisher replaced is kept, and the new
-one is stored as `media.v2.<ext>`, then `media.v3.<ext>` and so on. The highest number is the
-newest.
+When a podcast is set to keep replaced files and the publisher replaces one, the new file takes
+the place in `episodes/` and the earlier one moves to `metadata/<episode>/versions/v1.<ext>`
+(then `v2`, and so on), its checksum next to it. The highest number is the newest of the
+earlier ones.
 
-A file named `media.damaged-<hash>.<ext>` is a copy that no longer matched its checksum and
-could not be repaired, because the source by then offered a different file. It is kept because
-it may be the only trace of the original; `<hash>` is the start of the checksum it should have.
-It is not listed in `episode.json`.
+A file named `damaged-<hash>.<ext>` in the metadata directory is a copy that no longer matched
+its checksum and could not be repaired, because the source by then offered a different file. It
+is kept because it may be the only trace of the original; `<hash>` is the start of the checksum
+it should have. It is not listed in `episode.json`.
 
 ## Linked files
 
 Transcripts, chapter files, the episode's own image and the images shown in its show notes are
-stored next to the media file. The name is the kind of file and a short hash of its source
+stored in the episode's metadata directory. The name is the kind of file and a short hash of its source
 address. Their checksums are in the `files` list of `episode.json`.
 
 ## Temporary files
@@ -185,10 +198,11 @@ They can be deleted at any time while Uguisu is not running.
 
 ## Rebuilding the database
 
-`uguisu reindex` fills an empty database from these files: podcasts with their settings, feed
-snapshots, episodes with every recorded state of their feed entry, and the archived files with
-their checksums. The published feeds keep their addresses. Stop Uguisu and move `uguisu.db` away
-before running it.
+`uguisu reindex` fills an empty database from these files, in this format and in the layout of
+formats 1 to 4 (which is moved to the current one at the next start): podcasts with their
+settings, feed snapshots, episodes with every recorded state of their feed entry, and the
+archived files with their checksums. The published feeds keep their addresses. Stop Uguisu and
+move `uguisu.db` away before running it.
 
 ## What is only in the database
 
