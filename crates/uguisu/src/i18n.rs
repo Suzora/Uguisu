@@ -156,7 +156,7 @@ const GERMAN: &[(&str, &str)] = &[
     (" so far.", " bisher."),
     // Status
     ("Everything is in order.", "Alles ist in Ordnung."),
-    ("Downloading now", "Laden gerade"),
+    ("Downloading now", "Werden geladen"),
     (
         "Episodes whose files are still to be downloaded",
         "Episoden, deren Dateien noch geladen werden müssen",
