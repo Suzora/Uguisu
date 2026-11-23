@@ -12,6 +12,10 @@ Versions follow [semantic versioning](CONTRIBUTING.md#versions).
 
 ### Fixed
 
+- Opened over plain `http` (an address in the home network, without a reverse proxy), every
+  form was refused with "cross-site request refused", the first setup included. Browsers send
+  no fetch metadata over `http`, and the referrer policy `no-referrer` made them hide the origin
+  of the instance's own forms. The policy is now `same-origin`: other sites still learn nothing.
 - When an episode has several transcripts, they are downloaded side by side, and the less
   clean one (a web page, for example) could end up in the search index instead of the WebVTT
   or JSON one, depending on which download finished last. Indexing now happens one transcript

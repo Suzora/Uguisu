@@ -275,7 +275,9 @@ async fn security(request: Request, next: Next) -> Response {
         "x-content-type-options",
         HeaderValue::from_static("nosniff"),
     );
-    headers.insert("referrer-policy", HeaderValue::from_static("no-referrer"));
+    // Other sites learn nothing (the addresses of feeds are secrets), but the browser names the
+    // origin of the instance's own forms, which the check above needs over plain `http`.
+    headers.insert("referrer-policy", HeaderValue::from_static("same-origin"));
     response
 }
 
@@ -1329,6 +1331,38 @@ mod tests {
         .unwrap();
         let router = router(AppState::new(app, Some("https://archive.example".into())));
         (data, router, "/feed/secret-token.xml".to_string())
+    }
+
+    /// Over plain `http` (an address in the home network) browsers send no `Sec-Fetch-Site`,
+    /// and under `Referrer-Policy: no-referrer` a form sends `Origin: null`, which is refused.
+    /// The policy therefore lets the browser name the origin to the instance itself.
+    #[tokio::test]
+    async fn forms_work_over_plain_http() {
+        let (_data, router, _) = archive().await;
+        let page = router
+            .clone()
+            .oneshot(Request::get("/setup").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(page.headers()["referrer-policy"], "same-origin");
+
+        let post = |origin: &'static str| {
+            let request = Request::post("/setup")
+                .header(header::HOST, "192.168.1.5:8484")
+                .header(header::ORIGIN, origin)
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from("password=one+password&confirm=another+one"))
+                .unwrap();
+            router.clone().oneshot(request)
+        };
+        // What a browser sends over http under that policy: accepted (and then rejected for the
+        // mismatch, not as a forgery).
+        let own = post("http://192.168.1.5:8484").await.unwrap();
+        assert_ne!(own.status(), StatusCode::FORBIDDEN);
+        // Another site, or an origin the browser hides: still refused.
+        for origin in ["http://evil.example", "null"] {
+            assert_eq!(post(origin).await.unwrap().status(), StatusCode::FORBIDDEN);
+        }
     }
 
     #[tokio::test]
