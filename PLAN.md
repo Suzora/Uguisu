@@ -58,6 +58,8 @@ Each milestone ends with a release. Items are worked through one topic per pull 
 Everything a podcast offers ends up in the archive.
 
 - [x] Paged and archived feeds (RFC 5005).
+- [x] Archive the best file a feed offers (`podcast:alternateEnclosure`, `media:content`,
+      further Atom enclosures): highest bitrate, else largest size, same kind as the enclosure.
 - [x] Atom and RSS 1.0 as source formats. The published feed stays RSS 2.0. Checked with real
       feeds (the WordPress feeds of chaosradio.de): Atom with 99 entries, 39 of them with media,
       read with the same count, titles and dates, and the archived file had the size the feed

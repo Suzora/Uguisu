@@ -1811,6 +1811,9 @@ impl Uguisu {
             .fetch_optional(&mut *tx)
             .await?;
 
+            // A better file than the enclosure, if the feed offers one. Only recorded: whether
+            // the source replaced its file is still judged by the enclosure.
+            let best = item.best_media();
             let (episode_id, dir, is_new_revision) = match existing {
                 None => {
                     let taken: Vec<String> =
@@ -1829,8 +1832,9 @@ impl Uguisu {
                     let id: i64 = sqlx::query_scalar(
                         "INSERT INTO episodes (podcast_id, guid, title, description, link, \
                          published_at, duration, enclosure_url, enclosure_type, enclosure_length, \
-                         image_url, season, episode_no, dir, meta_hash, first_seen_at, last_seen_at) \
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+                         image_url, season, episode_no, dir, meta_hash, first_seen_at, last_seen_at, \
+                         media_url, media_type) \
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
                     )
                     .bind(podcast_id)
                     .bind(&item.guid)
@@ -1849,6 +1853,8 @@ impl Uguisu {
                     .bind(&meta_hash)
                     .bind(now)
                     .bind(now)
+                    .bind(best.as_ref().map(|b| &b.url))
+                    .bind(best.as_ref().and_then(|b| b.mime.as_ref()))
                     .fetch_one(&mut *tx)
                     .await?;
                     (id, dir, true)
@@ -1871,7 +1877,12 @@ impl Uguisu {
                              enclosure_length = ?, image_url = ?, season = ?, episode_no = ?, \
                              meta_hash = ?, last_seen_at = ?, removed_at = NULL, \
                              download_attempts = 0, next_attempt_at = 0, \
-                             refetch = MAX(refetch, ?) WHERE id = ?",
+                             refetch = MAX(refetch, ?), \
+                             media_url = CASE WHEN ? OR NOT EXISTS (SELECT 1 FROM media_files \
+                               WHERE episode_id = episodes.id) THEN ? ELSE media_url END, \
+                             media_type = CASE WHEN ? OR NOT EXISTS (SELECT 1 FROM media_files \
+                               WHERE episode_id = episodes.id) THEN ? ELSE media_type END \
+                             WHERE id = ?",
                         )
                         .bind(&item.title)
                         .bind(&item.description)
@@ -1887,14 +1898,27 @@ impl Uguisu {
                         .bind(&meta_hash)
                         .bind(now)
                         .bind(replaced)
+                        // The source is chosen while nothing is archived, or anew when the
+                        // source replaced its file. A repair fetches the file it had.
+                        .bind(replaced)
+                        .bind(best.as_ref().map(|b| &b.url))
+                        .bind(replaced)
+                        .bind(best.as_ref().and_then(|b| b.mime.as_ref()))
                         .bind(id)
                         .execute(&mut *tx)
                         .await?;
                     } else {
                         sqlx::query(
-                            "UPDATE episodes SET last_seen_at = ?, removed_at = NULL WHERE id = ?",
+                            "UPDATE episodes SET last_seen_at = ?, removed_at = NULL, \
+                             media_url = CASE WHEN EXISTS (SELECT 1 FROM media_files \
+                               WHERE episode_id = episodes.id) THEN media_url ELSE ? END, \
+                             media_type = CASE WHEN EXISTS (SELECT 1 FROM media_files \
+                               WHERE episode_id = episodes.id) THEN media_type ELSE ? END \
+                             WHERE id = ?",
                         )
                         .bind(now)
+                        .bind(best.as_ref().map(|b| &b.url))
+                        .bind(best.as_ref().and_then(|b| b.mime.as_ref()))
                         .bind(id)
                         .execute(&mut *tx)
                         .await?;
@@ -2515,8 +2539,9 @@ impl Uguisu {
 
     async fn download(&self, episode: &Episode, podcast_dir: &str, feed_url: &str) -> Result<()> {
         let source = episode
-            .enclosure_url
+            .media_url
             .as_deref()
+            .or(episode.enclosure_url.as_deref())
             .context("episode has no enclosure")?;
         let mut url = url::Url::parse(source).context("invalid enclosure URL")?;
         check_url(&url, self.inner.cfg.allow_private_networks)?;
@@ -2528,9 +2553,12 @@ impl Uguisu {
         let part = dir.join("download.part");
         let (hash, size, content_type) = self.fetch_media(&url, &part).await?;
 
-        let declared = episode
-            .enclosure_type
-            .as_deref()
+        let declared = if episode.media_url.is_some() {
+            episode.media_type.as_deref()
+        } else {
+            episode.enclosure_type.as_deref()
+        };
+        let declared = declared
             .map(|t| t.trim().to_ascii_lowercase())
             .filter(|t| t.contains('/'));
         let ext = archive::extension_from_url(source)

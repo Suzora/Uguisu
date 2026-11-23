@@ -161,7 +161,11 @@ Media files come first, the oldest version first.
 
 ## Media files and checksums
 
-`episodes/<episode>.<ext>` is the file the feed's enclosure pointed at, unchanged. Its BLAKE3
+`episodes/<episode>.<ext>` is the file the feed's enclosure pointed at, unchanged – or, when the
+feed offers the same episode in better quality (`podcast:alternateEnclosure`, `media:content` or
+a further Atom enclosure of the same kind, with a higher bitrate or, failing that, a larger
+size), that file. `source` in `episode.json` says which one it was; `enclosure` keeps what the
+feed states. Its BLAKE3
 checksum is in `metadata/<episode>/media.<ext>.blake3`, in the format of the `b3sum` tool, with
 the path to the file as seen from there:
 

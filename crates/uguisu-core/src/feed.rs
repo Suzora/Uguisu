@@ -15,6 +15,7 @@ const NS_RDF: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
 const NS_DC: &str = "http://purl.org/dc/elements/1.1/";
 const NS_ENC: &str = "http://purl.oclc.org/net/rss_2.0/enc#";
 const NS_XML: &str = "http://www.w3.org/XML/1998/namespace";
+const NS_MEDIA: &str = "http://search.yahoo.com/mrss/";
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ParsedFeed {
@@ -51,9 +52,103 @@ pub struct ParsedItem {
     pub episode_no: Option<i64>,
     /// Files the item links to besides its enclosure.
     pub links: Vec<ItemLink>,
+    /// Other files of the same episode the feed offers instead of the enclosure: Podcasting
+    /// 2.0 `podcast:alternateEnclosure`, Media RSS `media:content`, further Atom enclosures.
+    pub alternatives: Vec<MediaOption>,
     /// Hash over the whole item, see [`content_hash`].
     pub hash: String,
     pub raw_xml: String,
+}
+
+/// One file of an episode the feed offers.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct MediaOption {
+    pub url: String,
+    pub mime: Option<String>,
+    pub length: Option<i64>,
+    /// Bits per second.
+    pub bitrate: Option<f64>,
+}
+
+impl MediaOption {
+    /// A playlist or stream description rather than the episode itself.
+    fn is_playlist(&self) -> bool {
+        let mime = self
+            .mime
+            .as_deref()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let path = without_query(&self.url).to_ascii_lowercase();
+        mime.contains("mpegurl")
+            || mime.contains("scpls")
+            || [".m3u", ".m3u8", ".pls"]
+                .iter()
+                .any(|ext| path.ends_with(ext))
+    }
+
+    /// `audio`, `video` or whatever else the media type or the address says.
+    fn kind(&self) -> Option<String> {
+        let mime = self.mime.clone().or_else(|| {
+            crate::archive::extension_from_url(&self.url)
+                .and_then(crate::archive::mime_from_extension)
+                .map(str::to_string)
+        })?;
+        let kind = mime.split('/').next()?.trim().to_ascii_lowercase();
+        (!kind.is_empty()).then_some(kind)
+    }
+
+    /// Whether this file is better than `other`: a higher bitrate when both state one, else a
+    /// larger file when both state their size. Without a way to tell, it is not.
+    fn is_better_than(&self, other: &MediaOption) -> bool {
+        match (self.bitrate, other.bitrate) {
+            (Some(a), Some(b)) if a != b => return a > b,
+            _ => {}
+        }
+        matches!((self.length, other.length), (Some(a), Some(b)) if a > b)
+    }
+}
+
+impl ParsedItem {
+    /// The file to archive when it is not the enclosure itself: among the alternatives of the
+    /// same kind (audio stays audio, video stays video), the one with the highest quality.
+    /// `None` when the enclosure is as good as any.
+    pub fn best_media(&self) -> Option<MediaOption> {
+        let main = MediaOption {
+            url: self.enclosure_url.clone()?,
+            mime: self.enclosure_type.clone(),
+            length: self.enclosure_length,
+            bitrate: None,
+        };
+        let kind = main.kind()?;
+        // An alternative that is the enclosure itself tells its bitrate.
+        let main = self
+            .alternatives
+            .iter()
+            .find(|a| without_query(&a.url) == without_query(&main.url))
+            .map(|a| MediaOption {
+                bitrate: a.bitrate,
+                length: main.length.or(a.length),
+                ..main.clone()
+            })
+            .unwrap_or(main);
+        let mut best = &main;
+        for option in &self.alternatives {
+            let usable = matches!(
+                url::Url::parse(&option.url)
+                    .map(|u| u.scheme().to_string())
+                    .as_deref(),
+                Ok("http" | "https")
+            );
+            if usable
+                && !option.is_playlist()
+                && option.kind().as_deref() == Some(kind.as_str())
+                && option.is_better_than(best)
+            {
+                best = option;
+            }
+        }
+        (without_query(&best.url) != without_query(&main.url)).then(|| best.clone())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -208,6 +303,56 @@ fn ns_matches(actual: Option<&str>, wanted: Option<&str>) -> bool {
         (Some(a), Some(w)) => a.eq_ignore_ascii_case(w),
         _ => false,
     }
+}
+
+/// `podcast:alternateEnclosure` (bitrate in bits per second, the address in `podcast:source`)
+/// and `media:content`, also inside `media:group` (bitrate in kilobits per second).
+fn alternatives(item: Node) -> Vec<MediaOption> {
+    let number = |node: Node, name: &str| attr(node, name).and_then(|v| v.parse::<f64>().ok());
+    let mut options = Vec::new();
+    for node in item.children().filter(|c| {
+        c.is_element()
+            && c.tag_name().name() == "alternateEnclosure"
+            && c.tag_name().namespace() == Some(NS_PODCAST)
+    }) {
+        let Some(url) = node
+            .children()
+            .filter(|c| c.is_element() && c.tag_name().name() == "source")
+            .filter_map(|c| attr(c, "uri"))
+            .find(|u| u.starts_with("http://") || u.starts_with("https://"))
+        else {
+            continue;
+        };
+        options.push(MediaOption {
+            url,
+            mime: attr(node, "type"),
+            length: number(node, "length").map(|v| v as i64).filter(|v| *v > 0),
+            bitrate: number(node, "bitrate").filter(|v| *v > 0.0),
+        });
+    }
+    let is_media = |c: &Node, name: &str| {
+        c.is_element() && c.tag_name().name() == name && c.tag_name().namespace() == Some(NS_MEDIA)
+    };
+    let mut contents: Vec<Node> = item.children().filter(|c| is_media(c, "content")).collect();
+    for group in item.children().filter(|c| is_media(c, "group")) {
+        contents.extend(group.children().filter(|c| is_media(c, "content")));
+    }
+    for node in contents {
+        let Some(url) = attr(node, "url") else {
+            continue;
+        };
+        options.push(MediaOption {
+            url,
+            mime: attr(node, "type"),
+            length: number(node, "fileSize")
+                .map(|v| v as i64)
+                .filter(|v| *v > 0),
+            bitrate: number(node, "bitrate")
+                .filter(|v| *v > 0.0)
+                .map(|kbps| kbps * 1000.0),
+        });
+    }
+    options
 }
 
 fn child<'a, 'i>(node: Node<'a, 'i>, ns: Option<&str>, name: &str) -> Option<Node<'a, 'i>> {
@@ -535,6 +680,7 @@ fn common_fields(item: Node, source: &str) -> ParsedItem {
         season: child_text(item, Some(NS_ITUNES), "season").and_then(|v| v.parse().ok()),
         episode_no: child_text(item, Some(NS_ITUNES), "episode").and_then(|v| v.parse().ok()),
         links: item_links(item),
+        alternatives: alternatives(item),
         hash: content_hash(item),
         raw_xml: source[item.range()].to_string(),
         ..ParsedItem::default()
@@ -621,7 +767,7 @@ fn parse_atom_entry(entry: Node, source: &str) -> ParsedItem {
         .or_else(|| link.clone())
         .unwrap_or_else(|| format!("{title}|{}", published_raw.as_deref().unwrap_or("")));
 
-    ParsedItem {
+    let mut item = ParsedItem {
         guid,
         title,
         description: child(entry, atom, "content")
@@ -637,7 +783,19 @@ fn parse_atom_entry(entry: Node, source: &str) -> ParsedItem {
             .filter(|v| *v > 0),
         enclosure_url,
         ..common_fields(entry, source)
-    }
+    };
+    item.alternatives
+        .extend(atom_links(entry, "enclosure").skip(1).filter_map(|n| {
+            Some(MediaOption {
+                url: attr(n, "href")?,
+                mime: attr(n, "type"),
+                length: attr(n, "length")
+                    .and_then(|v| v.parse().ok())
+                    .filter(|v| *v > 0),
+                bitrate: None,
+            })
+        }));
+    item
 }
 
 #[cfg(test)]
@@ -720,6 +878,88 @@ mod tests {
     </item>
   </channel>
 </rss>"#;
+
+    /// One RSS item with the given extra elements, parsed.
+    fn item_with(extra: &str) -> super::ParsedItem {
+        let xml = format!(
+            r#"<rss version="2.0" xmlns:podcast="https://podcastindex.org/namespace/1.0"
+                 xmlns:media="http://search.yahoo.com/mrss/"><channel><title>T</title>
+               <item><title>E</title><guid>g</guid>
+                 <enclosure url="https://cdn.example/e-64.mp3" type="audio/mpeg" length="1000"/>
+                 {extra}</item></channel></rss>"#
+        );
+        super::parse(xml.as_bytes()).unwrap().items.remove(0)
+    }
+
+    #[test]
+    fn the_best_file_of_an_episode_is_chosen() {
+        // Podcasting 2.0: the enclosure is listed as the default with its bitrate.
+        let item = item_with(
+            r#"<podcast:alternateEnclosure type="audio/mpeg" bitrate="64000" default="true">
+                 <podcast:source uri="https://cdn.example/e-64.mp3"/></podcast:alternateEnclosure>
+               <podcast:alternateEnclosure type="audio/mpeg" bitrate="320000" length="5000">
+                 <podcast:source uri="ipfs://Qm"/>
+                 <podcast:source uri="https://cdn.example/e-320.mp3"/></podcast:alternateEnclosure>
+               <podcast:alternateEnclosure type="audio/opus" bitrate="128000">
+                 <podcast:source uri="https://cdn.example/e-128.opus"/></podcast:alternateEnclosure>"#,
+        );
+        let best = item.best_media().unwrap();
+        assert_eq!(best.url, "https://cdn.example/e-320.mp3");
+        assert_eq!(best.mime.as_deref(), Some("audio/mpeg"));
+        assert_eq!(best.bitrate, Some(320_000.0));
+
+        // Media RSS states the bitrate in kilobits per second.
+        let item = item_with(
+            r#"<media:group>
+                 <media:content url="https://cdn.example/e-64.mp3" type="audio/mpeg" bitrate="64"/>
+                 <media:content url="https://cdn.example/e-192.mp3" type="audio/mpeg" bitrate="192"/>
+               </media:group>"#,
+        );
+        assert_eq!(
+            item.best_media().unwrap().url,
+            "https://cdn.example/e-192.mp3"
+        );
+
+        // Audio stays audio, however large a video is.
+        let item = item_with(
+            r#"<media:content url="https://cdn.example/e.mp4" type="video/mp4" fileSize="99999"/>"#,
+        );
+        assert_eq!(item.best_media(), None);
+
+        // Without a way to compare, the enclosure stays: no bitrate on either side, no size on
+        // the alternative; and a smaller file is not better.
+        let item =
+            item_with(r#"<media:content url="https://cdn.example/other.mp3" type="audio/mpeg"/>"#);
+        assert_eq!(item.best_media(), None);
+        let item = item_with(
+            r#"<media:content url="https://cdn.example/small.mp3" type="audio/mpeg" fileSize="10"/>"#,
+        );
+        assert_eq!(item.best_media(), None);
+        assert_eq!(item_with("").best_media(), None);
+        // A playlist is not the episode, however its type starts.
+        let item = item_with(
+            r#"<media:content url="https://cdn.example/live.m3u8" type="audio/mpegurl" fileSize="99999"/>"#,
+        );
+        assert_eq!(item.best_media(), None);
+    }
+
+    #[test]
+    fn further_atom_enclosures_are_alternatives() {
+        let xml = r#"<feed xmlns="http://www.w3.org/2005/Atom"><title>T</title>
+            <entry><title>E</title><id>e</id>
+              <link rel="enclosure" href="https://cdn.example/low.m4a" type="audio/mp4" length="100"/>
+              <link rel="enclosure" href="https://cdn.example/high.m4a" type="audio/mp4" length="900"/>
+            </entry></feed>"#;
+        let item = super::parse(xml.as_bytes()).unwrap().items.remove(0);
+        assert_eq!(
+            item.enclosure_url.as_deref(),
+            Some("https://cdn.example/low.m4a")
+        );
+        assert_eq!(
+            item.best_media().unwrap().url,
+            "https://cdn.example/high.m4a"
+        );
+    }
 
     #[test]
     fn parses_channel_and_items() {
