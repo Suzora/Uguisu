@@ -1,14 +1,9 @@
 # syntax=docker/dockerfile:1
 
-# The list of contents (SBOM) made at release also covers the sources and the build stage, so
-# that it names the Rust libraries from Cargo.lock and not only the files of the final image.
-ARG BUILDKIT_SBOM_SCAN_CONTEXT=true
-
 # The build stage always runs on the machine that builds, also when the image is for another
 # kind of processor: the compiler then produces a program for that processor (cross-compiling).
 # Compiling inside an emulated processor instead takes more than ten times as long.
 FROM --platform=$BUILDPLATFORM rust:1-bookworm AS build
-ARG BUILDKIT_SBOM_SCAN_STAGE=true
 ARG BUILDARCH
 ARG TARGETARCH
 WORKDIR /src
@@ -32,13 +27,17 @@ RUN set -eu; \
         echo "export CC_$(echo "$rust" | tr '-' '_')=$gnu-gcc" >> /target.env; \
     fi
 
+# Writes the list of Rust libraries and their versions into the program itself. The list of
+# contents (SBOM) made at release reads it from there, and so can anyone who has the program.
+RUN cargo install --locked --version 0.7.7 cargo-auditable
+
 COPY . .
 # Each platform gets caches of its own: two platforms built at once must not write into the
 # same registry and target directories.
 RUN --mount=type=cache,id=cargo-registry-${TARGETARCH},target=/usr/local/cargo/registry \
     --mount=type=cache,id=cargo-target-${TARGETARCH},target=/src/target \
     . /target.env \
-    && cargo build --release --locked -p uguisu --target "$RUST_TARGET" \
+    && cargo auditable build --release --locked -p uguisu --target "$RUST_TARGET" \
     && cp "target/$RUST_TARGET/release/uguisu" /uguisu \
     && mkdir /data
 

@@ -5,6 +5,13 @@ Versions follow [semantic versioning](CONTRIBUTING.md#versions).
 
 ## Unreleased
 
+### Fixed
+
+- The SBOM of a released image listed only the packages of the base image and none of the
+  Rust libraries Uguisu is built from. The list of libraries is now written into the program,
+  where the SBOM takes it from. The two extra scans of 0.4.0, which found no Rust libraries
+  and made the SBOM 42 MB large, are gone.
+
 ### Changed
 
 - The `url` library is updated because of a security advisory: its function `Url::origin()`
