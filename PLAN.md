@@ -197,6 +197,9 @@ Ideas without commitment:
 - **Legal.** Archiving and passing on content is only allowed where the user has the right to.
   The documentation must say so clearly.
 - **Sources that block automated requests.** Can leave gaps in an archive; they must be visible.
+  Seen in a run against six real feeds (2,404 episodes, all read correctly, transcripts in four
+  formats archived): the media host of one publisher (`audio.buzzsprout.com`) answered 403 from
+  the development environment. Whether it does so for an ordinary installation is not known.
 - **Storage.** Archives grow without limit by design; the interface has to show the cost.
 - **Directories.** No Podcast Index access; fyyd answers slowly (15 to 30 seconds observed).
 - **SQLite.** Fine for one user; to be confirmed by the load test in 0.3.

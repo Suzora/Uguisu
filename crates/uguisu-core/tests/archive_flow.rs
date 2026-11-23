@@ -1958,6 +1958,8 @@ async fn transcripts_are_searchable() {
     let with_transcript = item_with_file(1, "1.mp3").replace(
         "<guid>",
         "<podcast:transcript xmlns:podcast=\"https://podcastindex.org/namespace/1.0\" \
+         url=\"BASE/files/speakers.html\" type=\"text/html\"/>\
+         <podcast:transcript xmlns:podcast=\"https://podcastindex.org/namespace/1.0\" \
          url=\"BASE/files/talk.vtt\" type=\"text/vtt\"/><guid>",
     );
     let source_feed: FeedBody = Arc::new(Mutex::new(feed(&format!(
@@ -1996,6 +1998,15 @@ async fn transcripts_are_searchable() {
     // Time codes, cue numbers and speaker tags are not part of the text.
     assert!(uguisu.search_episodes("00", 10).await.unwrap().is_empty());
     assert!(uguisu.search_episodes("Ada", 10).await.unwrap().is_empty());
+    // The same transcript is also offered as a web page, listed first. The format that keeps
+    // the words apart from everything else is the one that is indexed.
+    assert!(
+        uguisu
+            .search_episodes("speakers", 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(
         uguisu
             .search_episodes("marshland wal", 10)
