@@ -14,6 +14,8 @@ Versions follow [semantic versioning](CONTRIBUTING.md#versions).
 
 ### Changed
 
+- The episode page names the kinds of files in words ("Transcript", "Episode image") instead of
+  internal labels, and a test notification that fails is shown as an error.
 - Of several transcripts of an episode, the search indexes the one in the cleanest format
   (JSON, then WebVTT, then SubRip) instead of the first one listed, so that speaker names and
   time codes of a web-page transcript do not end up as search words.

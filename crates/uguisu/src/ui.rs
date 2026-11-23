@@ -504,11 +504,17 @@ fn marked(snippet: &str) -> Markup {
     maud::PreEscaped(escaped)
 }
 
+/// What an action on the settings page led to, shown at the top of the page.
+pub enum Notice<'a> {
+    Done(&'a str),
+    Failed(&'a str),
+}
+
 pub fn settings_page(
     sessions: i64,
     defaults: uguisu_core::model::NewPodcastDefaults,
     webhook: Option<&str>,
-    notice: Option<&str>,
+    notice: Option<Notice>,
     error: Option<&str>,
 ) -> Markup {
     shell(
@@ -516,7 +522,11 @@ pub fn settings_page(
         "settings",
         html! {
             h1 { (t("Settings")) }
-            @if let Some(notice) = notice { p.notice role="status" { (t(notice)) } }
+            @match notice {
+                Some(Notice::Done(text)) => p.notice role="status" { (t(text)) },
+                Some(Notice::Failed(text)) => p.notice.is-error role="alert" { (t(text)) },
+                None => {},
+            }
             div.columns {
                 section.panel {
                     h2 { (t("Password")) }
@@ -1143,6 +1153,17 @@ fn shorten(text: &str, max_chars: usize) -> String {
     }
 }
 
+/// What kind of file an attachment is, in words.
+fn attachment_kind(kind: &str) -> &str {
+    match kind {
+        "transcript" => t("Transcript"),
+        "chapters" => t("Chapters"),
+        "image" => t("Episode image"),
+        "notes-image" => t("Image from the show notes"),
+        other => other,
+    }
+}
+
 /// Everything the archive holds about one episode.
 pub fn episode_page(
     podcast: &Podcast,
@@ -1248,7 +1269,7 @@ pub fn episode_page(
                                     span { (shorten(&uguisu_core::http::redact(&a.source_url), 90)) }
                                 }
                                 span.muted.small {
-                                    " · " (a.kind)
+                                    " · " (attachment_kind(&a.kind))
                                     @if let Some(size) = a.size { " · " (format_bytes(size)) }
                                     @if let Some(mime) = &a.mime { " · " (mime) }
                                 }
