@@ -159,6 +159,8 @@ The promise "readable without Uguisu" is made good and tested.
 - [x] `uguisu reset-password` for a lost password.
 - [x] Login: slow down repeated wrong passwords. (`Secure` cookies behind HTTPS were already
       in place.)
+- [x] Forms work over plain `http` in the home network (they were refused as cross-site until
+      the referrer policy was changed from `no-referrer` to `same-origin`).
 - [x] `SECURITY.md`: how to report a problem, what is protected and what is out of scope.
 - [x] Security review (requests to private networks, paths, XML, headers). Found and fixed: a
       feed could exhaust memory through its own XML entities; IPv6 addresses that lead to
