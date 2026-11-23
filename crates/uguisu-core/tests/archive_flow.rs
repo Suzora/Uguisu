@@ -353,6 +353,69 @@ fn item_with_file(n: u32, file: &str) -> String {
     )
 }
 
+/// When the feed offers a better file than its enclosure, that one is archived; episodes that
+/// are already archived are not fetched again because of it.
+#[tokio::test]
+async fn the_best_offered_file_is_archived() {
+    let alternatives = |n: u32| {
+        format!(
+            r#"<podcast:alternateEnclosure xmlns:podcast="https://podcastindex.org/namespace/1.0"
+                 type="audio/mpeg" bitrate="64000" default="true">
+                 <podcast:source uri="BASE/audio/{n}.mp3"/></podcast:alternateEnclosure>
+               <podcast:alternateEnclosure xmlns:podcast="https://podcastindex.org/namespace/1.0"
+                 type="audio/mpeg" bitrate="320000">
+                 <podcast:source uri="BASE/audio/{n}-hq.mp3"/></podcast:alternateEnclosure></item>"#
+        )
+    };
+    let with_alternatives =
+        |n: u32| item_with_file(n, &format!("{n}.mp3")).replace("</item>", &alternatives(n));
+    let source_feed: FeedBody = Arc::new(Mutex::new(feed(&format!(
+        "{}{}",
+        with_alternatives(2),
+        item_with_file(1, "1.mp3")
+    ))));
+    let base = start_source(source_feed.clone()).await;
+    let data = tempfile::tempdir().unwrap();
+    let mut cfg = Config::new(data.path());
+    cfg.allow_private_networks = true;
+    cfg.min_free_space = 0;
+    cfg.host_pause = std::time::Duration::ZERO;
+    let uguisu = Uguisu::open(cfg).await.unwrap();
+    let id = uguisu
+        .add_podcast(&format!("{base}/feed.xml"))
+        .await
+        .unwrap();
+    assert_eq!(uguisu.download_pending().await.unwrap(), 2);
+
+    let episodes = uguisu.episodes(id).await.unwrap();
+    let two = episodes.iter().find(|e| e.episode.guid == "ep-2").unwrap();
+    let path = uguisu.archive_path(two.media_path.as_deref().unwrap());
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "fake audio 2-hq.mp3"
+    );
+    // The record keeps what the feed states, and where the file came from.
+    let json: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(metadata_of(&path).join("episode.json")).unwrap())
+            .unwrap();
+    assert_eq!(json["enclosure"]["url"], format!("{base}/audio/2.mp3"));
+    assert_eq!(json["files"][0]["source"], format!("{base}/audio/2-hq.mp3"));
+    let one = episodes.iter().find(|e| e.episode.guid == "ep-1").unwrap();
+    assert_eq!(
+        std::fs::read_to_string(uguisu.archive_path(one.media_path.as_deref().unwrap())).unwrap(),
+        "fake audio 1.mp3"
+    );
+
+    // Episode 1 is archived already. A better file offered later is not a reason to fetch it
+    // again, also not with replaced files kept.
+    uguisu.set_options(id, true, true).await.unwrap();
+    *source_feed.lock().unwrap() =
+        feed(&format!("{}{}", with_alternatives(2), with_alternatives(1)));
+    uguisu.refresh(id).await.unwrap();
+    assert_eq!(uguisu.download_pending().await.unwrap(), 0);
+    assert_eq!(uguisu.verify().await.unwrap().ok, 2);
+}
+
 #[tokio::test]
 async fn replaced_media_is_kept_as_a_new_version() {
     let source_feed: FeedBody = Arc::new(Mutex::new(feed(&format!(

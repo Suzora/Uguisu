@@ -5,6 +5,13 @@ Versions follow [semantic versioning](CONTRIBUTING.md#versions).
 
 ## Unreleased
 
+### Added
+
+- When a feed offers an episode in several qualities (Podcasting 2.0 `alternateEnclosure`,
+  Media RSS `media:content`, several Atom enclosures), the best one of the same kind is
+  archived and published: the highest bitrate, or failing that the largest file. Audio stays
+  audio. Episodes already archived are not fetched again because of this.
+
 ### Changed
 
 - **The archive is named for people (archive format 5).** A podcast's directory is now

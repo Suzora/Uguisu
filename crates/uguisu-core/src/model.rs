@@ -67,6 +67,11 @@ pub struct Episode {
     pub download_error: Option<String>,
     pub next_attempt_at: i64,
     pub refetch: bool,
+    /// The file that is archived when it is not the enclosure: a better one the feed offers.
+    #[sqlx(default)]
+    pub media_url: Option<String>,
+    #[sqlx(default)]
+    pub media_type: Option<String>,
 }
 
 /// An episode joined with its newest intact media file, if any.
