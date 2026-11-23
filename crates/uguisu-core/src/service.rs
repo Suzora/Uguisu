@@ -250,6 +250,10 @@ struct Inner {
     downloading: Mutex<HashSet<i64>>,
     search_cache: Mutex<search::SearchCache>,
     hosts: Mutex<HashMap<String, HostState>>,
+    /// Held while a transcript is put into the search index. Transcripts of one episode are
+    /// downloaded side by side; without it, a run that read the list of transcripts before the
+    /// others were done could write its choice last and replace the cleaner one.
+    transcript_index: tokio::sync::Mutex<()>,
 }
 
 /// Midnight (UTC) of the current day: the start date of a podcast added with "only episodes
@@ -422,6 +426,7 @@ impl Uguisu {
                 downloading: Mutex::new(HashSet::new()),
                 search_cache: Mutex::new(search::SearchCache::default()),
                 hosts: Mutex::new(HashMap::new()),
+                transcript_index: tokio::sync::Mutex::new(()),
             }),
         })
     }
@@ -672,6 +677,7 @@ impl Uguisu {
     /// Puts the transcript of an episode into the full-text index. An episode often has the
     /// same transcript in several formats; one of them is enough, the cleanest one available.
     pub(crate) async fn index_transcript(&self, episode_id: i64) -> Result<()> {
+        let _one_at_a_time = self.inner.transcript_index.lock().await;
         let mut paths: Vec<String> = sqlx::query_scalar(
             "SELECT path FROM attachments WHERE episode_id = ? AND kind = 'transcript' \
              AND status = 'ok' AND path IS NOT NULL ORDER BY id",

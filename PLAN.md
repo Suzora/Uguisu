@@ -129,6 +129,8 @@ The promise "readable without Uguisu" is made good and tested.
 - [x] History per podcast: feed snapshots, changes, errors.
 - [x] Full-text search in the archive over titles and show notes (SQLite FTS5).
 - [x] Full-text search over transcripts as well (WebVTT, SubRip, JSON, HTML, plain text).
+      Of several transcripts of an episode the cleanest is indexed; transcripts downloaded side
+      by side are indexed one at a time, so that this choice holds.
 - [x] Overview: running, waiting and failed downloads, state of verification, disk usage.
 - [x] Settings: change the password, sign out other devices.
 - [x] Settings: defaults for new podcasts.
